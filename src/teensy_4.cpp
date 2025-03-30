@@ -1,4 +1,6 @@
-// Teensy 4.1 implementation
+// Teensy 4 implementation
+
+#if defined(TEENSY41) && 1
 
 #include <Arduino.h>
 #include <platform/platform.hpp>
@@ -14,3 +16,5 @@ int Hamster::_free(void *ptr)
     extmem_free(ptr);
     return 0;
 }
+
+#endif // TEENSY41
