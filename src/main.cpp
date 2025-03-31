@@ -3,6 +3,7 @@
 #include <SD.h>
 
 void test_platform();
+void test_memory();
 
 
 void setup() {
@@ -17,9 +18,14 @@ void setup() {
     while (1);
   }
   Serial.println("Hello, world!");
+  
   Serial.println("Testing platform...");
   test_platform();
   Serial.println("Platform test complete.");
+
+  Serial.println("Testing memory...");
+  test_memory();
+  Serial.println("Memory test complete.");
 }
 
 void loop() {
