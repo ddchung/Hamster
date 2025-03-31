@@ -16,93 +16,70 @@
 #define SDCARD_INIT() SD.begin(BUILTIN_SDCARD)
 
 
-// ensure it exists
-__attribute__((constructor))
-static void init_sdcard_swap()
-{
-    // Initialize the SD card if not already done
-    if (!SDCARD_INIT()) {
-        assert(!"SD card initialization failed");
-        return;
-    }
-    // create the swap directory
-    if (!SD.exists(SDCARD_SWAP_DIR)) {
-        SD.mkdir(SDCARD_SWAP_DIR);
-    }
-}
-
-// swap file name
-static char swap_file_name[sizeof(SDCARD_SWAP_DIR) - 1 + 8 + 4 + 1] = // nnnnnnnn.bin + null
-    SDCARD_SWAP_DIR; // + null
-int make_swap_file_name(int swap_index)
-{
-    if (swap_index < 0)
-    {
-        return -1;
-    }
-    snprintf(swap_file_name + sizeof(SDCARD_SWAP_DIR) - 1, sizeof(swap_file_name) - sizeof(SDCARD_SWAP_DIR), "%08x.bin", swap_index);
-    return 0;
-}
-
+static char name_buffer[sizeof(SDCARD_SWAP_DIR) + 13]; // "/.swap/xxxxxxxx.bin"
 static uint8_t swap_buffer[HAMSTER_PAGE_SIZE];
 
-int Hamster::_swap_in(int swap_index, uint8_t *data)
+int make_swap_name(int index)
 {
-    if (swap_index < 0)
-    {
+    if (index < 0)
         return -1;
-    }
-    // make the file name
-    if (make_swap_file_name(swap_index) != 0)
-    {
+    if (index > 0xFFFFFFFF)
         return -1;
-    }
-    // open the file
-    File f = SD.open(swap_file_name, FILE_READ);
-    if (!f)
-    {
-        return -1;
-    }
-    // read the data
-    int bytes_read = f.read(swap_buffer, sizeof(swap_buffer));
-    f.close();
-
-    if (bytes_read != sizeof(swap_buffer))
-    {
-        return -1;
-    }
-
-    // copy the data to the buffer
-    memcpy(data, swap_buffer, sizeof(swap_buffer));
+    snprintf(name_buffer, sizeof(name_buffer), "%s/%08x.bin", SDCARD_SWAP_DIR, index);
     return 0;
 }
 
-int Hamster::_swap_out(int swap_index, const uint8_t *data)
+int Hamster::_swap_out(int index, const uint8_t *data)
 {
-    if (swap_index < 0)
-    {
+    if (index < 0)
         return -1;
-    }
-    // make the file name
-    if (make_swap_file_name(swap_index) != 0)
-    {
+    if (index > 0xFFFFFFFF)
         return -1;
-    }
-    // open the file
-    File f = SD.open(swap_file_name, FILE_WRITE);
+
+    if (SDCARD_INIT() != 1)
+        return -1;
+
+    if (make_swap_name(index) != 0)
+        return -1;
+
+    File f = SD.open(name_buffer, FILE_WRITE);
     if (!f)
+        return -1;
+    
+    if (f.write(data, HAMSTER_PAGE_SIZE) != HAMSTER_PAGE_SIZE)
     {
+        f.close();
         return -1;
     }
-    // write the data
-    int bytes_written = f.write(data, sizeof(swap_buffer));
     f.close();
+    return 0;
+}
 
-    if (bytes_written != sizeof(swap_buffer))
+int Hamster::_swap_in(int index, uint8_t *data)
+{
+    if (index < 0)
+        return -1;
+    if (index > 0xFFFFFFFF)
+        return -1;
+
+    if (SDCARD_INIT() != 1)
+        return -1;
+
+    if (make_swap_name(index) != 0)
+        return -1;
+
+    File f = SD.open(name_buffer, FILE_READ);
+    if (!f)
+        return -1;
+    
+    int len = f.read(swap_buffer, HAMSTER_PAGE_SIZE);
+    if (len != HAMSTER_PAGE_SIZE)
     {
+        f.close();
         return -1;
     }
-
+    f.close();
+    memcpy(data, swap_buffer, HAMSTER_PAGE_SIZE);
     return 0;
 }
 
