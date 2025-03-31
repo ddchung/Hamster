@@ -20,6 +20,12 @@ namespace Hamster
     // please either write all or don't write at all
     int _swap_in(int index, uint8_t *data);
 
+    // Remove a swap page
+    int _swap_rm(int index);
+
+    // Removes all swap pages
+    int _swap_rm_all();
+
     // Allocate some memory on heap
     // returns nullptr on failure
     void *_malloc(size_t size);

@@ -36,8 +36,6 @@ int Hamster::_swap_out(int index, const uint8_t *data)
 
     if (make_swap_name(index) != 0)
         return -3;
-    
-    printf("Swap out %s\n", name_buffer);
     File f = SD.open(name_buffer, FILE_WRITE);
     if (!f)
         return -4;
@@ -74,6 +72,55 @@ int Hamster::_swap_in(int index, uint8_t *data)
     }
     f.close();
     memcpy(data, swap_buffer, HAMSTER_PAGE_SIZE);
+    return 0;
+}
+
+int Hamster::_swap_rm(int index)
+{
+    
+    if (index < 0)
+        return -1;
+    
+    if (SDCARD_INIT() != 1)
+        return -2;
+    
+    if (make_swap_name(index) != 0)
+        return -3;
+
+    if (SD.remove(name_buffer) != 1)
+        return -4;
+    
+    return 0;
+}
+
+int Hamster::_swap_rm_all()
+{
+    if (SDCARD_INIT() != 1)
+        return -2;
+
+    File dir = SD.open(SDCARD_SWAP_DIR);
+    if (!dir)
+        return -4;
+
+    File file = dir.openNextFile();
+    while (file)
+    {
+        if (file.isDirectory())
+        {
+            file.close();
+            continue;
+        }
+        snprintf(name_buffer, sizeof(name_buffer), "%s/%s", SDCARD_SWAP_DIR, file.name());
+        if (SD.remove(name_buffer) != 1)
+        {
+            file.close();
+            dir.close();
+            return -5;
+        }
+        file.close();
+        file = dir.openNextFile();
+    }
+    dir.close();
     return 0;
 }
 
