@@ -34,4 +34,8 @@ namespace Hamster
     // returns 0 on success
     // returns -1 on failure
     int _free(void *ptr);
+
+    // Log
+    int _log(const char * msg);
+    int _log(char c);
 }
