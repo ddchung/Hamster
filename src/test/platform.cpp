@@ -5,23 +5,11 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstdlib>
-#include <iostream>
 
 uint8_t buffer1[HAMSTER_PAGE_SIZE];
 uint8_t buffer2[HAMSTER_PAGE_SIZE];
 
-template <typename T>
-static void assert_equal(const T &a, const T &b, const char *file, int line)
-{
-    if (a == b)
-        return;
-    std::cerr << "Assertion failed: " << file << ":" << line << ": "
-              << "Expected: " << a << ", but got: " << b << std::endl;
-    while (1)
-        ;
-}
-
-#define assert_eq(a, b) assert_equal(a, b, __FILE__, __LINE__)
+#define assert_eq(a, b) assert((a) == (b))
 
 void test_platform()
 {
@@ -73,4 +61,40 @@ void test_platform()
     assert(i < 0);
     i = Hamster::_swap_in(-1, buffer2);
     assert(i < 0);
+
+    // Test swap remove
+    i = Hamster::_swap_rm(0);
+    assert_eq(i, 0);
+    i = Hamster::_swap_in(0, buffer2);
+    assert(i < 0);
+    i = Hamster::_swap_rm(1);
+    assert_eq(i, 0);
+    i = Hamster::_swap_in(1, buffer2);
+    assert(i < 0);
+
+    // Test swap remove all
+    i = Hamster::_swap_out(0, buffer1);
+    assert_eq(i, 0);
+    i = Hamster::_swap_out(1, buffer1);
+    assert_eq(i, 0);
+    i = Hamster::_swap_out(2, buffer1);
+    assert_eq(i, 0);
+    i = Hamster::_swap_rm_all();
+    assert_eq(i, 0);
+    i = Hamster::_swap_in(0, buffer2);
+    assert(i < 0);
+    i = Hamster::_swap_in(1, buffer2);
+    assert(i < 0);
+    i = Hamster::_swap_in(2, buffer2);
+    assert(i < 0);
+    i = Hamster::_swap_rm_all();
+    assert_eq(i, 0);
+    i = Hamster::_swap_rm_all();
+    assert_eq(i, 0);
+
+    // Test swap remove with invalid index
+    i = Hamster::_swap_rm(-1);
+    assert(i < 0);
+    i = Hamster::_swap_rm_all();
+    assert_eq(i, 0);
 }
