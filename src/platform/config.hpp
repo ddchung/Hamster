@@ -11,4 +11,4 @@
 
 // The absolute maximum number of pages
 // RAM pages + swapped pages
-#define HAMSTER_MAX_PAGES 1024
+#define HAMSTER_MAX_PAGES 16384
