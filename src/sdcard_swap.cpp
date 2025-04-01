@@ -1,6 +1,6 @@
 // SD card swapping
 
-#if 1
+#if defined(ARDUINO) && 1
 
 #include <Arduino.h>
 #include <SD.h>

@@ -1,6 +1,6 @@
 // Teensy 4 implementation
 
-#if 1
+#if (defined(ARDUINO_TEENSY41) || defined(ARDUINO_TEENSY40)) && 1
 
 #include <Arduino.h>
 #include <platform/platform.hpp>
