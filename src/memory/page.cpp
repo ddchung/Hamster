@@ -9,8 +9,6 @@
 #include <cassert>
 #include <utility>
 
-#include <cstdio>
-
 static uint8_t dummy;
 
 namespace Hamster
