@@ -4,7 +4,6 @@
 #include <memory/page.hpp>
 #include <platform/platform.hpp>
 #include <cassert>
-#include <iostream>
 
 void test_memory()
 {
@@ -23,16 +22,12 @@ void test_memory()
     }
     Hamster::dealloc<int, 10>(arr);
 
-    std::cout << "testing page" << std::endl;
-
     // Test default constructor
     {
         Hamster::Page page;
         assert(!page.is_swapped());
         assert(!page.is_locked());
     }
-
-    std::cout << "1" << std::endl;
 
     // Test constructor with data
     {
@@ -42,8 +37,6 @@ void test_memory()
         assert(!page.is_locked());
     }
 
-    std::cout << "2" << std::endl;
-
     // Test constructor with swap index
     {
         Hamster::Page page(42);
@@ -51,8 +44,6 @@ void test_memory()
         assert(!page.is_locked());
         assert(page.get_swap_index() == 42);
     }
-
-    std::cout << "3" << std::endl;
 
     // Test move constructor
     {
@@ -62,8 +53,6 @@ void test_memory()
         assert(!page2.is_locked());
     }
 
-    std::cout << "4" << std::endl;
-
     // Test move assignment
     {
         Hamster::Page page1;
@@ -71,8 +60,6 @@ void test_memory()
         assert(!page2.is_swapped());
         assert(!page2.is_locked());
     }
-
-    std::cout << "5" << std::endl;
 
     // Test lock and unlock
     {
@@ -108,5 +95,23 @@ void test_memory()
         uint8_t &dummy = Hamster::Page::get_dummy();
         dummy = 99;
         assert(Hamster::Page::get_dummy() == 99);
+    }
+
+    {
+        Hamster::Page page;
+        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
+        {
+            page[i] = (uint8_t)i;
+        }
+        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
+        {
+            assert(page[i] == (uint8_t)i);
+        }
+        page.swap_out();
+        page.swap_in();
+        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
+        {
+            assert(page[i] == (uint8_t)i);
+        }
     }
 }
