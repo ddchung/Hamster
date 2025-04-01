@@ -20,12 +20,16 @@ int Hamster::_free(void *ptr)
 
 int Hamster::_log(const char *msg)
 {
-    return printf("%s", msg);
+    int out = printf("%s", msg);
+    fflush(stdout);
+    return out;
 }
 
 int Hamster::_log(char c)
 {
-    return printf("%c", c);
+    int out = printf("%c", c);
+    fflush(stdout);
+    return out;
 }
 
 #endif
