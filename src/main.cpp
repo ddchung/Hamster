@@ -1,33 +1,32 @@
-#include <Arduino.h>
 #include <platform/platform.hpp>
+
+#ifdef ARDUINO
+#include <Arduino.h>
 #include <SD.h>
+#endif
 
 void test_platform();
 void test_memory();
 
-
-void setup() {
-  // put your setup code here, to run once:
+int main()
+{
+# ifdef ARDUINO
   Serial.begin(115200);
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
+  while (!Serial)
+    ;
+  if (!SD.begin(BUILTIN_SDCARD))
+  {
+    Serial.println("SD Card failed or not present");
+    while (1)
+      ;
   }
-  Serial.println("Initializing SD card...");
-  if (!SD.begin(BUILTIN_SDCARD)) {
-    Serial.println("Card failed, or not present.");
-    while (1);
-  }
-  Serial.println("Hello, world!");
-  
-  Serial.println("Testing platform...");
+# endif // ARDUINO
+
+  Hamster::_log("Testing Platform...\n");
   test_platform();
-  Serial.println("Platform test complete.");
+  Hamster::_log("Done\n");
 
-  Serial.println("Testing memory...");
+  Hamster::_log("Testing Memory...\n");
   test_memory();
-  Serial.println("Memory test complete.");
-}
-
-void loop() {
-  // put your main code here, to run repeatedly:
+  Hamster::_log("Done\n");
 }
