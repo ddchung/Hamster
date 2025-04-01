@@ -34,6 +34,8 @@ namespace Hamster
         inline int lock() { locked = true; return 0; }
         inline int unlock() { locked = false; return 0; }
 
+        inline uint8_t *get_data() const { return data; }
+
         int swap_in();
         int swap_out();
 
