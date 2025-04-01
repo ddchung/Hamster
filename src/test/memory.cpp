@@ -2,8 +2,17 @@
 
 #include <memory/allocator.hpp>
 #include <memory/page.hpp>
+#include <memory/memory_space.hpp>
 #include <platform/platform.hpp>
 #include <cassert>
+#include <cstdlib>
+
+static unsigned int hash_int(unsigned int x) {
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = (x >> 16) ^ x;
+    return x;
+}
 
 void test_memory()
 {
@@ -113,5 +122,65 @@ void test_memory()
         {
             assert(page[i] == (uint8_t)i);
         }
+    }
+
+    // Memory Space
+    Hamster::MemorySpace mem_space;
+    i = mem_space.allocate_page(0x1000);
+    assert(i >= 0);
+    assert(mem_space.get_page_data(0x1000) != nullptr);
+    assert(mem_space.get_page_data(0x1000 + HAMSTER_PAGE_SIZE + 0x10) == nullptr);
+
+    // fill with data
+    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
+    {
+        mem_space[0x1000 + j] = (uint8_t)j;
+    }
+
+    // check data
+    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
+    {
+        assert(mem_space[0x1000 + j] == (uint8_t)j);
+    }
+
+    for (int j = 1; j < 16; ++j)
+    {
+        i = mem_space.allocate_page(0x1000 + j * HAMSTER_PAGE_SIZE);
+        assert(i >= 0);
+    }
+
+    // fill with random data
+    for (int j = 0; j < 16 * HAMSTER_PAGE_SIZE; ++j)
+    {
+        mem_space[0x1000 + j] = (uint8_t)hash_int(j);
+    }
+
+    // check data
+    for (int j = 0; j < 16 * HAMSTER_PAGE_SIZE; ++j)
+    {
+        assert(mem_space[0x1000 + j] == (uint8_t)hash_int(j));
+    }
+
+    // swap in and out
+    mem_space.swap_out_pages();
+    mem_space.swap_in_pages();
+
+    // check data
+    for (int j = 0; j < 16 * HAMSTER_PAGE_SIZE; ++j)
+    {
+        assert(mem_space[0x1000 + j] == (uint8_t)hash_int(j));
+    }
+
+    // deallocate pages
+    for (int j = 0; j < 16; ++j)
+    {
+        i = mem_space.deallocate_page(0x1000 + j * HAMSTER_PAGE_SIZE);
+        assert(i == 0);
+    }
+
+    // check that all pages are deallocated
+    for (int j = 0; j < 16; ++j)
+    {
+        assert(mem_space.get_page_data(0x1000 + j * HAMSTER_PAGE_SIZE) == nullptr);
     }
 }
