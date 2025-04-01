@@ -3,8 +3,8 @@
 #pragma once
 
 #include <memory/page.hpp>
+#include <memory/stl_map.hpp>
 #include <cstdint>
-#include <unordered_map>
 #include <utility>
 
 namespace Hamster
@@ -52,7 +52,7 @@ namespace Hamster
         static uint64_t get_addr_offset(uint64_t addr);
         static uint64_t get_page_start(uint64_t addr);
     private:
-        std::unordered_map<uint64_t, Page> pages;
+        UnorderedMap<uint64_t, Page> pages;
     };
 } // namespace Hamster
 

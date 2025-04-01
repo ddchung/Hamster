@@ -6,7 +6,7 @@
 
 #include <platform/platform.hpp>
 #include <platform/config.hpp>
-#include <unordered_map>
+#include <memory/stl_map.hpp>
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
@@ -18,7 +18,7 @@ namespace
         uint8_t data[HAMSTER_PAGE_SIZE];
     };
 
-    std::unordered_map<int, SwapPage> swapped_pages;
+    Hamster::UnorderedMap<int, SwapPage> swapped_pages;
 } // namespace
 
 int Hamster::_swap_out(int index, const uint8_t *data)
