@@ -36,6 +36,7 @@ int Hamster::_swap_out(int index, const uint8_t *data)
 
     if (make_swap_name(index) != 0)
         return -3;
+    SD.remove(name_buffer); //< FILE_WRITE does not truncate
     File f = SD.open(name_buffer, FILE_WRITE);
     if (!f)
         return -4;
@@ -110,7 +111,14 @@ int Hamster::_swap_rm_all()
             file.close();
             continue;
         }
-        snprintf(name_buffer, sizeof(name_buffer), "%s/%s", SDCARD_SWAP_DIR, file.name());
+        const char *name = file.name();
+        if (name[0] < '0' || name[0] > '9')
+        {
+            file.close();
+            file = dir.openNextFile();
+            continue;
+        }
+        snprintf(name_buffer, sizeof(name_buffer), "%s/%s", SDCARD_SWAP_DIR, name);
         if (SD.remove(name_buffer) != 1)
         {
             file.close();
