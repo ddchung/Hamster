@@ -129,6 +129,7 @@ void test_memory()
     i = mem_space.allocate_page(0x1000);
     assert(i >= 0);
     assert(mem_space.get_page_data(0x1000) != nullptr);
+    assert(mem_space.get_page_data(0x1000 + HAMSTER_PAGE_SIZE - 1) != nullptr);
     assert(mem_space.get_page_data(0x1000 + HAMSTER_PAGE_SIZE + 0x10) == nullptr);
 
     // fill with data
@@ -182,5 +183,26 @@ void test_memory()
     for (int j = 0; j < 16; ++j)
     {
         assert(mem_space.get_page_data(0x1000 + j * HAMSTER_PAGE_SIZE) == nullptr);
+    }
+
+    // big data
+    for (int j = 0; j < 256; ++j)
+    {
+        i = mem_space.allocate_page(j * HAMSTER_PAGE_SIZE);
+        assert(i >= 0);
+        for (int k = 0; k < HAMSTER_PAGE_SIZE; ++k)
+        {
+            uint64_t addr = j * HAMSTER_PAGE_SIZE + k;
+            mem_space[addr] = (uint8_t)hash_int(addr);
+            assert(mem_space[addr] == (uint8_t)hash_int(addr));
+        }
+    }
+
+    mem_space.swap_out_pages();
+    mem_space.swap_in_pages();
+
+    for (uint64_t j = 0; j < 256 * HAMSTER_PAGE_SIZE; ++j)
+    {
+        assert(mem_space[j] == (uint8_t)hash_int(j));
     }
 }

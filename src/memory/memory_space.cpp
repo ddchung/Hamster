@@ -37,23 +37,28 @@ namespace Hamster
             return -1; // out of memory
         }
 
+        addr = get_page_start(addr);
+
         if (pages.find(addr) != pages.end())
         {
             return -2; // page already allocated
         }
 
-        pages.emplace(decltype(pages)::value_type(addr, Page()));
-
+        if (queue(addr) < 0)
+            return -3; // queue failed
+        
         return pages[addr].get_swap_index();
     }
 
     int MemorySpace::deallocate_page(uint64_t addr)
     {
+        addr = get_page_start(addr);
         auto it = pages.find(addr);
         if (it == pages.end())
             return -1;
         
         pages.erase(it);
+        swapped_on_pages.remove(addr);
         return 0;
     }
 
@@ -63,8 +68,16 @@ namespace Hamster
         uint64_t page_start = get_page_start(addr);
         auto it = pages.find(page_start);
         if (it == pages.end())
-            Page::get_dummy();
-        return it->second[offset];
+            return Page::get_dummy(); 
+        Page &page = it->second;
+
+        if (page.is_swapped())
+        {
+            if (page.swap_in() < 0 || queue(page_start) < 0)
+                return Page::get_dummy();
+        }
+
+        return page[offset];
     }
 
     uint8_t *MemorySpace::get_page_data(uint64_t addr)
@@ -73,7 +86,84 @@ namespace Hamster
         auto it = pages.find(page_start);
         if (it == pages.end())
             return nullptr;
-        return it->second.get_data();
+        
+        Page &page = it->second;
+
+        if (page.is_swapped())
+        {
+            if (page.swap_in() < 0 || queue(page_start) < 0)
+                return nullptr;
+        }
+
+        return page.get_data();
+    }
+
+    int MemorySpace::queue(uint64_t page_start)
+    {
+        // ensure it is page start
+        page_start = get_page_start(page_start);
+
+        // remove all existing occurences
+        swapped_on_pages.remove(page_start);
+
+        // add
+        swapped_on_pages.push_front(page_start);
+
+        // clean
+        return clean();
+    }
+
+    int MemorySpace::swap_out_pages()
+    {
+        for (auto &page : swapped_on_pages)
+        {
+            auto it = pages.find(page);
+            if (it == pages.end())
+                continue;
+            it->second.swap_out();
+        }
+        return 0;
+    }
+
+    int MemorySpace::swap_in_pages()
+    {
+        for (auto &page : swapped_on_pages)
+        {
+            auto it = pages.find(page);
+            if (it == pages.end())
+                continue;
+            it->second.swap_in();
+        }
+        return 0;
+    }
+
+    int MemorySpace::clean()
+    {
+        if (swapped_on_pages.size() <= HAMSTER_CONCUR_PAGES)
+            return 0; // no need to clean
+        
+        uint64_t page_start = swapped_on_pages.back();
+        page_start = get_page_start(page_start);
+        
+        auto it = pages.find(page_start);
+        if (it == pages.end())
+        {
+            // not found
+            swapped_on_pages.pop_back();
+            return -1;
+        }
+
+        Page &page = it->second;
+
+        // swap out
+        int res = page.swap_out();
+        swapped_on_pages.pop_back();
+
+        // continue cleaning
+        if (clean() < 0)
+            res = -2;
+
+        return res;
     }
 } // namespace Hamster
 

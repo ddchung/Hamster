@@ -4,6 +4,7 @@
 
 #include <memory/page.hpp>
 #include <memory/stl_map.hpp>
+#include <memory/stl_sequential.hpp>
 #include <cstdint>
 #include <utility>
 
@@ -30,17 +31,8 @@ namespace Hamster
         // returns 0 on success, or negative error code
         int deallocate_page(uint64_t addr);
 
-        template <typename R, typename... Args>
-        void do_action_on_pages(R (Page::*action)(Args...), Args&&... args)
-        {
-            for (auto &page : pages)
-            {
-                (page.second.*action)(std::forward<Args>(args)...);
-            }
-        }
-
-        inline void swap_out_pages() { do_action_on_pages(&Page::swap_out); }
-        inline void swap_in_pages() { do_action_on_pages(&Page::swap_in); }
+        int swap_out_pages();
+        int swap_in_pages();
 
         // get a specific byte of data
         // returns a reference to the byte
@@ -53,6 +45,15 @@ namespace Hamster
         static uint64_t get_page_start(uint64_t addr);
     private:
         UnorderedMap<uint64_t, Page> pages;
+        List<uint64_t> swapped_on_pages;
+
+        // Queues in a page to be swapped out later
+        // errors if page is locked
+        int queue(uint64_t page);
+
+        // If swapped_on_pages.size() > HAMSTER_CONCUR_PAGES
+        // then pop and swap out trailing pages
+        int clean();
     };
 } // namespace Hamster
 
