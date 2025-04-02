@@ -31,6 +31,8 @@ namespace Hamster
         Thread::RunCode tick_all();
         Thread::RunCode tick_all64();
 
+        ~Process();
+
     private:
         MemorySpace memory_space;
 

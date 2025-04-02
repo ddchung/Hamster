@@ -35,5 +35,14 @@ namespace Hamster
         }
         memory_space.swap_out_pages();
     }
+
+    Process::~Process()
+    {
+        for (auto thread : threads)
+        {
+            dealloc<Thread>(thread.thread);
+        }
+        threads.clear();
+    }
 } // namespace Hamster
 
