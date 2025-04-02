@@ -13,3 +13,6 @@ static_assert((HAMSTER_PAGE_SIZE & (HAMSTER_PAGE_SIZE - 1)) == 0, "Page size mus
 // The absolute maximum number of pages
 // RAM pages + swapped pages
 #define HAMSTER_MAX_PAGES 16384
+
+// The length of each process' name
+#define HAMSTER_PROCESS_NAME_LENGTH 32
