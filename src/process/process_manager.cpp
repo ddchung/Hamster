@@ -54,30 +54,40 @@ namespace Hamster
 
     void ProcessManager::tick_all()
     {
-        for (auto &pi : processes)
+        for (size_t i = 0; i < processes.size(); i++)
         {
-            if (pi.running)
+            if (processes[i].running)
             {
-                // since tick_all() may call syscalls,
-                // set current_process so the syscalls
-                // can identify the current process
-
-                current_process = &pi;
-                pi.process.tick_all();
+                current_process = &processes[i];
+                auto runcode = processes[i].process.tick_all();
                 current_process = nullptr;
+
+                if (runcode.terminate)
+                {
+                    processes[i].running = false;
+                    processes.erase(processes.begin() + i);
+                    i--;
+                }
             }
         }
     }
 
     void ProcessManager::tick_all64()
     {
-        for (auto &pi : processes)
+        for (size_t i = 0; i < processes.size(); i++)
         {
-            if (pi.running)
+            if (processes[i].running)
             {
-                current_process = &pi;
-                pi.process.tick_all64();
+                current_process = &processes[i];
+                auto runcode = processes[i].process.tick_all64();
                 current_process = nullptr;
+
+                if (runcode.terminate)
+                {
+                    processes[i].running = false;
+                    processes.erase(processes.begin() + i);
+                    i--;
+                }
             }
         }
     }

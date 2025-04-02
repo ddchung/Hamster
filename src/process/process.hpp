@@ -36,6 +36,10 @@ namespace Hamster
         inline ThreadInfo *get_current_thread()
         { return current_thread; }
 
+        // use with care
+        inline MemorySpace &get_memory_space()
+        { return memory_space; }
+
     private:
         MemorySpace memory_space;
 
