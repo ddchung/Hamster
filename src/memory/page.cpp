@@ -15,7 +15,8 @@ namespace Hamster
 {
     void Page::gen_id()
     {
-        swap_idx = rand();
+        static int counter = 0;
+        swap_idx = ++counter;
     }
 
     void Page::deallocate()

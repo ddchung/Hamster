@@ -52,7 +52,7 @@ namespace Hamster
         // not allocated when swapped out
         uint8_t *data;
 
-        // randomized swap index
+        // unique swap index
         int swap_idx;
 
         // flags
