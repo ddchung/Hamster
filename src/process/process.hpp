@@ -33,10 +33,15 @@ namespace Hamster
 
         ~Process();
 
+        inline Thread *get_current_thread()
+        { return current_thread; }
+
     private:
         MemorySpace memory_space;
 
         Vector<ThreadInfo> threads;
+        
+        Thread *current_thread = nullptr;
     };
 } // namespace Hamster
 

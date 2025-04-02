@@ -51,8 +51,14 @@ namespace Hamster
         void tick_all();
         void tick_all64();
 
+        // get the current process
+        inline Process *get_current_process()
+        { return current_process; }
+
     private:
         Vector<ProcessInfo> processes;
+
+        Process *current_process = nullptr;
     };
 } // namespace Hamster
 

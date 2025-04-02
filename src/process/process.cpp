@@ -14,7 +14,9 @@ namespace Hamster
         {
             if (thread.running)
             {
+                current_thread = thread.thread;
                 thread.thread->tick();
+                current_thread = nullptr;
             }
         }
         memory_space.swap_out_pages();
@@ -29,7 +31,9 @@ namespace Hamster
             {
                 if (thread.running)
                 {
+                    current_thread = thread.thread;
                     thread.thread->tick();
+                    current_thread = nullptr;
                 }
             }
         }
