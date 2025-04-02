@@ -9,6 +9,8 @@
 #include <memory/memory_space.hpp>
 #include <cassert>
 
+#include <cstdio>
+
 namespace Hamster
 {
     namespace
@@ -17,21 +19,25 @@ namespace Hamster
         // state structure:
         // 0-7: program counter
         // 8-(HAMSTER_PAGE_SIZE - 1): reserved for future use
+        
+        uint8_t data_buffer[8] = {0};
 
         uint64_t read_word(MemorySpace& memory_space, uint64_t address)
         {
-            auto offset = MemorySpace::get_addr_offset(address);
-            assert(offset % 8 == 0);
-            assert(offset <= (HAMSTER_PAGE_SIZE - 8));
-            return *(uint64_t*)(memory_space.get_page_data(address));
+            for (int i = 0; i < 8; ++i)
+            {
+                data_buffer[i] = memory_space[address + i];
+            }
+            return *(uint64_t*)data_buffer;
         }
 
         void write_word(MemorySpace& memory_space, uint64_t address, uint64_t value)
         {
-            auto offset = MemorySpace::get_addr_offset(address);
-            assert(offset % 8 == 0);
-            assert(offset <= (HAMSTER_PAGE_SIZE - 8));
-            *(uint64_t*)(memory_space.get_page_data(address)) = value;
+            *(uint64_t*)data_buffer = value;
+            for (int i = 0; i < 8; ++i)
+            {
+                memory_space[address + i] = data_buffer[i];
+            }
         }
 
         constexpr uint64_t PROGRAM_COUNTER_ADDR = 0;
@@ -47,36 +53,46 @@ namespace Hamster
         // read program counter
         uint64_t pc = read_word(memory_space, PROGRAM_COUNTER_ADDR);
 
+        uint64_t a_adr = pc;
+        uint64_t b_adr = pc + 8;
+        uint64_t c_adr = pc + 16;
 
-        // a b c
-        uint64_t a = read_word(memory_space, pc);
-        uint64_t b = read_word(memory_space, pc + 8);
-        uint64_t c = read_word(memory_space, pc + 16);
+        uint64_t a = read_word(memory_space, a_adr);
+        uint64_t b = read_word(memory_space, b_adr);
+        uint64_t c = read_word(memory_space, c_adr);
 
-        // subleq
-        b = b - a;
-        write_word(memory_space, pc + 8, b);
-        
-        if (memory_space[b] <= 0)
+        if (c == pc)
         {
-            // check if c is too close to the end of its page
-            if (MemorySpace::get_addr_offset(c) >= (HAMSTER_PAGE_SIZE - 24))
+            // syscall stub
+            if (a == 0)
             {
-                // TODO: handle page fault
+                return 1;
+            }
+            if (a == 1)
+            {
+                printf("Hello, World!\n");
+            }
+            if (a == 2)
+            {
+                printf("%llu", b);
+            }
+        }
+
+        write_word(memory_space, b, read_word(memory_space, b) - read_word(memory_space, a));
+
+        if (read_word(memory_space, b) <= 0)
+        {
+            if (c % 8 != 0)
+            {
+                // TODO: handle alignment fault
                 return -1;
             }
-            
-            pc = c;
+            write_word(memory_space, PROGRAM_COUNTER_ADDR, c);
         }
         else
         {
-            // next instruction
-            pc += 24;
+            write_word(memory_space, PROGRAM_COUNTER_ADDR, pc + 24);
         }
-
-        // write
-        write_word(memory_space, PROGRAM_COUNTER_ADDR, pc);
-
         return 0;
     }
 } // namespace Hamster
