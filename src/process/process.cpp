@@ -14,7 +14,7 @@ namespace Hamster
         {
             if (thread.running)
             {
-                current_thread = thread.thread;
+                current_thread = &thread;
                 thread.thread->tick();
                 current_thread = nullptr;
             }
@@ -31,7 +31,7 @@ namespace Hamster
             {
                 if (thread.running)
                 {
-                    current_thread = thread.thread;
+                    current_thread = &thread;
                     thread.thread->tick();
                     current_thread = nullptr;
                 }

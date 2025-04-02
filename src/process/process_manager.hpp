@@ -18,7 +18,8 @@ namespace Hamster
         ProcessManager(ProcessManager&&) = delete;
         ProcessManager &operator=(ProcessManager&&) = delete;
         ~ProcessManager() = default;
-
+        
+    public:
         struct ProcessInfo
         {
             Process process;
@@ -27,7 +28,6 @@ namespace Hamster
             bool running : 1;
         };
 
-    public:
         static ProcessManager &get_instance()
         {
             static ProcessManager instance;
@@ -52,13 +52,13 @@ namespace Hamster
         void tick_all64();
 
         // get the current process
-        inline Process *get_current_process()
+        inline ProcessInfo *get_current_process()
         { return current_process; }
 
     private:
         Vector<ProcessInfo> processes;
 
-        Process *current_process = nullptr;
+        ProcessInfo *current_process = nullptr;
     };
 } // namespace Hamster
 

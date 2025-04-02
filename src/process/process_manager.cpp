@@ -62,7 +62,7 @@ namespace Hamster
                 // set current_process so the syscalls
                 // can identify the current process
 
-                current_process = &pi.process;
+                current_process = &pi;
                 pi.process.tick_all();
                 current_process = nullptr;
             }
@@ -75,7 +75,7 @@ namespace Hamster
         {
             if (pi.running)
             {
-                current_process = &pi.process;
+                current_process = &pi;
                 pi.process.tick_all64();
                 current_process = nullptr;
             }

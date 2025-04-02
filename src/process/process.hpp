@@ -13,6 +13,7 @@ namespace Hamster
 {
     class Process
     {
+    public:
         struct ThreadInfo
         {
             Thread *thread;
@@ -20,7 +21,6 @@ namespace Hamster
             // not used yet
             bool running : 1;
         };
-    public:
         // Make a thread
         // ThreadClass: a class derived from Thread
         // ThreadClass must have a constructor
@@ -33,7 +33,7 @@ namespace Hamster
 
         ~Process();
 
-        inline Thread *get_current_thread()
+        inline ThreadInfo *get_current_thread()
         { return current_thread; }
 
     private:
@@ -41,7 +41,7 @@ namespace Hamster
 
         Vector<ThreadInfo> threads;
         
-        Thread *current_thread = nullptr;
+        ThreadInfo *current_thread = nullptr;
     };
 } // namespace Hamster
 
