@@ -18,12 +18,12 @@ void test_memory()
 {
     int i;
 
-    int *ptr = Hamster::alloc<int>(42);
+    int *ptr = Hamster::alloc<int>(1, 42);
     assert(ptr != nullptr);
     assert(*ptr == 42);
     Hamster::dealloc(ptr);
 
-    int *arr = Hamster::alloc<int, 10>(42);
+    int *arr = Hamster::alloc<int>(10, 42);
     assert(arr != nullptr);
     for (int i = 0; i < 10; ++i)
     {
@@ -40,7 +40,7 @@ void test_memory()
 
     // Test constructor with data
     {
-        uint8_t *test_data = Hamster::alloc<uint8_t, HAMSTER_PAGE_SIZE>(0);
+        uint8_t *test_data = Hamster::alloc<uint8_t>(HAMSTER_PAGE_SIZE, 0);
         Hamster::Page page(test_data);
         assert(!page.is_swapped());
         assert(!page.is_locked());
