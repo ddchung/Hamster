@@ -21,14 +21,14 @@ namespace Hamster
 
     void Page::deallocate()
     {
-        dealloc<uint8_t, HAMSTER_PAGE_SIZE>(data);
+        dealloc<uint8_t>(data);
         data = nullptr;
     }
 
     void Page::allocate()
     {
         deallocate();
-        data = alloc<uint8_t, HAMSTER_PAGE_SIZE>(0);
+        data = alloc<uint8_t>(HAMSTER_PAGE_SIZE, 0);
     }
 
     Page::Page()

@@ -12,15 +12,8 @@ namespace Hamster
     template <typename...> void alloc() = delete;
 
     template <typename T, typename... Args>
-    T* alloc(Args&&... args) {
-        void *ptr = _malloc(sizeof(T));
-        assert(ptr != nullptr);
-        new (ptr) T(std::forward<Args>(args)...);
-        return static_cast<T*>(ptr);
-    }
-
-    template <typename T, unsigned int N, typename... Args>
-    T* alloc(Args&&... args) {
+    T* alloc(unsigned int N = 0, Args&&... args)
+    {
         void *ptr = _malloc(sizeof(T) * N);
         assert(ptr != nullptr);
         for (unsigned int i = 0; i < N; ++i) {
