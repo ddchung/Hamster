@@ -9,10 +9,8 @@
 
 namespace Hamster 
 {
-    template <typename...> void alloc() = delete;
-
     template <typename T, typename... Args>
-    T* alloc(unsigned int N = 0, Args&&... args)
+    T* alloc(unsigned int N = 1, Args&&... args)
     {
         void *ptr = _malloc(sizeof(T) * N);
         assert(ptr != nullptr);
