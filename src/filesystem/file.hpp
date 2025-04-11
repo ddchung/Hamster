@@ -8,19 +8,47 @@
 
 namespace Hamster
 {
+    enum class FileType
+    {
+        Regular,
+        Directory,
+        FIFO,
+    };
+
     class BaseFile
     {
     public:
         virtual ~BaseFile() = default;
 
+        virtual const FileType type() const = 0;
+
         virtual int rename(const char *) = 0;
-        virtual int isatty() = 0;
-        virtual int unlink() = 0;
-        virtual int stat(struct ::stat *) = 0;
+        virtual int remove() = 0;
+    };
+
+    class BaseFifoFile : public BaseFile
+    {
+    public:
+        virtual int read(uint8_t *buf, size_t size) = 0;
+        virtual int write(const uint8_t *buf, size_t size) = 0;
+    };
+
+    class BaseRegularFile : public BaseFifoFile
+    {
+    public:
+        virtual int64_t seek(int64_t offset, int whence) = 0;
+    };
+
+    class BaseDirectory : public BaseFile
+    {
+    public:
+        virtual char * const *list() = 0;
+        virtual BaseFile *get(const char *name, int flags, ...) = 0;
+        virtual BaseFile *add(const char *name, int mode, BaseFile *file) = 0;
+
+        using BaseFile::remove;
+        virtual int remove(const char *name) = 0;
         virtual int close() = 0;
-        virtual int write(const void *, size_t) = 0;
-        virtual int64_t lseek(int64_t, int) = 0;
-        virtual int read(void *, size_t) = 0;
     };
 
     class BaseFilesystem
@@ -28,14 +56,11 @@ namespace Hamster
     public:
         virtual ~BaseFilesystem() = default;
 
-        // opens a file
-        // returns a pointer to file to be freed with:
-        // `Hamster::dealloc<BaseFile>(file)`
-        virtual BaseFile *open(const char *, int, ...) = 0;
-        virtual int rename(const char *, const char *) = 0;
-        virtual int unlink(const char *) = 0;
-        virtual int link(const char *, const char *) = 0;
-        virtual int stat(const char *, struct ::stat *) = 0;
+        virtual BaseFile *open(const char *path, int flags, ...) = 0;
+        virtual int rename(const char *oldpath, const char *newpath) = 0;
+        virtual int link(const char *oldpath, const char *newpath) = 0;
+        virtual int unlink(const char *path) = 0;
+        virtual int stat(const char *path, struct ::stat *buf) = 0;
     };
 } // namespace Hamster
 
