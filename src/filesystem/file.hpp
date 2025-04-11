@@ -29,6 +29,7 @@ namespace Hamster
     class BaseFifoFile : public BaseFile
     {
     public:
+        virtual const FileType type() const override { return FileType::FIFO; }
         virtual int read(uint8_t *buf, size_t size) = 0;
         virtual int write(const uint8_t *buf, size_t size) = 0;
     };
@@ -36,12 +37,14 @@ namespace Hamster
     class BaseRegularFile : public BaseFifoFile
     {
     public:
+        virtual const FileType type() const override { return FileType::Regular; }
         virtual int64_t seek(int64_t offset, int whence) = 0;
     };
 
     class BaseDirectory : public BaseFile
     {
     public:
+        virtual const FileType type() const override { return FileType::Directory; }
         virtual char * const *list() = 0;
         virtual BaseFile *get(const char *name, int flags, ...) = 0;
         virtual BaseFile *add(const char *name, int mode, BaseFile *file) = 0;
