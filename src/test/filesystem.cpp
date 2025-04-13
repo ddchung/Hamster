@@ -7,27 +7,39 @@
 #include <cstdlib>
 #include <cassert>
 
-class TestFile : public Hamster::BaseFile
+class TestFile : public Hamster::BaseRegularFile
 {
 public:
-    int rename(const char *) override { return 0; }
-    int isatty() override { return 0; }
-    int unlink() override { return 0; }
-    int stat(struct ::stat *) override { return 0; }
-    int close() override { return 0; }
-    int write(const void *, size_t) override { return 0; }
-    int64_t lseek(int64_t, int) override { return 0; }
-    int read(void * p, size_t s) override { memset(p, 0, s); return 0; }
+    TestFile() = default;
+    ~TestFile() override = default;
+
+    int rename(const char *name) override { return 0; }
+    int remove() override { return 0; }
+
+    int read(uint8_t *buf, size_t size) override { memset(buf, 0, size); return size; }
+    int write(const uint8_t *buf, size_t size) override { return size; }
+
+    int64_t seek(int64_t offset, int whence) override { return 0; }
 };
 
 class TestFilesystem : public Hamster::BaseFilesystem
 {
 public:
-    Hamster::BaseFile *open(const char *, int, ...) override { return Hamster::alloc<TestFile>(); }
-    int rename(const char *, const char *) override { return 0; }
-    int unlink(const char *) override { return 0; }
-    int link(const char *, const char *) override { return 0; }
-    int stat(const char *, struct ::stat *) override { return 0; }
+    TestFilesystem() = default;
+    ~TestFilesystem() override = default;
+
+    Hamster::BaseFile *open(const char *path, int flags, ...) override
+    {
+        return Hamster::alloc<TestFile>();
+    }
+
+    int rename(const char *old_path, const char *new_path) override { return 0; }
+    int unlink(const char *path) override { return 0; }
+    int link(const char *old_path, const char *new_path) override { return 0; }
+    int stat(const char *path, struct ::stat *buf) override { return 0; }
+    Hamster::BaseFile *mkfile(const char *name, int flags, int mode) override { return open(0, 0); }
+    Hamster::BaseFile *mkdir(const char *name, int flags, int mode) override { return open(0, 0); }
+    Hamster::BaseFile *mkfifo(const char *name, int flags, int mode) override { return open(0, 0); }
 };
 
 void test_filesystem()

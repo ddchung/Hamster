@@ -47,11 +47,13 @@ namespace Hamster
         virtual const FileType type() const override { return FileType::Directory; }
         virtual char * const *list() = 0;
         virtual BaseFile *get(const char *name, int flags, ...) = 0;
-        virtual BaseFile *add(const char *name, int mode, BaseFile *file) = 0;
+
+        virtual BaseFile *mkfile(const char *name, int flags, int mode) = 0;
+        virtual BaseFile *mkdir(const char *name, int flags, int mode) = 0;
+        virtual BaseFile *mkfifo(const char *name, int flags, int mode) = 0;
 
         using BaseFile::remove;
         virtual int remove(const char *name) = 0;
-        virtual int close() = 0;
     };
 
     class BaseFilesystem
@@ -64,6 +66,10 @@ namespace Hamster
         virtual int link(const char *oldpath, const char *newpath) = 0;
         virtual int unlink(const char *path) = 0;
         virtual int stat(const char *path, struct ::stat *buf) = 0;
+        
+        virtual BaseFile *mkdir(const char *path, int flags, int mode) = 0;
+        virtual BaseFile *mkfifo(const char *path, int flags, int mode) = 0;
+        virtual BaseFile *mkfile(const char *path, int flags, int mode) = 0;
     };
 } // namespace Hamster
 
