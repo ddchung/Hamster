@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <cstdint>
 #include <cstddef>
+#include <cstdarg>
 
 namespace Hamster
 {
@@ -62,6 +63,7 @@ namespace Hamster
         virtual ~BaseFilesystem() = default;
 
         virtual BaseFile *open(const char *path, int flags, ...) = 0;
+        virtual BaseFile *open(const char *path, int flags, va_list args) = 0;
         virtual int rename(const char *oldpath, const char *newpath) = 0;
         virtual int link(const char *oldpath, const char *newpath) = 0;
         virtual int unlink(const char *path) = 0;

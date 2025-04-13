@@ -135,5 +135,100 @@ namespace Hamster
         }
         return {nullptr, path};
     }
+
+    BaseFile *Mounts::open(const char *path, int flags, ...)
+    {
+        va_list args;
+        va_start(args, flags);
+        BaseFile *file = open(path, flags, args);
+        va_end(args);
+        return file;
+    }
+
+    BaseFile *Mounts::open(const char *path, int flags, va_list args)
+    {
+        if (!path)
+            return nullptr;
+        Path mount = get_mount(path);
+        if (!mount.fs)
+            return nullptr;
+        return mount.fs->open(mount.path, flags, args);
+    }
+
+    int Mounts::rename(const char *old_path, const char *new_path)
+    {
+        if (!old_path || !new_path)
+            return -1;
+        Path old_mount = get_mount(old_path);
+        Path new_mount = get_mount(new_path);
+        if (!old_mount.fs || !new_mount.fs)
+            return -1;
+        if (old_mount.fs != new_mount.fs)
+            return -2;
+        return old_mount.fs->rename(old_mount.path, new_mount.path);
+    }
+
+    int Mounts::unlink(const char *path)
+    {
+        if (!path)
+            return -1;
+        Path mount = get_mount(path);
+        if (!mount.fs)
+            return -1;
+        return mount.fs->unlink(mount.path);
+    }
+
+    int Mounts::link(const char *old_path, const char *new_path)
+    {
+        if (!old_path || !new_path)
+            return -1;
+        Path old_mount = get_mount(old_path);
+        Path new_mount = get_mount(new_path);
+        if (!old_mount.fs || !new_mount.fs)
+            return -1;
+        if (old_mount.fs != new_mount.fs)
+            return -2;
+        return old_mount.fs->link(old_mount.path, new_mount.path);
+    }
+
+    int Mounts::stat(const char *path, struct ::stat *buf)
+    {
+        if (!path || !buf)
+            return -1;
+        Path mount = get_mount(path);
+        if (!mount.fs)
+            return -2;
+        return mount.fs->stat(mount.path, buf);
+    }
+
+    BaseFile *Mounts::mkfile(const char *name, int flags, int mode)
+    {
+        if (!name)
+            return nullptr;
+        Path mount = get_mount(name);
+        if (!mount.fs)
+            return nullptr;
+        return mount.fs->mkfile(mount.path, flags, mode);
+    }
+
+    BaseFile *Mounts::mkdir(const char *name, int flags, int mode)
+    {
+        if (!name)
+            return nullptr;
+        Path mount = get_mount(name);
+        if (!mount.fs)
+            return nullptr;
+        return mount.fs->mkdir(mount.path, flags, mode);
+    }
+
+    BaseFile *Mounts::mkfifo(const char *name, int flags, int mode)
+    {
+        if (!name)
+            return nullptr;
+        Path mount = get_mount(name);
+        if (!mount.fs)
+            return nullptr;
+        return mount.fs->mkfifo(mount.path, flags, mode);
+    }
 } // namespace Hamster
 

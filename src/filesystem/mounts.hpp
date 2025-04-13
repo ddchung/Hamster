@@ -55,6 +55,22 @@ namespace Hamster
         // returns the mountpoint and the remaining path
         Path get_mount(const char *path);
 
+        // filesystem functions
+
+        BaseFile *open(const char *path, int flags, ...);
+        BaseFile *open(const char *path, int flags, va_list args);
+
+        // old_path and new_path must be on the same filesystem
+        int rename(const char *old_path, const char *new_path);
+        int unlink(const char *path);
+
+        // old_path and new_path must be on the same filesystem
+        int link(const char *old_path, const char *new_path);
+        int stat(const char *path, struct ::stat *buf);
+        BaseFile *mkfile(const char *name, int flags, int mode);
+        BaseFile *mkdir(const char *name, int flags, int mode);
+        BaseFile *mkfifo(const char *name, int flags, int mode);
+
     private:
         List<Mount> mounts;
     };

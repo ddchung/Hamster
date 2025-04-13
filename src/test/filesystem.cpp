@@ -2,6 +2,7 @@
 
 #include <filesystem/mounts.hpp>
 #include <filesystem/file.hpp>
+#include <filesystem/ramfs.hpp>
 #include <memory/allocator.hpp>
 #include <cstring>
 #include <cstdlib>
@@ -29,6 +30,11 @@ public:
     ~TestFilesystem() override = default;
 
     Hamster::BaseFile *open(const char *path, int flags, ...) override
+    {
+        return Hamster::alloc<TestFile>();
+    }
+
+    Hamster::BaseFile *open(const char *path, int flags, va_list args) override
     {
         return Hamster::alloc<TestFile>();
     }
@@ -101,6 +107,18 @@ void test_filesystem()
     i = strcmp(mount.path, "/mnt/test4/file.txt");
     assert(i == 0);
 
+    // Test open
+    Hamster::BaseFile *file = mounts.open("/mnt/test1/file.txt", 0);
+    assert(file != nullptr);
+    assert(file->type() == Hamster::FileType::Regular);
+    i = file->remove();
+    assert(i == 0);
+    i = file->rename("new_file.txt");
+    assert(i == 0);
+    Hamster::dealloc<Hamster::BaseFile>(file);
+
+
+
     // Test umount
     i = mounts.umount("/");
     assert(i == 0);
@@ -122,4 +140,10 @@ void test_filesystem()
     assert(i != 0);
 
     // umount automatically frees the filesystem
+
+
+
+    // Test ramfs
+    Hamster::RamFs *ramfs = Hamster::alloc<Hamster::RamFs>();
+    Hamster::dealloc<Hamster::BaseFilesystem>(ramfs);
 }
