@@ -69,9 +69,9 @@ namespace Hamster
         virtual int unlink(const char *path) = 0;
         virtual int stat(const char *path, struct ::stat *buf) = 0;
         
-        virtual BaseFile *mkdir(const char *path, int flags, int mode) = 0;
-        virtual BaseFile *mkfifo(const char *path, int flags, int mode) = 0;
-        virtual BaseFile *mkfile(const char *path, int flags, int mode) = 0;
+        virtual BaseDirectory *mkdir(const char *path, int flags, int mode) = 0;
+        virtual BaseFifoFile *mkfifo(const char *path, int flags, int mode) = 0;
+        virtual BaseRegularFile *mkfile(const char *path, int flags, int mode) = 0;
     };
 } // namespace Hamster
 

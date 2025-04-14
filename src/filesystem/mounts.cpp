@@ -201,7 +201,7 @@ namespace Hamster
         return mount.fs->stat(mount.path, buf);
     }
 
-    BaseFile *Mounts::mkfile(const char *name, int flags, int mode)
+    BaseRegularFile *Mounts::mkfile(const char *name, int flags, int mode)
     {
         if (!name)
             return nullptr;
@@ -211,7 +211,7 @@ namespace Hamster
         return mount.fs->mkfile(mount.path, flags, mode);
     }
 
-    BaseFile *Mounts::mkdir(const char *name, int flags, int mode)
+    BaseDirectory *Mounts::mkdir(const char *name, int flags, int mode)
     {
         if (!name)
             return nullptr;
@@ -221,7 +221,7 @@ namespace Hamster
         return mount.fs->mkdir(mount.path, flags, mode);
     }
 
-    BaseFile *Mounts::mkfifo(const char *name, int flags, int mode)
+    BaseFifoFile *Mounts::mkfifo(const char *name, int flags, int mode)
     {
         if (!name)
             return nullptr;

@@ -67,9 +67,9 @@ namespace Hamster
         // old_path and new_path must be on the same filesystem
         int link(const char *old_path, const char *new_path);
         int stat(const char *path, struct ::stat *buf);
-        BaseFile *mkfile(const char *name, int flags, int mode);
-        BaseFile *mkdir(const char *name, int flags, int mode);
-        BaseFile *mkfifo(const char *name, int flags, int mode);
+        BaseRegularFile *mkfile(const char *name, int flags, int mode);
+        BaseDirectory *mkdir(const char *name, int flags, int mode);
+        BaseFifoFile *mkfifo(const char *name, int flags, int mode);
 
     private:
         List<Mount> mounts;

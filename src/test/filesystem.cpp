@@ -43,9 +43,9 @@ public:
     int unlink(const char *path) override { return 0; }
     int link(const char *old_path, const char *new_path) override { return 0; }
     int stat(const char *path, struct ::stat *buf) override { return 0; }
-    Hamster::BaseFile *mkfile(const char *name, int flags, int mode) override { return open(0, 0); }
-    Hamster::BaseFile *mkdir(const char *name, int flags, int mode) override { return open(0, 0); }
-    Hamster::BaseFile *mkfifo(const char *name, int flags, int mode) override { return open(0, 0); }
+    Hamster::BaseRegularFile *mkfile(const char *name, int flags, int mode) override { return (Hamster::BaseRegularFile*)open(0, 0); }
+    Hamster::BaseDirectory *mkdir(const char *name, int flags, int mode) override { return nullptr; }
+    Hamster::BaseFifoFile *mkfifo(const char *name, int flags, int mode) override { return nullptr; }
 };
 
 void test_filesystem()
