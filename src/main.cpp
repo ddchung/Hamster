@@ -15,11 +15,10 @@ int main()
   Serial.begin(115200);
   while (!Serial)
     ;
-  if (!SD.begin(BUILTIN_SDCARD))
+  while (!SD.begin(BUILTIN_SDCARD))
   {
-    Serial.println("SD Card failed or not present");
-    while (1)
-      ;
+    Serial.println("No SD card found, retrying in 1 second...");
+    delay(1000);
   }
 # endif // ARDUINO
 
