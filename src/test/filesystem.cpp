@@ -145,5 +145,97 @@ void test_filesystem()
 
     // Test ramfs
     Hamster::RamFs *ramfs = Hamster::alloc<Hamster::RamFs>();
-    Hamster::dealloc<Hamster::BaseFilesystem>(ramfs);
+    i = mounts.mount(ramfs, "/");
+    assert(i == 0);
+    i = mounts.is_mounted("/");
+    assert(i == true);
+    i = mounts.is_mounted("/mnt/test1");
+    assert(i == false);
+    i = mounts.is_mounted("/mnt/test2");
+    assert(i == false);
+
+    // Test mkfile
+    Hamster::BaseRegularFile *f2 = mounts.mkfile("/mnt/test1/file.txt", 0, 0);
+    assert(f2 != nullptr);
+
+    assert(f2->type() == Hamster::FileType::Regular);
+    f2->write((const uint8_t *)"Hello World", 11);
+    f2->seek(0, 0);
+    uint8_t buf[12];
+    f2->read(buf, 11);
+    buf[11] = 0;
+    i = strcmp((const char *)buf, "Hello World");
+    assert(i == 0);
+    i = f2->remove();
+    assert(i == 0);
+    Hamster::dealloc(f2);
+
+
+    const char* testData = "Hello, World!";
+    size_t len = std::strlen(testData);
+
+    // Create a new file
+    f2 = mounts.mkfile("/mnt/test1/file.txt", 0, 0);
+    assert(f2 != nullptr);
+
+    // Write data
+    int w = f2->write(reinterpret_cast<const uint8_t*>(testData), len);
+    assert(w >= 0 && static_cast<size_t>(w) == len);
+
+    // Seek to beginning
+    int64_t s = f2->seek(0, SEEK_SET);
+    assert(s >= 0);
+
+    // Read back data
+    uint8_t buffer[32] = {0};
+    int r = f2->read(buffer, len);
+    assert(r >= 0 && static_cast<size_t>(r) == len);
+    assert(std::memcmp(buffer, testData, len) == 0);
+
+    // Seek to offset 100
+    s = f2->seek(100, SEEK_SET);
+    assert(s == 100);
+
+    // Write single byte 'X'
+    const char x = 'X';
+    w = f2->write(reinterpret_cast<const uint8_t*>(&x), 1);
+    assert(w == 1);
+
+    // Seek to 100 and read it
+    s = f2->seek(100, SEEK_SET);
+    assert(s == 100);
+    uint8_t readX = 0;
+    r = f2->read(&readX, 1);
+    assert(r == 1);
+    assert(readX == 'X');
+
+    // Reset file by removing and creating it again
+    i = f2->remove();
+    assert(i == 0);
+    f2 = mounts.mkfile("/mnt/test1/file.txt", 0, 0);
+    assert(f2 != nullptr);
+
+    // Write "abcdef" at start
+    s = f2->seek(0, SEEK_SET);
+    assert(s == 0);
+    const char data2[] = "abcdef";
+    w = f2->write(reinterpret_cast<const uint8_t*>(data2), 6);
+    assert(w == 6);
+
+    // Seek to -2 from end and read
+    s = f2->seek(-2, SEEK_END);
+    assert(s >= 0);
+    uint8_t ch = 0;
+    r = f2->read(&ch, 1);
+    assert(r == 1);
+    assert(ch == 'e');
+
+    // Seek -1 from current and read again
+    s = f2->seek(-1, SEEK_CUR);
+    assert(s >= 0);
+    r = f2->read(&ch, 1);
+    assert(r == 1);
+    assert(ch == 'e');
+
+    mounts.umount("/");
 }
