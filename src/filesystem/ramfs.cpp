@@ -11,27 +11,30 @@ namespace Hamster
 {
     class RamFsDirNode;
 
-    class RamFsNode
+    namespace 
     {
-    public:
-        RamFsNode() : name(), parent(nullptr) {}
-        virtual ~RamFsNode() = default;
+        class RamFsNode
+        {
+        public:
+            RamFsNode() : name(), parent(nullptr) {}
+            virtual ~RamFsNode() = default;
 
-        virtual const FileType type() const = 0;
+            virtual const FileType type() const = 0;
 
-        String name;
-        RamFsDirNode *parent;
-    };
+            String name;
+            RamFsDirNode *parent;
+        };
 
-    class RamFsFileNode : public RamFsNode
-    {
-    public:
-        RamFsFileNode() = default;
-        ~RamFsFileNode() override = default;
+        class RamFsFileNode : public RamFsNode
+        {
+        public:
+            RamFsFileNode() = default;
+            ~RamFsFileNode() override = default;
 
-        const FileType type() const override { return FileType::Regular; }
-        String data;
-    };
+            const FileType type() const override { return FileType::Regular; }
+            String data;
+        };
+    }
 
     class RamFsDirNode : public RamFsNode
     {
@@ -112,308 +115,311 @@ namespace Hamster
         List<RamFsNode *> children;
     };
 
-    class RamFsFifoNode : public RamFsNode
+    namespace
     {
-    public:
-        RamFsFifoNode() = default;
-        ~RamFsFifoNode() override = default;
-        const FileType type() const override { return FileType::FIFO; }
-
-        int read(uint8_t *buf, size_t size)
+        class RamFsFifoNode : public RamFsNode
         {
-            size = std::min(size, fifo.size());
+        public:
+            RamFsFifoNode() = default;
+            ~RamFsFifoNode() override = default;
+            const FileType type() const override { return FileType::FIFO; }
 
-            for (size_t i = 0; i < size; ++i)
+            int read(uint8_t *buf, size_t size)
             {
-                buf[i] = fifo.front();
-                fifo.pop_front();
+                size = std::min(size, fifo.size());
+
+                for (size_t i = 0; i < size; ++i)
+                {
+                    buf[i] = fifo.front();
+                    fifo.pop_front();
+                }
+                return size;
             }
-            return size;
-        }
 
-        int write(const uint8_t *buf, size_t size)
+            int write(const uint8_t *buf, size_t size)
+            {
+                if (fifo.size() + size > fifo.max_size())
+                    return -1;
+
+                fifo.insert(fifo.end(), buf, buf + size);
+                return size;
+            }
+            Deque<uint8_t> fifo;
+        };
+
+        // file descriptors
+
+        class RamFsRegularFd : public BaseRegularFile
         {
-            if (fifo.size() + size > fifo.max_size())
-                return -1;
+        public:
+            RamFsRegularFd(RamFsFileNode *node) : node(node), pos(0) {}
 
-            fifo.insert(fifo.end(), buf, buf + size);
-            return size;
-        }
-        Deque<uint8_t> fifo;
-    };
+            // do not deallocate node because we don't own it
+            ~RamFsRegularFd() override = default;
 
-    // file descriptors
+            int rename(const char *name) override
+            {
+                if (!name || !name[0])
+                    return -1;
+                if (!node)
+                    return -2;
 
-    class RamFsRegularFd : public BaseRegularFile
-    {
-    public:
-        RamFsRegularFd(RamFsFileNode *node) : node(node), pos(0) {}
-
-        // do not deallocate node because we don't own it
-        ~RamFsRegularFd() override = default;
-
-        int rename(const char *name) override
-        {
-            if (!name || !name[0])
-                return -1;
-            if (!node)
-                return -2;
-
-            node->name = name;
-            return 0;
-        }
-
-        int remove() override
-        {
-            if (!node)
-                return -1;
-            if (!node->parent)
-                return -2;
-
-            int ret = node->parent->remove(node->name.c_str());
-            if (ret == 0)
-                node = nullptr;
-            return ret;
-        }
-
-        int read(uint8_t *buf, size_t size) override
-        {
-            if (!node)
-                return -1;
-            
-            size_t data_len = node->data.length();
-            if (pos >= data_len)
+                node->name = name;
                 return 0;
-            if (pos + size > data_len)
-                size = data_len - pos;
+            }
 
-            if (size == 0)
+            int remove() override
+            {
+                if (!node)
+                    return -1;
+                if (!node->parent)
+                    return -2;
+
+                int ret = node->parent->remove(node->name.c_str());
+                if (ret == 0)
+                    node = nullptr;
+                return ret;
+            }
+
+            int read(uint8_t *buf, size_t size) override
+            {
+                if (!node)
+                    return -1;
+                
+                size_t data_len = node->data.length();
+                if (pos >= data_len)
+                    return 0;
+                if (pos + size > data_len)
+                    size = data_len - pos;
+
+                if (size == 0)
+                    return 0;
+
+                memcpy(buf, node->data.c_str() + pos, size);
+                pos += size;
+                return size;
+            }
+
+            int write(const uint8_t *buf, size_t size) override
+            {
+                if (!node)
+                    return -1;
+
+                if (pos + size > node->data.max_size())
+                    size = node->data.max_size() - pos;
+                
+                // pad with trailing zeros if pos > data.length()
+                if (pos > node->data.length())
+                {
+                    size_t pad = pos - node->data.length();
+                    node->data.append(pad, '\0');
+                }
+
+                node->data.insert(pos, (const char *)buf, size);
+                pos += size;
+                return size;
+            }
+
+            int64_t seek(int64_t offset, int whence) override
+            {
+                if (!node)
+                    return -1;
+
+                auto len = node->data.length();
+
+                switch (whence)
+                {
+                case SEEK_SET:
+                    if (offset < 0)
+                        return -1;
+                    pos = offset;
+                    break;
+                case SEEK_CUR:
+                    if (pos + offset < 0)
+                        return -1;
+                    pos += offset;
+                    break;
+                case SEEK_END:
+                    if (len + offset < 0)
+                        return -1;
+                    pos = len + offset;
+                    break;
+                default:
+                    return -1;
+                }
+                return pos;
+            }
+
+            RamFsFileNode *node;
+            uint64_t pos;
+        };
+
+        class RamFsFifoFd : public BaseFifoFile
+        {
+        public:
+            RamFsFifoFd(RamFsFifoNode *node) : node(node) {}
+            ~RamFsFifoFd() override = default;
+
+            int rename(const char *name) override
+            {
+                if (!name || !name[0])
+                    return -1;
+                if (!node)
+                    return -2;
+
+                node->name = name;
                 return 0;
-
-            memcpy(buf, node->data.c_str() + pos, size);
-            pos += size;
-            return size;
-        }
-
-        int write(const uint8_t *buf, size_t size) override
-        {
-            if (!node)
-                return -1;
-
-            if (pos + size > node->data.max_size())
-                size = node->data.max_size() - pos;
-            
-            // pad with trailing zeros if pos > data.length()
-            if (pos > node->data.length())
-            {
-                size_t pad = pos - node->data.length();
-                node->data.append(pad, '\0');
             }
 
-            node->data.insert(pos, (const char *)buf, size);
-            pos += size;
-            return size;
-        }
-
-        int64_t seek(int64_t offset, int whence) override
-        {
-            if (!node)
-                return -1;
-
-            auto len = node->data.length();
-
-            switch (whence)
+            int remove() override
             {
-            case SEEK_SET:
-                if (offset < 0)
+                if (!node)
                     return -1;
-                pos = offset;
-                break;
-            case SEEK_CUR:
-                if (pos + offset < 0)
-                    return -1;
-                pos += offset;
-                break;
-            case SEEK_END:
-                if (len + offset < 0)
-                    return -1;
-                pos = len + offset;
-                break;
-            default:
-                return -1;
+                if (!node->parent)
+                    return -2;
+
+                int ret = node->parent->remove(node->name.c_str());
+                if (ret == 0)
+                    node = nullptr;
+                return ret;
             }
-            return pos;
-        }
 
-        RamFsFileNode *node;
-        uint64_t pos;
-    };
-
-    class RamFsFifoFd : public BaseFifoFile
-    {
-    public:
-        RamFsFifoFd(RamFsFifoNode *node) : node(node) {}
-        ~RamFsFifoFd() override = default;
-
-        int rename(const char *name) override
-        {
-            if (!name || !name[0])
-                return -1;
-            if (!node)
-                return -2;
-
-            node->name = name;
-            return 0;
-        }
-
-        int remove() override
-        {
-            if (!node)
-                return -1;
-            if (!node->parent)
-                return -2;
-
-            int ret = node->parent->remove(node->name.c_str());
-            if (ret == 0)
-                node = nullptr;
-            return ret;
-        }
-
-        int read(uint8_t *buf, size_t size) override
-        {
-            if (!node)
-                return -1;
-            return node->read(buf, size);
-        }
-
-        int write(const uint8_t *buf, size_t size) override
-        {
-            if (!node)
-                return -1;
-            return node->write(buf, size);
-        }
-
-        RamFsFifoNode *node;
-    };
-
-    class RamFsDirFd : public BaseDirectory
-    {
-    public:
-        RamFsDirFd(RamFsDirNode *node) : node(node) {}
-        ~RamFsDirFd() override = default;
-
-        int rename(const char *name) override
-        {
-            if (!name || !name[0])
-                return -1;
-            if (!node)
-                return -2;
-
-            node->name = name;
-            return 0;
-        }
-
-        int remove() override
-        {
-            if (!node)
-                return -1;
-            if (!node->parent)
-                return -2;
-
-            int ret = node->parent->remove(node->name.c_str());
-            if (ret == 0)
-                node = nullptr;
-            return ret;
-        }
-
-        char *const *list() override
-        {
-            if (!node)
-                return nullptr;
-            return node->list();
-        }
-
-        BaseFile *get(const char *name, int flags, ...) override
-        {
-            if (!node)
-                return nullptr;
-            if (!name || !name[0])
-                return nullptr;
-
-            RamFsNode *child = node->get(name);
-            if (!child)
-                return nullptr;
-
-            switch (child->type())
+            int read(uint8_t *buf, size_t size) override
             {
-            case FileType::Regular:
-                return alloc<RamFsRegularFd>(1, static_cast<RamFsFileNode *>(child));
-            case FileType::Directory:
-                return alloc<RamFsDirFd>(1, static_cast<RamFsDirNode *>(child));
-            case FileType::FIFO:
-                return alloc<RamFsFifoFd>(1, static_cast<RamFsFifoNode *>(child));
-            default:
-                return nullptr;
+                if (!node)
+                    return -1;
+                return node->read(buf, size);
             }
-        }
 
-        BaseFile *mkfile(const char *name, int flags, int mode) override
+            int write(const uint8_t *buf, size_t size) override
+            {
+                if (!node)
+                    return -1;
+                return node->write(buf, size);
+            }
+
+            RamFsFifoNode *node;
+        };
+
+        class RamFsDirFd : public BaseDirectory
         {
-            if (!node)
-                return nullptr;
-            if (!name || !name[0])
-                return nullptr;
+        public:
+            RamFsDirFd(RamFsDirNode *node) : node(node) {}
+            ~RamFsDirFd() override = default;
 
-            RamFsFileNode *file = alloc<RamFsFileNode>();
-            if (!file)
-                return nullptr;
+            int rename(const char *name) override
+            {
+                if (!name || !name[0])
+                    return -1;
+                if (!node)
+                    return -2;
 
-            node->add(name, file);
-            return alloc<RamFsRegularFd>(1, file);
-        }
+                node->name = name;
+                return 0;
+            }
 
-        BaseFile *mkdir(const char *name, int flags, int mode) override
-        {
-            if (!node)
-                return nullptr;
-            if (!name || !name[0])
-                return nullptr;
+            int remove() override
+            {
+                if (!node)
+                    return -1;
+                if (!node->parent)
+                    return -2;
 
-            RamFsDirNode *dir = alloc<RamFsDirNode>();
-            if (!dir)
-                return nullptr;
+                int ret = node->parent->remove(node->name.c_str());
+                if (ret == 0)
+                    node = nullptr;
+                return ret;
+            }
 
-            node->add(name, dir);
-            return alloc<RamFsDirFd>(1, dir);
-        }
+            char *const *list() override
+            {
+                if (!node)
+                    return nullptr;
+                return node->list();
+            }
 
-        BaseFile *mkfifo(const char *name, int flags, int mode) override
-        {
-            if (!node)
-                return nullptr;
-            if (!name || !name[0])
-                return nullptr;
+            BaseFile *get(const char *name, int flags, ...) override
+            {
+                if (!node)
+                    return nullptr;
+                if (!name || !name[0])
+                    return nullptr;
 
-            RamFsFifoNode *fifo = alloc<RamFsFifoNode>();
-            if (!fifo)
-                return nullptr;
+                RamFsNode *child = node->get(name);
+                if (!child)
+                    return nullptr;
 
-            node->add(name, fifo);
-            return alloc<RamFsFifoFd>(1, fifo);
-        }
+                switch (child->type())
+                {
+                case FileType::Regular:
+                    return alloc<RamFsRegularFd>(1, static_cast<RamFsFileNode *>(child));
+                case FileType::Directory:
+                    return alloc<RamFsDirFd>(1, static_cast<RamFsDirNode *>(child));
+                case FileType::FIFO:
+                    return alloc<RamFsFifoFd>(1, static_cast<RamFsFifoNode *>(child));
+                default:
+                    return nullptr;
+                }
+            }
 
-        int remove(const char *name) override
-        {
-            if (!node)
-                return -1;
-            if (!name || !name[0])
-                return -2;
+            BaseFile *mkfile(const char *name, int flags, int mode) override
+            {
+                if (!node)
+                    return nullptr;
+                if (!name || !name[0])
+                    return nullptr;
 
-            return node->remove(name);
-        }
+                RamFsFileNode *file = alloc<RamFsFileNode>();
+                if (!file)
+                    return nullptr;
 
-        RamFsDirNode *node;
-    };
+                node->add(name, file);
+                return alloc<RamFsRegularFd>(1, file);
+            }
+
+            BaseFile *mkdir(const char *name, int flags, int mode) override
+            {
+                if (!node)
+                    return nullptr;
+                if (!name || !name[0])
+                    return nullptr;
+
+                RamFsDirNode *dir = alloc<RamFsDirNode>();
+                if (!dir)
+                    return nullptr;
+
+                node->add(name, dir);
+                return alloc<RamFsDirFd>(1, dir);
+            }
+
+            BaseFile *mkfifo(const char *name, int flags, int mode) override
+            {
+                if (!node)
+                    return nullptr;
+                if (!name || !name[0])
+                    return nullptr;
+
+                RamFsFifoNode *fifo = alloc<RamFsFifoNode>();
+                if (!fifo)
+                    return nullptr;
+
+                node->add(name, fifo);
+                return alloc<RamFsFifoFd>(1, fifo);
+            }
+
+            int remove(const char *name) override
+            {
+                if (!node)
+                    return -1;
+                if (!name || !name[0])
+                    return -2;
+
+                return node->remove(name);
+            }
+
+            RamFsDirNode *node;
+        };
+    }
 
     RamFs::RamFs() : root(alloc<RamFsDirNode>())
     {
