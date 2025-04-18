@@ -33,13 +33,16 @@ int Hamster::_swap_out(int index, const uint8_t *data)
 {
     if (index < 0)
         return -1;
+    if (SDCARD_INIT() != 1)
+        return -2;
 
     if (make_swap_name(index) != 0)
         return -3;
-    SD.remove(name_buffer); //< FILE_WRITE does not truncate
     File f = SD.open(name_buffer, FILE_WRITE);
     if (!f)
         return -4;
+    f.truncate(0);
+    f.seek(0);
     
     if (f.write(data, HAMSTER_PAGE_SIZE) != HAMSTER_PAGE_SIZE)
     {
