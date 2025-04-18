@@ -16,6 +16,9 @@ namespace Hamster
     // called at the start of the program
     int _init_platform();
 
+    // Mount the root filesystem
+    int _mount_rootfs();
+
     // Each page takes up HAMSTER_PAGE_SIZE bytes
     int _swap_out(int index, const uint8_t *data);
 
