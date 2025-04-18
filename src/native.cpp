@@ -6,6 +6,11 @@
 #include <cstdlib>
 #include <cstdio>
 
+int Hamster::_init_platform()
+{
+    // nothing to do
+    return 0;
+}
 
 void *Hamster::_malloc(size_t size)
 {

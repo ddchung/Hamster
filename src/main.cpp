@@ -11,16 +11,7 @@ void test_filesystem();
 
 int main()
 {
-# ifdef ARDUINO
-  Serial.begin(115200);
-  while (!Serial)
-    ;
-  while (!SD.begin(BUILTIN_SDCARD))
-  {
-    Serial.println("No SD card found, retrying in 1 second...");
-    delay(1000);
-  }
-# endif // ARDUINO
+  Hamster::_init_platform();
 
   Hamster::_log("Testing Platform...\n");
   test_platform();

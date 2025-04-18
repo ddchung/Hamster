@@ -12,6 +12,10 @@ namespace Hamster
     // or negative error code on failure
     // unless otherwise specified
 
+    // Platform-dependent initialization
+    // called at the start of the program
+    int _init_platform();
+
     // Each page takes up HAMSTER_PAGE_SIZE bytes
     int _swap_out(int index, const uint8_t *data);
 
