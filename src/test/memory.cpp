@@ -186,6 +186,9 @@ void test_memory()
     }
 
     // big data
+    // might be slow, so disable
+#   if !defined(ARDUINO)
+
     for (int j = 0; j < 256; ++j)
     {
         i = mem_space.allocate_page(j * HAMSTER_PAGE_SIZE);
@@ -205,4 +208,5 @@ void test_memory()
     {
         assert(mem_space[j] == (uint8_t)hash_int(j));
     }
+#   endif
 }
