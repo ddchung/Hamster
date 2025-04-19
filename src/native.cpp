@@ -228,7 +228,6 @@ namespace
 
         BaseFile *open(const char *_path, int flags, va_list args) override
         {
-            printf("open: %s %d\n", _path, flags);
             if (!_path)
                 return nullptr;
             String path = ROOTFS_PATH + String(_path);
@@ -236,7 +235,6 @@ namespace
             
             if (::stat(path.c_str(), &st) <= 0 && S_ISDIR(st.st_mode))
             {
-                printf("found dir: %s\n", path.c_str());
                 return alloc<PosixDirectory>(1, path);
             }
 
@@ -252,14 +250,11 @@ namespace
                 fd = ::open(path.c_str(), flags);
             }
 
-            printf("fd: %d\n", fd);
-
             if (fd < 0)
                 return nullptr;
 
             if (fstat(fd, &st) < 0)
             {
-                printf("fstat failed: %s\n", path.c_str());
                 close(fd);
                 return nullptr;
             }
@@ -270,7 +265,6 @@ namespace
                 return alloc<PosixFifoFile>(1, fd, path);
             else
             {
-                printf("not a regular file or fifo: %s\n", path.c_str());
                 close(fd);
                 return nullptr;
             }
@@ -335,13 +329,10 @@ namespace
 
         BaseRegularFile *mkfile(const char *path_, int flags, int mode) override
         {
-            printf("mkfile: %s %d %d\n", path_, flags, mode);
             if (!path_)
                 return nullptr;
             String path = ROOTFS_PATH + String(path_);
-            printf("path: %s\n", path.c_str());
             int fd = ::open(path.c_str(), flags | O_CREAT, mode);
-            printf("fd: %d\n", fd);
             if (fd < 0)
                 return nullptr;
             return alloc<PosixRegularFile>(1, fd, path);

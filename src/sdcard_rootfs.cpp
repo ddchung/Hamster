@@ -289,9 +289,7 @@ namespace
             }
             flags |= O_CREAT | O_EXCL;
             flags &= ~O_DIRECTORY;
-
-            printf("Creating file %s\n", full_path);
-
+            
             File file = SD.open(full_path, flags);
             Hamster::dealloc(full_path);
             if (!file)
