@@ -24,7 +24,7 @@ namespace Hamster
     void dealloc(T* ptr) {
         if (ptr) {
             ptr->~T();
-            _free(ptr);
+            _free((void*)ptr);
         }
     }
 
