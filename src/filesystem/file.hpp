@@ -7,6 +7,9 @@
 #include <cstddef>
 #include <cstdarg>
 
+// expose some macros
+#include <fcntl.h>
+
 namespace Hamster
 {
     enum class FileType
