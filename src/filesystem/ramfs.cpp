@@ -7,11 +7,16 @@
 #include <algorithm>
 #include <fcntl.h>
 
+// Set to 1 to create all parents while creating a file
+// e.g. mkfile "a/b/c/d.txt" will create a, b, c, and d if they don't exist
+// but it will only create d if CREATE_ALL_PARENTS is 0
+#define CREATE_ALL_PARENTS 1
+
 namespace Hamster
 {
     class RamFsDirNode;
 
-    namespace 
+    namespace
     {
         class RamFsNode
         {
@@ -152,7 +157,7 @@ namespace Hamster
         class RamFsRegularFd : public BaseRegularFile
         {
         public:
-            RamFsRegularFd(RamFsFileNode *node) : node(node), pos(0) {}
+            RamFsRegularFd(RamFsFileNode *node, int flags) : node(node), pos(0), flags(flags) {}
 
             // do not deallocate node because we don't own it
             ~RamFsRegularFd() override = default;
@@ -186,6 +191,9 @@ namespace Hamster
                 if (!node)
                     return -1;
                 
+                if (flags & (O_RDWR | O_RDONLY) == 0)
+                    return -1;
+
                 size_t data_len = node->data.length();
                 if (pos >= data_len)
                     return 0;
@@ -208,6 +216,16 @@ namespace Hamster
                 if (pos + size > node->data.max_size())
                     size = node->data.max_size() - pos;
                 
+                if (flags & (O_RDWR | O_WRONLY) == 0)
+                    return -1;
+                
+                if (flags & O_APPEND)
+                {
+                    seek(0, SEEK_END);
+                    node->data.append((const char *)buf, size);
+                    return size;
+                }
+
                 // pad with trailing zeros if pos > data.length()
                 if (pos > node->data.length())
                 {
@@ -252,6 +270,7 @@ namespace Hamster
 
             RamFsFileNode *node;
             uint64_t pos;
+            int flags;
         };
 
         class RamFsFifoFd : public BaseFifoFile
@@ -352,7 +371,7 @@ namespace Hamster
                 switch (child->type())
                 {
                 case FileType::Regular:
-                    return alloc<RamFsRegularFd>(1, static_cast<RamFsFileNode *>(child));
+                    return alloc<RamFsRegularFd>(1, static_cast<RamFsFileNode *>(child), flags);
                 case FileType::Directory:
                     return alloc<RamFsDirFd>(1, static_cast<RamFsDirNode *>(child));
                 case FileType::FIFO:
@@ -374,7 +393,7 @@ namespace Hamster
                     return nullptr;
 
                 node->add(name, file);
-                return alloc<RamFsRegularFd>(1, file);
+                return alloc<RamFsRegularFd>(1, file, flags);
             }
 
             BaseFile *mkdir(const char *name, int flags, int mode) override
@@ -465,7 +484,7 @@ namespace Hamster
 
         if (!path[0])
         {
-            if (flags & O_EXCL)
+            if (flags & O_EXCL && flags & O_CREAT)
                 return nullptr;
             return alloc<RamFsDirFd>(1, parent);
         }
@@ -491,12 +510,16 @@ namespace Hamster
             RamFsNode *child = parent->get(name.c_str());
             if (!child)
             {
+#if CREATE_ALL_PARENTS
                 // make directory
-                if (!(flags & O_CREAT))
+                if (!(flags & (O_CREAT | O_TRUNC | O_APPEND | O_WRONLY | O_RDWR)))
                     return nullptr;
                 RamFsDirNode *dir = alloc<RamFsDirNode>();
                 parent->add(name.c_str(), dir);
                 return open_impl(next, dir, flags, mode);
+#else
+                return nullptr;
+#endif
             }
             if (child->type() != FileType::Directory)
                 return nullptr;
@@ -508,7 +531,7 @@ namespace Hamster
             if (!child)
             {
                 // make file or directory
-                if (!(flags & O_CREAT))
+                if (!(flags & (O_CREAT | O_TRUNC | O_APPEND | O_WRONLY | O_RDWR)))
                     return nullptr;
                 RamFsNode *new_node = nullptr;
                 if (flags & O_DIRECTORY)
@@ -519,12 +542,20 @@ namespace Hamster
                 if (flags & O_DIRECTORY)
                     return alloc<RamFsDirFd>(1, static_cast<RamFsDirNode *>(new_node));
                 else
-                    return alloc<RamFsRegularFd>(1, static_cast<RamFsFileNode *>(new_node));
+                    return alloc<RamFsRegularFd>(1, static_cast<RamFsFileNode *>(new_node), flags);
             }
-            if (flags & O_EXCL)
+            if (flags & O_EXCL && flags & O_CREAT)
+                return nullptr;
+            if (flags & O_DIRECTORY && child->type() != FileType::Directory)
                 return nullptr;
             if (child->type() == FileType::Regular)
-                return alloc<RamFsRegularFd>(1, static_cast<RamFsFileNode *>(child));
+            {
+                RamFsFileNode *file = static_cast<RamFsFileNode *>(child);
+                if (flags & O_TRUNC)
+                    file->data.clear();
+                RamFsRegularFd *fd = alloc<RamFsRegularFd>(1, file, flags);
+                return fd;
+            }
             else if (child->type() == FileType::Directory)
                 return alloc<RamFsDirFd>(1, static_cast<RamFsDirNode *>(child));
             else if (child->type() == FileType::FIFO)

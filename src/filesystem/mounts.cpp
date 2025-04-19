@@ -3,6 +3,7 @@
 #include <filesystem/mounts.hpp>
 #include <memory/allocator.hpp>
 #include <cstring>
+#include <fcntl.h>
 
 namespace Hamster
 {
@@ -53,6 +54,20 @@ namespace Hamster
 
         if (is_mounted(path))
             return -3;
+        
+        Path mount = get_mount(path);
+        if (mount.fs && mount.path)
+        {
+            // check if there is a directory there
+            BaseFile *file = mount.fs->open(mount.path, O_RDONLY);
+            if (!file || file->type() != FileType::Directory)
+            {
+                // mountpoint is not valid or does not exist
+                dealloc(file);
+                return -4;
+            }
+            dealloc(file);
+        }
 
         size_t len = strlen(path);
         

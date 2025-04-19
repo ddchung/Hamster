@@ -1,5 +1,6 @@
 #include <platform/platform.hpp>
 #include <filesystem/mounts.hpp>
+#include <filesystem/ramfs.hpp>
 #include <memory/allocator.hpp>
 
 #ifdef ARDUINO
@@ -28,17 +29,24 @@ int main()
   Hamster::_log("Done\n");
 
   // mount rootfs
-  Hamster::_log("Mounting root filesystem...\n");
+  Hamster::_log("Mounting filesystems...\n");
   if (Hamster::_mount_rootfs() < 0)
   {
     Hamster::_log("Failed to mount root filesystem\n");
     return -1;
   }
-  Hamster::_log("Root filesystem mounted\n");
+
+  Hamster::dealloc(Hamster::Mounts::instance().mkdir("/tmp", 0, 0));
+  if (Hamster::Mounts::instance().mount(Hamster::alloc<Hamster::RamFs>(), "/tmp") < 0)
+  {
+    Hamster::_log("Failed to mount ramfs on /tmp\n");
+    return -1;
+  }
+  Hamster::_log("Done\n");
 
   // make test files
   Hamster::_log("Creating test files...\n");
-  auto file = Hamster::Mounts::instance().mkfile("/test.txt", O_RDWR, 0);
+  auto file = Hamster::Mounts::instance().mkfile("/test.txt", O_RDWR, 0777);
   if (!file)
   {
     Hamster::_log("Failed to create test file\n");
@@ -49,4 +57,31 @@ int main()
   Hamster::_log("Test file created\n");
 
   Hamster::dealloc(file);
+
+  // List files
+  Hamster::_log("Listing files...\n");
+  Hamster::BaseFile *file2 = Hamster::Mounts::instance().open("/", O_RDONLY);
+  if (!file2 || file2->type() != Hamster::FileType::Directory)
+  {
+    Hamster::_log("Failed to open root directory\n");
+    return -1;
+  }
+  Hamster::BaseDirectory *dir = static_cast<Hamster::BaseDirectory *>(file2);
+  
+  char * const *files = dir->list();
+  if (!files)
+  {
+    Hamster::_log("Failed to list files\n");
+    return -1;
+  }
+
+  for (int i = 0; files[i]; ++i)
+  {
+    Hamster::_log(files[i]);
+    Hamster::_log("\n");
+    Hamster::dealloc(files[i]);
+  }
+  Hamster::dealloc(files);
+  Hamster::dealloc(dir);
+  Hamster::_log("Done\n");
 }
