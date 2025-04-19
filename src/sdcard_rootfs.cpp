@@ -2,6 +2,8 @@
 
 #if defined(ARDUINO) && 1
 
+#warning SD Card rootfs is not fully functional
+
 #include <Arduino.h>
 #include <SD.h>
 #include <platform/platform.hpp>
