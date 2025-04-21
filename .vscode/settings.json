@@ -88,6 +88,8 @@
         "locale": "cpp",
         "print": "cpp",
         "queue": "cpp",
-        "stack": "cpp"
-    }
+        "stack": "cpp",
+        "*.tpp": "cpp"
+    },
+    "C_Cpp.default.compilerPath": "/opt/homebrew/bin/g++-14"
 }

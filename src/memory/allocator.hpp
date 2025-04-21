@@ -16,7 +16,7 @@ namespace Hamster
     T *alloc(unsigned int N = 1, Args &&...args)
     {
         constexpr unsigned int additional = (sizeof(unsigned int) + sizeof(T) - 1) / sizeof(T);
-        void *raw_ptr = _malloc(sizeof(T) * (N + additional));
+        void *raw_ptr = _aligned_alloc(sizeof(T) * (N + additional), alignof(T));
         assert(raw_ptr != nullptr);
 
         uintptr_t raw_addr = reinterpret_cast<uintptr_t>(raw_ptr);
@@ -26,7 +26,7 @@ namespace Hamster
         auto *meta_ptr = reinterpret_cast<unsigned int *>(raw_ptr);
         *meta_ptr = N;
 
-        T *user_ptr = reinterpret_cast<T *>(meta_ptr + additional); // safely skip metadata
+        T *user_ptr = reinterpret_cast<T *>(meta_ptr) + additional; // safely skip metadata
         for (unsigned int i = 0; i < N; ++i)
         {
             new (user_ptr + i) T(std::forward<Args>(args)...);
@@ -41,7 +41,7 @@ namespace Hamster
             return;
 
         constexpr unsigned int additional = (sizeof(unsigned int) + sizeof(T) - 1) / sizeof(T);
-        unsigned int *meta_ptr = (unsigned int *)(ptr) - additional;
+        unsigned int *meta_ptr = (unsigned int *)(ptr - additional);
         unsigned int N = *meta_ptr;
 
         for (unsigned int i = 0; i < N; ++i)
