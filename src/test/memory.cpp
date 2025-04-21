@@ -3,6 +3,8 @@
 #include <memory/allocator.hpp>
 #include <memory/page.hpp>
 #include <memory/memory_space.hpp>
+#include <memory/stl_sequential.hpp>
+#include <memory/stl_map.hpp>
 #include <platform/platform.hpp>
 #include <cassert>
 #include <cstdlib>
@@ -29,7 +31,43 @@ void test_memory()
     {
         assert(arr[i] == 42);
     }
-    Hamster::dealloc<int, 10>(arr);
+    Hamster::dealloc(arr);
+
+    // more rigorous allocator tests
+    {
+        for (int i = 0; i < 100; ++i)
+        {
+            Hamster::Vector<Hamster::Vector<Hamster::Vector<int>>> vec3;
+            Hamster::Vector<Hamster::Vector<int>> vec2;
+            Hamster::Vector<int> vec1;
+
+            for (int i = 0; i < 10; ++i)
+            {
+                vec1.push_back(i);
+            }
+
+            for (int i = 0; i < 10; ++i)
+            {
+                vec2.push_back(vec1);
+            }
+
+            for (int i = 0; i < 10; ++i)
+            {
+                vec3.push_back(vec2);
+            }
+
+            for (int i = 0; i < 10; ++i)
+            {
+                for (int j = 0; j < 10; ++j)
+                {
+                    for (int k = 0; k < 10; ++k)
+                    {
+                        assert(vec3[i][j][k] == k);
+                    }
+                }
+            }
+        }
+    }
 
     // Test default constructor
     {
