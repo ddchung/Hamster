@@ -191,7 +191,7 @@ namespace Hamster
                 if (!node)
                     return -1;
                 
-                if (flags & (O_RDWR | O_RDONLY) == 0)
+                if ((flags & (O_RDWR | O_RDONLY)) == 0)
                     return -1;
 
                 size_t data_len = node->data.length();
@@ -216,7 +216,7 @@ namespace Hamster
                 if (pos + size > node->data.max_size())
                     size = node->data.max_size() - pos;
                 
-                if (flags & (O_RDWR | O_WRONLY) == 0)
+                if ((flags & (O_RDWR | O_WRONLY)) == 0)
                     return -1;
                 
                 if (flags & O_APPEND)
