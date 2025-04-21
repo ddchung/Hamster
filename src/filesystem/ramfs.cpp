@@ -449,6 +449,7 @@ namespace Hamster
     RamFs::~RamFs()
     {
         dealloc(root);
+        root = nullptr;
     }
 
     BaseFile *RamFs::open(const char *path, int flags, ...)
@@ -592,6 +593,7 @@ namespace Hamster
             {
                 dealloc(f1);
                 dealloc(f2);
+                f1 = f2 = nullptr;
             }
         } dealloc_at_end(file, new_parent);
 
