@@ -1,112 +1,73 @@
-// implementation of page.hpp
+// page implementation
 
 #include <memory/page.hpp>
-#include <memory/allocator.hpp>
-#include <platform/config.hpp>
-#include <platform/platform.hpp>
-#include <cstring>
-#include <cstdlib>
-#include <cassert>
-#include <utility>
-
-static uint8_t dummy;
+#include <memory/page_manager.hpp>
 
 namespace Hamster
 {
-    void Page::gen_id()
-    {
-        static int counter = 0;
-        swap_idx = ++counter;
-    }
-
-    void Page::deallocate()
-    {
-        dealloc<uint8_t>(data);
-        data = nullptr;
-    }
-
-    void Page::allocate()
-    {
-        deallocate();
-        data = alloc<uint8_t>(HAMSTER_PAGE_SIZE, 0);
-    }
-
     Page::Page()
-        : data(nullptr), swap_idx(-1), swapped(false), locked(false)
     {
-        allocate();
-        gen_id();
-    }
-
-    Page::Page(uint8_t *data)
-        : data(data), swap_idx(-1), swapped(false), locked(false)
-    {
-        assert(data != nullptr);
-        gen_id();
-    }
-
-    Page::Page(int swap_idx)
-        : data(nullptr), swap_idx(swap_idx), swapped(true), locked(false)
-    {
+        page_id = PageManager::instance().open_page();
     }
 
     Page::Page(Page &&other)
-        : data(other.data), swap_idx(other.swap_idx), swapped(other.swapped),
-          locked(other.locked)
     {
-        other.data = nullptr;
-        other.swap_idx = -1;
-        other.swapped = false;
-        other.locked = false;
+        page_id = other.page_id;
+        other.page_id = -1;
     }
 
     Page &Page::operator=(Page &&other)
     {
-        std::swap(*this, other);
+        if (this != &other)
+        {
+            page_id = other.page_id;
+            other.page_id = -1;
+        }
         return *this;
     }
-    
+
     Page::~Page()
     {
-        deallocate();
+        if (page_id >= 0)
+        {
+            PageManager::instance().close_page(page_id);
+        }
+        page_id = -1;
+    }
+
+    bool Page::is_swapped()
+    {
+        return PageManager::instance().is_swapped(page_id);
+    }
+
+    uint8_t *Page::get_data()
+    {
+        return PageManager::instance().get_data(page_id);
     }
 
     int Page::swap_in()
     {
-        if (!data)
-            allocate();
-        if (locked)
-            return -1;
-        if (_swap_in(swap_idx, data) < 0)
-            return -2;
-        swapped = false;
-        return 0;
+        return PageManager::instance().swap_in(page_id);
     }
 
     int Page::swap_out()
     {
-        if (swapped)
-            return 0;
-        if (locked)
-            return -1;
-        if (!data)
-            return -2;
-        if (_swap_out(swap_idx, data) < 0)
-            return -3;
-        deallocate();
-        swapped = true;
-        return 0;
-    }
-
-    uint8_t &Page::get_dummy()
-    {
-        return dummy;
+        return PageManager::instance().swap_out(page_id);
     }
 
     uint8_t &Page::operator[](size_t index)
     {
-        if (swapped || !data || index >= HAMSTER_PAGE_SIZE)
-            return get_dummy();
-        return data[index];
+        return PageManager::instance().get_byte(page_id, index);
     }
-}
+
+    uint8_t &Page::get_dummy_byte()
+    {
+        return PageManager::instance().get_byte_dummy();
+    }
+
+    uint16_t &Page::get_flags()
+    {
+        return PageManager::instance().get_flags(page_id);
+    }
+} // namespace Hamster
+

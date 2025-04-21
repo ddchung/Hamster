@@ -47,7 +47,7 @@ namespace Hamster
         if (queue(addr) < 0)
             return -3; // queue failed
         
-        return pages[addr].get_swap_index();
+        return pages[addr].get_page_id();
     }
 
     int MemorySpace::deallocate_page(uint64_t addr)
