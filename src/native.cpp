@@ -14,6 +14,7 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdarg>
+#include <unordered_map>
 
 #define ROOTFS_PATH "/Users/tin/hamster_rootfs"
 
@@ -340,6 +341,11 @@ namespace
     };
 }
 
+namespace
+{
+    std::unordered_map<void*, size_t> allocated_memory;
+}
+
 int Hamster::_init_platform()
 {
     // nothing to do
@@ -354,12 +360,17 @@ int Hamster::_mount_rootfs()
 
 void *Hamster::_malloc(size_t size)
 {
-    return malloc(size);
+    void *mem = malloc(size);
+    assert(allocated_memory.find(mem) == allocated_memory.end());
+    allocated_memory[mem] = size;
+    return mem;
 }
 
 int Hamster::_free(void *ptr)
 {
+    assert(allocated_memory.find(ptr) != allocated_memory.end());
     free(ptr);
+    allocated_memory.erase(ptr);
     return 0;
 }
 
