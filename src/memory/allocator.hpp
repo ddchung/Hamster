@@ -16,7 +16,7 @@ namespace Hamster
     T *alloc(unsigned int N = 1, Args &&...args)
     {
         constexpr unsigned int additional = (sizeof(unsigned int) + sizeof(T) - 1) / sizeof(T);
-        void *raw_ptr = _aligned_alloc(sizeof(T) * (N + additional), alignof(T));
+        void *raw_ptr = _malloc(sizeof(T) * (N + additional));
         assert(raw_ptr != nullptr);
 
         uintptr_t raw_addr = reinterpret_cast<uintptr_t>(raw_ptr);
