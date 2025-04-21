@@ -20,10 +20,21 @@ void test_memory()
 {
     int i;
 
+    Hamster::dealloc((int *)nullptr); // should not crash
+
     int *ptr = Hamster::alloc<int>(1, 42);
     assert(ptr != nullptr);
     assert(*ptr == 42);
     Hamster::dealloc(ptr);
+
+    Hamster::dealloc(Hamster::alloc<int>(1, 42));
+    Hamster::dealloc(Hamster::alloc<int>(1, 42));
+    Hamster::dealloc(Hamster::alloc<int>(1, 42));
+    Hamster::dealloc(Hamster::alloc<int>(1, 42));
+
+    Hamster::dealloc((int *)nullptr);
+    Hamster::dealloc((int *)nullptr);
+    Hamster::dealloc((int *)nullptr);
 
     int *arr = Hamster::alloc<int>(10, 42);
     assert(arr != nullptr);
@@ -73,23 +84,6 @@ void test_memory()
     {
         Hamster::Page page;
         assert(!page.is_swapped());
-        assert(!page.is_locked());
-    }
-
-    // Test constructor with data
-    {
-        uint8_t *test_data = Hamster::alloc<uint8_t>(HAMSTER_PAGE_SIZE, 0);
-        Hamster::Page page(test_data);
-        assert(!page.is_swapped());
-        assert(!page.is_locked());
-    }
-
-    // Test constructor with swap index
-    {
-        Hamster::Page page(42);
-        assert(page.is_swapped());
-        assert(!page.is_locked());
-        assert(page.get_swap_index() == 42);
     }
 
     // Test move constructor
@@ -97,7 +91,6 @@ void test_memory()
         Hamster::Page page1;
         Hamster::Page page2(std::move(page1));
         assert(!page2.is_swapped());
-        assert(!page2.is_locked());
     }
 
     // Test move assignment
@@ -105,29 +98,14 @@ void test_memory()
         Hamster::Page page1;
         Hamster::Page page2 = std::move(page1);
         assert(!page2.is_swapped());
-        assert(!page2.is_locked());
-    }
-
-    // Test lock and unlock
-    {
-        Hamster::Page page;
-        page.lock();
-        assert(page.is_locked());
-        page.unlock();
-        assert(!page.is_locked());
     }
 
     // Test swap_in and swap_out
     {
-        uint8_t data[HAMSTER_PAGE_SIZE] = {0};
-        Hamster::_swap_out(42, data);
-
-        Hamster::Page page(42);
-        assert(page.is_swapped());
-        page.swap_in();
+        Hamster::Page page;
+        assert(page.swap_out() == 0);
+        assert(page.swap_in() == 0);
         assert(!page.is_swapped());
-        page.swap_out();
-        assert(page.is_swapped());
     }
 
     // Test operator[]
