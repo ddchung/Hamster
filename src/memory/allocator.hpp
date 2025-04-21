@@ -59,12 +59,16 @@ namespace Hamster
     }
 
     template <typename T>
-    void dealloc(T *ptr
+    void dealloc(T *ptr_
 #if !defined(NDEBUG) && __cplusplus >= 202002L
         , std::source_location loc = std::source_location::current()
 #endif // !defined(NDEBUG) && __cplusplus >= 202002L
         )
     {
+        using U = std::remove_cv_t<std::remove_pointer_t<T>>;
+
+        auto ptr = (U *)ptr_;
+
         if (!ptr)
             return;
 
@@ -89,7 +93,7 @@ namespace Hamster
 
         for (unsigned int i = 0; i < N; ++i)
         {
-            ptr[i].~T();
+            ptr[i].~U();
         }
 
         _free(meta_ptr);
