@@ -155,7 +155,7 @@ void test_filesystem()
     assert(i == false);
 
     // Test mkfile
-    Hamster::BaseRegularFile *f2 = mounts.mkfile("/mnt/test1/file.txt", 0, 0);
+    Hamster::BaseRegularFile *f2 = mounts.mkfile("/mnt/test1/file.txt", O_RDWR, 0777);
     assert(f2 != nullptr);
 
     assert(f2->type() == Hamster::FileType::Regular);
