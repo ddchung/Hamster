@@ -89,7 +89,8 @@
         "print": "cpp",
         "queue": "cpp",
         "stack": "cpp",
-        "*.tpp": "cpp"
+        "*.tpp": "cpp",
+        "unordered_set": "cpp"
     },
     "C_Cpp.default.compilerPath": "/opt/homebrew/bin/g++-14"
 }
