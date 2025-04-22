@@ -5,6 +5,7 @@
 #include <memory/memory_space.hpp>
 #include <memory/stl_sequential.hpp>
 #include <memory/stl_map.hpp>
+#include <memory/tree.hpp>
 #include <platform/platform.hpp>
 #include <cassert>
 #include <cstdlib>
@@ -225,4 +226,44 @@ void test_memory()
         assert(mem_space[j] == (uint8_t)hash_int(j));
     }
 #   endif
+
+    // Tree
+    Hamster::Tree<int> tree;
+
+    /*
+        5
+       / \
+      3   7
+     / \ / \
+     1 2 6 8
+    */
+
+    auto it = tree.root();
+
+    *it = 5;
+
+    it.emplace(3);
+    it.emplace(7);
+
+    it.move_to(0);
+
+    it.emplace(1);
+    it.emplace(2);
+
+    --it;
+
+    it.move_to(1);
+
+    it.emplace(6);
+    it.emplace(8);
+
+    auto it2 = tree.root();
+
+    assert(*it2 == 5);
+    assert(*it2[0] == 3);
+    assert(*it2[1] == 7);
+    assert(*it2[0][0] == 1);
+    assert(*it2[0][1] == 2);
+    assert(*it2[1][0] == 6);
+    assert(*it2[1][1] == 8);
 }
