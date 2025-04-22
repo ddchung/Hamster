@@ -51,7 +51,7 @@ namespace Hamster
             // returns *this
             Iterator &move_to(size_t index);
             
-            // Move *this to the first child
+            // Move through the tree in a depth-first manner
             // returns *this
             Iterator &operator++();
 
@@ -76,6 +76,11 @@ namespace Hamster
 
         // Get an iterator to the root
         Iterator root() { return Iterator(&r); }
+
+        // Get a depth-first iterator to the root
+        Iterator begin() { return Iterator(&r); }
+
+        Iterator end() { return Iterator(nullptr); }
 
     private:
         Node r;
@@ -118,7 +123,7 @@ template <typename T>
 typename Hamster::Tree<T>::Iterator Hamster::Tree<T>::Iterator::operator[](size_t index)
 {
     if (current == nullptr || index >= current->children.size())
-        return *this;
+        return Iterator(nullptr);
 
     return Iterator(&current->children[index]);
 }
@@ -128,14 +133,31 @@ typename Hamster::Tree<T>::Iterator &Hamster::Tree<T>::Iterator::move_to(size_t 
 {
     if (current != nullptr && index < current->children.size())
         current = &current->children[index];
+    else
+        current = nullptr;
     return *this;
 }
 
 template <typename T>
 typename Hamster::Tree<T>::Iterator &Hamster::Tree<T>::Iterator::operator++()
 {
-    if (current != nullptr && current->children.size() > 0)
+    if (current == nullptr)
+        return *this;
+    if (current->children.size() > 0)
         current = &current->children[0];
+    else while (current->parent != nullptr)
+    {
+        size_t new_index = current - current->parent->children.data() + 1;
+        if (new_index >= current->parent->children.size())
+            current = current->parent;
+        else
+        {
+            current = &current->parent->children[new_index];
+            return *this;
+        }
+    }
+    
+    current = nullptr;
     return *this;
 }
 
@@ -152,6 +174,8 @@ typename Hamster::Tree<T>::Iterator &Hamster::Tree<T>::Iterator::operator--()
 {
     if (current != nullptr && current->parent != nullptr)
         current = current->parent;
+    else
+        current = nullptr;
     return *this;
 }
 

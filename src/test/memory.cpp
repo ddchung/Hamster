@@ -266,4 +266,16 @@ void test_memory()
     assert(*it2[0][1] == 2);
     assert(*it2[1][0] == 6);
     assert(*it2[1][1] == 8);
+
+    int expected[] = {
+        5, 3, 1, 2, 7, 6, 8
+    };
+
+    i = 0;
+
+    for (auto &x : tree)
+    {
+        assert(x == expected[i]);
+        ++i;
+    }
 }
