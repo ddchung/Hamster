@@ -23,10 +23,7 @@
 namespace Hamster
 {
 #ifndef NDEBUG
-    namespace
-    {
-        std::unordered_set<void *> allocated_pointers;
-    } // namespace
+    inline std::unordered_set<void *> allocated_pointers;
 #endif // NDEBUG
     
 
