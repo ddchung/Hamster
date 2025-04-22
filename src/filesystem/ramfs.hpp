@@ -6,7 +6,7 @@
 
 namespace Hamster
 {
-    class RamFsDirNode;
+    struct RamFsData;
 
     class RamFs : public BaseFilesystem
     {
@@ -26,8 +26,6 @@ namespace Hamster
         BaseFifoFile *mkfifo(const char *name, int flags, int mode) override;
 
     private:
-        RamFsDirNode *root;
-
-        BaseFile *open_impl(const char *path, RamFsDirNode *parent, int flags, int mode);
+        RamFsData *data;
     };
 } // namespace Hamster
