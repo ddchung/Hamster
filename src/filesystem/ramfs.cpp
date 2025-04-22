@@ -253,12 +253,12 @@ namespace Hamster
                     pos = offset;
                     break;
                 case SEEK_CUR:
-                    if (pos + offset < 0)
+                    if ((int64_t)pos + offset < 0)
                         return -1;
                     pos += offset;
                     break;
                 case SEEK_END:
-                    if (len + offset < 0)
+                    if ((int64_t)len + offset < 0)
                         return -1;
                     pos = len + offset;
                     break;
