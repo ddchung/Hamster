@@ -356,7 +356,7 @@ namespace Hamster
             int open_flags;
         };
 
-        class RamFsFifoFile : public RamFsFile, public BaseFifoFile
+        class RamFsFifoFile : private RamFsFile, public BaseFifoFile
         {
         public:
             // takes ownership of the fd
@@ -433,7 +433,7 @@ namespace Hamster
             }
         };
 
-        class RamFsRegularFile : public RamFsFile, public BaseRegularFile
+        class RamFsRegularFile : private RamFsFile, public BaseRegularFile
         {
         public:
             RamFsRegularFile(int fd, RamFsData &fs_data, int flags)
@@ -599,7 +599,7 @@ namespace Hamster
             }
         };
 
-        class RamFsDirectory : public RamFsFile, public BaseDirectory
+        class RamFsDirectory : private RamFsFile, public BaseDirectory
         {
         public:
             RamFsDirectory(int fd, RamFsData &data, int flags)
@@ -1066,6 +1066,7 @@ namespace Hamster
                 name[next - path] = '\0';
                 BaseFile *file = dir->get(name, (flags & ~O_CREAT) | O_DIRECTORY, args);
                 dealloc(name);
+                name = nullptr;
                 if (file == nullptr)
                     return nullptr;
                 assert(file->type() == FileType::Directory);
@@ -1181,7 +1182,8 @@ namespace Hamster
     BaseRegularFile *RamFs::mkfile(const char *name, int flags, int mode) 
     {
         BaseFile *f = open(name, O_WRONLY|O_CREAT|O_TRUNC, mode);
-        assert(f);
+        if (!f)
+            return nullptr;
         assert(f->type() == FileType::Regular);
         return (BaseRegularFile *)f;
     }
@@ -1189,7 +1191,8 @@ namespace Hamster
     BaseDirectory *RamFs::mkdir(const char *name, int flags, int mode) 
     {
         BaseFile *f = open(name, O_WRONLY|O_CREAT|O_DIRECTORY, mode);
-        assert(f);
+        if (!f)
+            return nullptr;
         assert(f->type() == FileType::Directory);
         return (BaseDirectory *)f;
     }

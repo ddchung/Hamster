@@ -164,6 +164,17 @@ void test_filesystem()
     i = mounts.is_mounted("/mnt/test2");
     assert(i == false);
 
+    // mkdir
+    Hamster::BaseDirectory *dir = mounts.mkdir("/mnt", 0, 0777);
+    assert(dir != nullptr);
+    assert(dir->type() == Hamster::FileType::Directory);
+    Hamster::dealloc(dir);
+
+    dir = mounts.mkdir("/mnt/test1", 0, 0777);
+    assert(dir != nullptr);
+    assert(dir->type() == Hamster::FileType::Directory);
+    Hamster::dealloc(dir);
+
     // Test mkfile
     Hamster::BaseRegularFile *f2 = mounts.mkfile("/mnt/test1/file.txt", O_RDWR, 0777);
     assert(f2 != nullptr);

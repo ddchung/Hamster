@@ -10,9 +10,11 @@
 
 #ifndef NDEBUG
 
-#include <unordered_set>
+#include <unordered_map>
+#include <string>
 #include <cstdio>
 #include <cstdlib>
+#include <typeinfo>
 
 #if __cplusplus >= 202002L
 # include <source_location>
@@ -23,7 +25,14 @@
 namespace Hamster
 {
 #ifndef NDEBUG
-    inline std::unordered_set<void *> allocated_pointers;
+    inline std::unordered_map<void *, std::string> allocated_pointers;
+
+    template <typename T>
+    inline const char *type_name()
+    {
+        return __PRETTY_FUNCTION__;
+    }
+
 #endif // NDEBUG
     
 
@@ -45,7 +54,7 @@ namespace Hamster
     
 #ifndef NDEBUG
         assert(allocated_pointers.find(user_ptr) == allocated_pointers.end());
-        allocated_pointers.insert(user_ptr);
+        allocated_pointers[user_ptr] = type_name<T>();
 #endif // NDEBUG
 
         for (unsigned int i = 0; i < N; ++i)
@@ -80,6 +89,18 @@ namespace Hamster
             printf("Pointer: %p\n", (void*)ptr);
             abort();
             return;
+        }
+        else if (allocated_pointers[ptr] != type_name<U>())
+        {
+# if __cplusplus >= 202002L
+            printf("Warning: possible type mismatch detected at %s:%d\n", loc.file_name(), (int)loc.line());
+            printf("Expected: %s\n", allocated_pointers[ptr].c_str());
+            printf("Actual: %s\n", type_name<U>());
+# else // __cplusplus >= 202002L
+            printf("Warning: possible type mismatch detected\n");
+            printf("Expected: %s\n", allocated_pointers[ptr].c_str());
+            printf("Actual: %s\n", type_name<U>());
+# endif // __cplusplus >= 202002L
         }
         allocated_pointers.erase(ptr);
 #endif // NDEBUG
