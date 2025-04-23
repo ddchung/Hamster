@@ -68,17 +68,22 @@ namespace
             return ::fchown(fd, uid, gid);
         }
 
+        const char *name() const override
+        {
+            return strrchr(path.c_str(), '/');
+        }
+
         int remove() override
         {
             return ::unlink(path.c_str());
         }
 
-        int read(uint8_t *buf, size_t size) override
+        ssize_t read(uint8_t *buf, size_t size) override
         {
             return ::read(fd, buf, size);
         }
 
-        int write(const uint8_t *buf, size_t size) override
+        ssize_t write(const uint8_t *buf, size_t size) override
         {
             return ::write(fd, buf, size);
         }
@@ -86,6 +91,24 @@ namespace
         int64_t seek(int64_t offset, int whence) override
         {
             return ::lseek(fd, offset, whence);
+        }
+
+        int64_t tell() const override
+        {
+            return ::lseek(fd, 0, SEEK_CUR);
+        }
+
+        int truncate(int64_t size) override
+        {
+            return ::ftruncate(fd, size);
+        }
+
+        int64_t size() const
+        {
+            struct ::stat st;
+            if (::fstat(fd, &st) < 0)
+                return -1;
+            return st.st_size;
         }
     };
 
@@ -116,13 +139,41 @@ namespace
         {
             return ::unlink(path.c_str());
         }
+        
+        int stat(struct ::stat *buf) override
+        {
+            return ::fstat(fd, buf);
+        }
 
-        int read(uint8_t *buf, size_t size) override
+        int mode() const override
+        {
+            struct ::stat st;
+            if (::fstat(fd, &st) < 0)
+                return -1;
+            return st.st_mode;
+        }
+
+        int chmod(int mode) override
+        {
+            return ::fchmod(fd, mode);
+        }
+        
+        int chown(int uid, int gid) override
+        {
+            return ::fchown(fd, uid, gid);
+        }
+
+        const char *name() const override
+        {
+            return strrchr(path.c_str(), '/');
+        }
+
+        ssize_t read(uint8_t *buf, size_t size) override
         {
             return ::read(fd, buf, size);
         }
 
-        int write(const uint8_t *buf, size_t size) override
+        ssize_t write(const uint8_t *buf, size_t size) override
         {
             return ::write(fd, buf, size);
         }
@@ -147,6 +198,34 @@ namespace
         int remove() override
         {
             return ::rmdir(path.c_str());
+        }
+
+        int stat(struct ::stat *buf) override
+        {
+            return ::stat(path.c_str(), buf);
+        }
+
+        int mode() const override
+        {
+            struct ::stat st;
+            if (::stat(path.c_str(), &st) < 0)
+                return -1;
+            return st.st_mode;
+        }
+
+        int chmod(int mode) override
+        {
+            return ::chmod(path.c_str(), mode);
+        }
+        
+        int chown(int uid, int gid) override
+        {
+            return ::chown(path.c_str(), uid, gid);
+        }
+
+        const char *name() const override
+        {
+            return strrchr(path.c_str(), '/') + 1;
         }
 
         char * const *list() override {
@@ -179,10 +258,26 @@ namespace
 
         BaseFile *get(const char *name, int flags, ...) override
         {
+            va_list args;
+            va_start(args, flags);
+            BaseFile *f = get(name, flags, args);
+            va_end(args);
+            return f;
+        }
+
+        BaseFile *get(const char *name, int flags, va_list args) override
+        {
             String full = path + "/" + name;
             int fd = open(full.c_str(), flags);
-            if (fd < 0)
+            if (fd < 0 && errno != ENOENT)
                 return nullptr;
+            else if (fd < 0)
+            {
+                int mode = va_arg(args, int);
+                fd = open(full.c_str(), flags | O_CREAT, mode);
+                if (fd < 0)
+                    return nullptr;
+            }
 
             struct stat st;
             if (fstat(fd, &st) < 0)

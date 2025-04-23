@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstdarg>
+#include <sys/types.h>
 
 // expose some macros
 #include <fcntl.h>
@@ -64,6 +65,7 @@ namespace Hamster
         virtual const FileType type() const override { return FileType::Directory; }
         virtual char * const *list() = 0;
         virtual BaseFile *get(const char *name, int flags, ...) = 0;
+        virtual BaseFile *get(const char *name, int flags, va_list args) = 0;
 
         virtual BaseFile *mkfile(const char *name, int flags, int mode) = 0;
         virtual BaseFile *mkdir(const char *name, int flags, int mode) = 0;
