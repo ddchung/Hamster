@@ -344,6 +344,11 @@ namespace Hamster
                 return node->name.c_str();
             }
 
+            int get_fd() const
+            {
+                return fd;
+            }
+
         protected:
             int fd;
             RamFsData &fs_data;
@@ -369,6 +374,7 @@ namespace Hamster
             int chmod(int mode) override { return RamFsFile::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsFile::chown(uid, gid); }
             const char *name() const override { return RamFsFile::name(); }
+            int get_fd() const override { return RamFsFile::get_fd(); }
 
             ssize_t read(uint8_t *buf, size_t size) override
             {
@@ -444,6 +450,7 @@ namespace Hamster
             int chmod(int mode) override { return RamFsFile::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsFile::chown(uid, gid); }
             const char *name() const override { return RamFsFile::name(); }
+            int get_fd() const override { return RamFsFile::get_fd(); }
 
             ssize_t read(uint8_t *buf, size_t size) override
             {
@@ -609,6 +616,7 @@ namespace Hamster
             int chmod(int mode) override { return RamFsFile::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsFile::chown(uid, gid); }
             const char *name() const override { return RamFsFile::name(); }
+            int get_fd() const override { return RamFsFile::get_fd(); }
 
             char * const * list() override
             {
@@ -634,7 +642,7 @@ namespace Hamster
                 return strings;
             }
 
-            BaseFile *get(const char *name, int flags, ...)
+            BaseFile *get(const char *name, int flags, ...) override
             {
                 va_list args;
                 va_start(args, flags);
@@ -643,7 +651,7 @@ namespace Hamster
                 return f;
             }
 
-            BaseFile *get(const char *name, int flags, va_list args)
+            BaseFile *get(const char *name, int flags, va_list args) override
             {
                 if (!name)
                 {
@@ -1056,7 +1064,7 @@ namespace Hamster
                 char *name = alloc<char>(next - path + 1);
                 strncpy(name, path, next - path);
                 name[next - path] = '\0';
-                BaseFile *file = dir->get(name, flags | O_DIRECTORY, args);
+                BaseFile *file = dir->get(name, (flags & ~O_CREAT) | O_DIRECTORY, args);
                 dealloc(name);
                 if (file == nullptr)
                     return nullptr;
@@ -1073,17 +1081,138 @@ namespace Hamster
 
     int RamFs::rename(const char *old_path, const char *new_path)
     {
-        if (!old_path || !new_path)
+        if (!old_path || !new_path || !*old_path || !*new_path)
         {
             error = EINVAL;
             return -1;
         }
+
+        BaseFile *file = open(old_path, O_RDONLY);
+        if (!file)
+            return -1;
+
+        const char *new_path_last = strrchr(new_path, '/');
+        size_t new_dir_len = 0;
+        if (new_path_last)
+            new_dir_len = new_path_last - new_path;
+
+        String new_dir_path{new_path, new_dir_len};
+
+        BaseFile *dir = open(new_dir_path.c_str(), O_RDONLY);
+        if (!dir)
+        {
+            dealloc(file);
+            return -1;
+        }
+
+        int file_fd, dir_fd;
+        file_fd = file->get_fd();
+        dir_fd = dir->get_fd();
+        RamFsTreeNode *file_node = data->fd_manager.get_node(file_fd);
+        RamFsTreeNode *dir_node = data->fd_manager.get_node(dir_fd);
+
+        if (!file_node || !dir_node)
+        {
+            error = EBADF;
+            dealloc(file);
+            dealloc(dir);
+            return -1;
+        }
+
+        auto file_it = data->tree.begin();
+        auto dir_it = data->tree.begin();
+
+        for (; file_it != data->tree.end(); ++file_it)
+            if (*file_it == file_node)
+                break;
+        for (; dir_it != data->tree.end(); ++dir_it)
+            if (*dir_it == dir_node)
+                break;
+        if (!file_it || !dir_it)
+        {
+            dealloc(file);
+            dealloc(dir);
+            return -1;
+        }
+
+        for (auto &child : dir_it.children())
+            if (child.data->name == new_path_last)
+            {
+                error = EEXIST;
+                dealloc(file);
+                dealloc(dir);
+                return -1;
+            }
+        file_it.node()->parent->children.erase(file_it.node()->parent->children.begin() + (file_it.node() - file_it.node()->parent->children.data()));
+        dir_it.insert(file_node);
+        file_node->name = new_path_last;
+
+        dealloc(file);
+        dealloc(dir);
+        return 0;
     }
 
-    int RamFs::unlink(const char *path) { return -1; }
-    int RamFs::link(const char *old_path, const char *new_path) { return -1; }
-    int RamFs::stat(const char *path, struct ::stat *buf) { return -1; }
-    BaseRegularFile *RamFs::mkfile(const char *name, int flags, int mode) { return nullptr; }
-    BaseDirectory *RamFs::mkdir(const char *name, int flags, int mode) { return nullptr; }
-    BaseFifoFile *RamFs::mkfifo(const char *name, int flags, int mode) { return nullptr; }
+    int RamFs::unlink(const char *path) 
+    {
+        BaseFile *file = open(path, O_WRONLY);
+        if (!file)
+            return -1;
+        int ret = file->remove();
+        dealloc(file);
+        return ret;
+    }
+
+    int RamFs::link(const char *old_path, const char *new_path) 
+    {
+        error = ENOSYS;
+        return -1;
+    }
+
+    int RamFs::stat(const char *path, struct ::stat *buf) 
+    {
+        BaseFile *file = open(path, O_RDONLY);
+        if (!file)
+            return -1;
+        int ret = file->stat(buf);
+        dealloc(file);
+        return ret;
+    }
+
+    BaseRegularFile *RamFs::mkfile(const char *name, int flags, int mode) 
+    {
+        BaseFile *f = open(name, O_WRONLY|O_CREAT|O_TRUNC, mode);
+        assert(f);
+        assert(f->type() == FileType::Regular);
+        return (BaseRegularFile *)f;
+    }
+
+    BaseDirectory *RamFs::mkdir(const char *name, int flags, int mode) 
+    {
+        BaseFile *f = open(name, O_WRONLY|O_CREAT|O_DIRECTORY, mode);
+        assert(f);
+        assert(f->type() == FileType::Directory);
+        return (BaseDirectory *)f;
+    }
+
+    BaseFifoFile *RamFs::mkfifo(const char *name, int flags, int mode) 
+    {
+        if (!name)
+        {
+            error = EINVAL;
+            return nullptr;
+        }
+        const char *last = strrchr(name, '/');
+        String dir_path{name, last ? last - name : strlen(name)};
+        BaseDirectory *dir = (BaseDirectory *)open(dir_path.c_str(), O_RDWR, mode);
+        if (!dir)
+            return nullptr;
+        BaseFile *f = dir->mkfifo(last ? last : name, flags, mode);
+        if (!f)
+        {
+            dealloc(dir);
+            return nullptr;
+        }
+        assert(f->type() == FileType::FIFO);
+        return (BaseFifoFile *)f;
+    }
 } // namespace Hamster

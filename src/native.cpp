@@ -62,7 +62,7 @@ namespace
         {
             return ::fchmod(fd, mode);
         }
-        
+
         int chown(int uid, int gid) override
         {
             return ::fchown(fd, uid, gid);
@@ -103,7 +103,7 @@ namespace
             return ::ftruncate(fd, size);
         }
 
-        int64_t size() const
+        int64_t size() const override
         {
             struct ::stat st;
             if (::fstat(fd, &st) < 0)

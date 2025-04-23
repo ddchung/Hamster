@@ -10,6 +10,7 @@ namespace Hamster
     template <typename T>
     class Tree
     {
+    public:
         struct Node
         {
             template <typename U>
@@ -22,8 +23,7 @@ namespace Hamster
             Vector<Node> children;
             Node *parent;
         };
-        
-    public:
+
         class Iterator
         {
         public:
@@ -35,6 +35,7 @@ namespace Hamster
             inline T &operator*() { return current->data; }
             inline T *operator->() { return &current->data; }
             inline Vector<Node> &children() { return current->children; }
+            inline Node *node() { return current; }
 
             void remove(size_t index);
 

@@ -39,6 +39,9 @@ namespace Hamster
         // returns a weak pointer, so don't modify or delete
         // data should be valid until the file is closed or renamed
         virtual const char *name() const = 0;
+
+        // optional
+        virtual int get_fd() const { return -1; }
     };
 
     class BaseFifoFile : public BaseFile
