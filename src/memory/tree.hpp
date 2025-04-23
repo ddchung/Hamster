@@ -29,6 +29,8 @@ namespace Hamster
         public:
             friend class Tree;
 
+            Iterator() : current(nullptr) {}
+
             inline operator bool() const { return current != nullptr; }
             inline T &operator*() { return current->data; }
             inline T *operator->() { return &current->data; }
