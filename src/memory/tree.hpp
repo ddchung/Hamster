@@ -12,8 +12,6 @@ namespace Hamster
     {
         struct Node
         {
-            explicit Node() : parent(nullptr) {}
-
             template <typename U>
             explicit Node(U&& value) : data(std::forward<U>(value)), parent(nullptr) {}
 
@@ -37,6 +35,8 @@ namespace Hamster
             inline Vector<Node> &children() { return current->children; }
 
             void remove(size_t index);
+
+            void remove();
 
             template <typename U>
             void insert(U&& value);
@@ -72,7 +72,10 @@ namespace Hamster
             Node *current;
         };
 
-        Tree() : r() {}
+        template <typename... Args>
+        explicit Tree(Args&&... args) : r(std::forward<Args>(args)...)
+        {
+        }
 
         // Get an iterator to the root
         Iterator root() { return Iterator(&r); }
@@ -94,6 +97,17 @@ void Hamster::Tree<T>::Iterator::remove(size_t index)
         return;
 
     current->children.erase(current->children.begin() + index);
+}
+
+template <typename T>
+void Hamster::Tree<T>::Iterator::remove()
+{
+    if (current == nullptr || current->parent == nullptr)
+        return;
+
+    size_t index = current - current->parent->children.data();
+    current->parent->children.erase(current->parent->children.begin() + index);
+    current = nullptr;
 }
 
 

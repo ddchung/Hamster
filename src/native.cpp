@@ -45,6 +45,29 @@ namespace
             return res;
         }
 
+        int stat(struct ::stat *buf) override
+        {
+            return ::fstat(fd, buf);
+        }
+
+        int mode() const override
+        {
+            struct ::stat st;
+            if (::fstat(fd, &st) < 0)
+                return -1;
+            return st.st_mode;
+        }
+
+        int chmod(int mode) override
+        {
+            return ::fchmod(fd, mode);
+        }
+        
+        int chown(int uid, int gid) override
+        {
+            return ::fchown(fd, uid, gid);
+        }
+
         int remove() override
         {
             return ::unlink(path.c_str());
