@@ -17,7 +17,7 @@
 #include <typeinfo>
 
 #if __cplusplus >= 202002L
-# include <source_location>
+#include <source_location>
 #endif // __cplusplus >= 202002L
 
 #endif // NDEBUG
@@ -34,86 +34,67 @@ namespace Hamster
     }
 
 #endif // NDEBUG
-    
 
     template <typename T, typename... Args>
-    T *alloc(unsigned int N = 1, Args &&...args)
+    T *alloc(std::size_t N = 1, Args &&...args)
     {
-        constexpr unsigned int additional = (sizeof(unsigned int) + sizeof(T) - 1) / sizeof(T);
-        void *raw_ptr = _malloc(sizeof(T) * (N + additional));
-        assert(raw_ptr != nullptr);
+        static_assert(std::is_object<T>::value, "T must be object type");
+        const std::size_t alignment = alignof(T);
+        const std::size_t data_size = sizeof(T) * N;
+        // header holds (void* original_malloc_ptr) + (std::size_t count)
+        const std::size_t header_size = sizeof(void *) + sizeof(std::size_t);
+        // add alignment-1 so we can align the user-pointer
+        const std::size_t total_size = header_size + data_size + (alignment - 1);
 
-        uintptr_t raw_addr = reinterpret_cast<uintptr_t>(raw_ptr);
-        assert(raw_addr % alignof(T) == 0);
-        assert(raw_addr % alignof(unsigned int) == 0);
+        // raw block from malloc
+        void *raw = std::malloc(total_size);
+        assert(raw != nullptr);
 
-        auto *meta_ptr = reinterpret_cast<unsigned int *>(raw_ptr);
-        *meta_ptr = N;
+        // find an address after the header that satisfies alignment
+        uintptr_t raw_addr = reinterpret_cast<uintptr_t>(raw);
+        uintptr_t begin = raw_addr + header_size;
+        uintptr_t aligned_addr = (begin + (alignment - 1)) & ~(alignment - 1);
+        char *user_ptr = reinterpret_cast<char *>(aligned_addr);
 
-        T *user_ptr = reinterpret_cast<T *>(meta_ptr) + additional; // safely skip metadata
-    
-#ifndef NDEBUG
-        assert(allocated_pointers.find(user_ptr) == allocated_pointers.end());
-        allocated_pointers[user_ptr] = type_name<T>();
-#endif // NDEBUG
+        // store our header immediately before user_ptr
+        //  [ raw pointer ] at user_ptr - header_size
+        //  [ count       ] at user_ptr - sizeof(std::size_t)
+        void **raw_slot = reinterpret_cast<void **>(user_ptr - header_size);
+        std::size_t *count_slot = reinterpret_cast<std::size_t *>(user_ptr - sizeof(std::size_t));
+        *raw_slot = raw;
+        *count_slot = N;
 
-        for (unsigned int i = 0; i < N; ++i)
+        // placement-new the array
+        T *result = reinterpret_cast<T *>(user_ptr);
+        for (std::size_t i = 0; i < N; ++i)
         {
-            new (user_ptr + i) T(std::forward<Args>(args)...);
+            new (result + i) T(std::forward<Args>(args)...);
         }
-        return user_ptr;
+        return result;
     }
 
+    // dealloc<T>(p) — destroy the N objects and free only the original malloc() pointer
     template <typename T>
-    void dealloc(T *ptr_
-#if !defined(NDEBUG) && __cplusplus >= 202002L
-        , std::source_location loc = std::source_location::current()
-#endif // !defined(NDEBUG) && __cplusplus >= 202002L
-        )
+    void dealloc(T *p)
     {
-        using U = std::remove_cv_t<std::remove_pointer_t<T>>;
-
-        auto ptr = (U *)ptr_;
-
-        if (!ptr)
+        if (!p)
             return;
 
-#ifndef NDEBUG
-        if (allocated_pointers.find(ptr) == allocated_pointers.end())
-        {
-# if __cplusplus >= 202002L
-            printf("Error: double free detected at %s:%d\n", loc.file_name(), (int)loc.line());
-# else // __cplusplus >= 202002L
-            printf("Error: double free detected\n");
-# endif // __cplusplus >= 202002L
-            printf("Pointer: %p\n", (void*)ptr);
-            abort();
-            return;
-        }
-        else if (allocated_pointers[ptr] != type_name<U>())
-        {
-# if __cplusplus >= 202002L
-            printf("Warning: possible type mismatch detected at %s:%d\n", loc.file_name(), (int)loc.line());
-            printf("Expected: %s\n", allocated_pointers[ptr].c_str());
-            printf("Actual: %s\n", type_name<U>());
-# else // __cplusplus >= 202002L
-            printf("Warning: possible type mismatch detected\n");
-            printf("Expected: %s\n", allocated_pointers[ptr].c_str());
-            printf("Actual: %s\n", type_name<U>());
-# endif // __cplusplus >= 202002L
-        }
-        allocated_pointers.erase(ptr);
-#endif // NDEBUG
+        const std::size_t header_size = sizeof(void *) + sizeof(std::size_t);
+        char *user_ptr = (char *)(p);
 
-        constexpr unsigned int additional = (sizeof(unsigned int) + sizeof(T) - 1) / sizeof(T);
-        unsigned int *meta_ptr = (unsigned int *)(ptr - additional);
-        unsigned int N = *meta_ptr;
+        // recover header
+        void **raw_slot = reinterpret_cast<void **>(user_ptr - header_size);
+        std::size_t *count_slot = reinterpret_cast<std::size_t *>(user_ptr - sizeof(std::size_t));
+        void *raw = *raw_slot;
+        std::size_t N = *count_slot;
 
-        for (unsigned int i = 0; i < N; ++i)
+        // destroy in reverse-order
+        for (std::size_t i = N; i-- > 0;)
         {
-            ptr[i].~U();
+            (p + i)->~T();
         }
 
-        _free(meta_ptr);
+        std::free(raw);
     }
 } // namespace Hamster

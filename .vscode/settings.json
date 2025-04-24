@@ -91,7 +91,9 @@
         "stack": "cpp",
         "*.tpp": "cpp",
         "unordered_set": "cpp",
-        "__config": "cpp"
+        "__config": "cpp",
+        "set": "cpp",
+        "source_location": "cpp"
     },
     "C_Cpp.default.compilerPath": "/opt/homebrew/bin/g++-14"
 }
