@@ -640,6 +640,12 @@ namespace Hamster
 
             char * const * list() override
             {
+                if ((open_flags & O_ACCMODE) == O_WRONLY)
+                {
+                    error = EACCES;
+                    return nullptr;
+                }
+
                 RamFsDirNode *node = get_node();
                 Tree<RamFsTreeNode *>::Iterator it = fs_data.tree.begin();
                 for (; it != fs_data.tree.end(); ++it)
