@@ -161,7 +161,10 @@ typename Hamster::Tree<T>::Iterator &Hamster::Tree<T>::Iterator::operator++()
     if (current == nullptr)
         return *this;
     if (current->children.size() > 0)
+    {
         current = &current->children[0];
+        return *this;
+    }
     else while (current->parent != nullptr)
     {
         size_t new_index = current - current->parent->children.data() + 1;

@@ -165,12 +165,12 @@ void test_filesystem()
     assert(i == false);
 
     // mkdir
-    Hamster::BaseDirectory *dir = mounts.mkdir("/mnt", 0, 0777);
+    Hamster::BaseDirectory *dir = mounts.mkdir("/mnt", O_RDWR, 0777);
     assert(dir != nullptr);
     assert(dir->type() == Hamster::FileType::Directory);
     Hamster::dealloc(dir);
 
-    dir = mounts.mkdir("/mnt/test1", 0, 0777);
+    dir = mounts.mkdir("/mnt/test1", O_RDWR, 0777);
     assert(dir != nullptr);
     assert(dir->type() == Hamster::FileType::Directory);
     Hamster::dealloc(dir);
@@ -180,10 +180,13 @@ void test_filesystem()
     assert(f2 != nullptr);
 
     assert(f2->type() == Hamster::FileType::Regular);
-    f2->write((const uint8_t *)"Hello World", 11);
-    f2->seek(0, 0);
+    i = f2->write((const uint8_t *)"Hello World", 11);
+    assert(i == 11);
+    i = f2->seek(0, 0);
+    assert(i == 0);
     uint8_t buf[12];
-    f2->read(buf, 11);
+    i = f2->read(buf, 11);
+    assert(i == 11);
     buf[11] = 0;
     i = strcmp((const char *)buf, "Hello World");
     assert(i == 0);
@@ -196,7 +199,7 @@ void test_filesystem()
     size_t len = std::strlen(testData);
 
     // Create a new file
-    f2 = mounts.mkfile("/mnt/test1/file.txt", 0, 0);
+    f2 = mounts.mkfile("/mnt/test1/file.txt", O_RDWR, 0777);
     assert(f2 != nullptr);
 
     // Write data
@@ -233,7 +236,7 @@ void test_filesystem()
     // Reset file by removing and creating it again
     i = f2->remove();
     assert(i == 0);
-    f2 = mounts.mkfile("/mnt/test1/file.txt", 0, 0);
+    f2 = mounts.mkfile("/mnt/test1/file.txt", O_RDWR, 0777);
     assert(f2 != nullptr);
 
     // Write "abcdef" at start

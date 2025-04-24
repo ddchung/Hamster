@@ -490,7 +490,27 @@ namespace Hamster
                     return -1;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    file_node->data[position + i] = buf[i];
+                    uint8_t &byte = file_node->data[position + i];
+                    if (&byte != &Page::get_dummy())
+                    {
+                        // ok
+                        byte = buf[i];
+                    }
+                    else if (file_node->data.allocate_page(position + i) < 0)
+                    {
+                        // failed allocation
+                        if (i == 0)
+                        {
+                            error = EIO;
+                            return -1;
+                        }
+                        return i;
+                    }
+                    else
+                    {
+                        // allocated page
+                        file_node->data[position + i] = buf[i];
+                    }
                 }
                 file_node->length = std::max(file_node->length, position + (int64_t)size);
                 position += size;
@@ -664,6 +684,8 @@ namespace Hamster
                     return nullptr;
                 }
                 RamFsDirNode *node = get_node();
+                if (node == nullptr)
+                    return nullptr;
 
                 if ((node->mode & O_ACCMODE) == O_WRONLY)
                 {
@@ -1040,7 +1062,7 @@ namespace Hamster
             error = EIO;
             return nullptr;
         }
-        BaseDirectory *dir = alloc<RamFsDirectory>(1, fd, *data, flags);
+        BaseDirectory *dir = alloc<RamFsDirectory>(1, fd, *data, O_RDWR);
 
         while (true)
         {
@@ -1064,7 +1086,7 @@ namespace Hamster
                 char *name = alloc<char>(next - path + 1);
                 strncpy(name, path, next - path);
                 name[next - path] = '\0';
-                BaseFile *file = dir->get(name, (flags & ~O_CREAT) | O_DIRECTORY, args);
+                BaseFile *file = dir->get(name, (flags & ~O_CREAT & ~O_ACCMODE) | O_DIRECTORY | O_RDWR, args);
                 dealloc(name);
                 name = nullptr;
                 if (file == nullptr)
@@ -1181,7 +1203,7 @@ namespace Hamster
 
     BaseRegularFile *RamFs::mkfile(const char *name, int flags, int mode) 
     {
-        BaseFile *f = open(name, O_WRONLY|O_CREAT|O_TRUNC, mode);
+        BaseFile *f = open(name, (flags & ~O_DIRECTORY)|O_CREAT|O_TRUNC, mode);
         if (!f)
             return nullptr;
         assert(f->type() == FileType::Regular);
@@ -1190,7 +1212,7 @@ namespace Hamster
 
     BaseDirectory *RamFs::mkdir(const char *name, int flags, int mode) 
     {
-        BaseFile *f = open(name, O_WRONLY|O_CREAT|O_DIRECTORY, mode);
+        BaseFile *f = open(name, flags|O_CREAT|O_DIRECTORY, mode);
         if (!f)
             return nullptr;
         assert(f->type() == FileType::Directory);
