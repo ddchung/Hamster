@@ -10,7 +10,7 @@
 
 #ifndef NDEBUG
 
-#include <unordered_map>
+#include <unordered_set>
 #include <string>
 #include <cstdio>
 #include <cstdlib>
@@ -25,14 +25,7 @@
 namespace Hamster
 {
 #ifndef NDEBUG
-    inline std::unordered_map<void *, std::string> allocated_pointers;
-
-    template <typename T>
-    inline const char *type_name()
-    {
-        return __PRETTY_FUNCTION__;
-    }
-
+    inline std::unordered_set<void *> allocated_pointers;
 #endif // NDEBUG
 
     template <typename T, typename... Args>
@@ -70,15 +63,44 @@ namespace Hamster
         {
             new (result + i) T(std::forward<Args>(args)...);
         }
+
+#ifndef NDEBUG
+        // store the pointer in a set for debugging
+        allocated_pointers.insert(result);
+#endif // NDEBUG
+
         return result;
     }
 
     // dealloc<T>(p) — destroy the N objects and free only the original malloc() pointer
     template <typename T>
-    void dealloc(T *p)
+    void dealloc(T *cv_p
+#if __cplusplus >= 202002L
+                 , std::source_location loc = std::source_location::current()
+#endif // __cplusplus >= 202002L
+    )
     {
+        using U = std::remove_cv_t<std::remove_pointer_t<T>>;
+
+        U *p = (U *)cv_p;
+
         if (!p)
             return;
+
+        #ifndef NDEBUG
+        if (allocated_pointers.find(p) == allocated_pointers.end())
+        {
+            #if __cplusplus >= 202002L
+            fprintf(stderr, "Invalid pointer %p passed to dealloc called from %s:%d\n", (void*)p, loc.file_name(), loc.line());
+            #else
+            fprintf(stderr, "Invalid pointer %p passed to dealloc\n", p);
+            #endif // __cplusplus >= 202002L
+            fprintf(stderr, "Pointer not found in allocated pointers set\n");
+            fprintf(stderr, "This can be caused by possible double deletion or memory corruption\n");
+            abort();
+        }
+        allocated_pointers.erase(p);
+        #endif // NDEBUG
 
         const std::size_t header_size = sizeof(void *) + sizeof(std::size_t);
         char *user_ptr = (char *)(p);
@@ -92,7 +114,7 @@ namespace Hamster
         // destroy in reverse-order
         for (std::size_t i = N; i-- > 0;)
         {
-            (p + i)->~T();
+            (cv_p + i)->~T();
         }
 
         std::free(raw);
