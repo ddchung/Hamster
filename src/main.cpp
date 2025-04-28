@@ -77,8 +77,34 @@ int main()
 
   for (int i = 0; files[i]; ++i)
   {
+    Hamster::BaseFile *file = dir->get(files[i], O_RDONLY);
+    if (!file)
+    {
+      Hamster::_log("Failed to open file\n");
+      continue;
+    }
+
+    Hamster::FileType type = file->type();
+    int mode = file->mode();
+
+    if (type == Hamster::FileType::Directory) Hamster::_log("d"); else Hamster::_log("-");
+    if (mode & 0b100000000) Hamster::_log("r"); else Hamster::_log("-");
+    if (mode & 0b010000000) Hamster::_log("w"); else Hamster::_log("-");
+    if (mode & 0b001000000) Hamster::_log("x"); else Hamster::_log("-");
+    if (mode & 0b000100000) Hamster::_log("r"); else Hamster::_log("-");
+    if (mode & 0b000010000) Hamster::_log("w"); else Hamster::_log("-");
+    if (mode & 0b000001000) Hamster::_log("x"); else Hamster::_log("-");
+    if (mode & 0b000000100) Hamster::_log("r"); else Hamster::_log("-");
+    if (mode & 0b000000010) Hamster::_log("w"); else Hamster::_log("-");
+    if (mode & 0b000000001) Hamster::_log("x"); else Hamster::_log("-");
+
+    Hamster::_log("\t");
+
     Hamster::_log(files[i]);
+
     Hamster::_log("\n");
+    
+    Hamster::dealloc(file);
     Hamster::dealloc(files[i]);
   }
   Hamster::dealloc(files);

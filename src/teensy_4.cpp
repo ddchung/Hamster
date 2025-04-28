@@ -2,9 +2,13 @@
 
 #if (defined(ARDUINO_TEENSY41) || defined(ARDUINO_TEENSY40)) && 1
 
+#define BUILTIN_SDCARD 254
+
 #include <Arduino.h>
-#include <SD.h>
+#include <SdFat.h>
 #include <platform/platform.hpp>
+
+static SdFat sd;
 
 int Hamster::_init_platform()
 {
@@ -13,7 +17,7 @@ int Hamster::_init_platform()
         ;
     
     // init sd card, if available
-    if (SD.begin(BUILTIN_SDCARD))
+    if (sd.begin(BUILTIN_SDCARD))
         Serial.println("SD card found");
     else
         Serial.println("No SD card found");

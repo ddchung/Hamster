@@ -91,7 +91,7 @@ namespace Hamster
         if (allocated_pointers.find(p) == allocated_pointers.end())
         {
             #if __cplusplus >= 202002L
-            fprintf(stderr, "Invalid pointer %p passed to dealloc called from %s:%d\n", (void*)p, loc.file_name(), loc.line());
+            fprintf(stderr, "Invalid pointer %p passed to dealloc called from %s:%d\n", (void*)p, (const char *)loc.file_name(), (int)loc.line());
             #else
             fprintf(stderr, "Invalid pointer %p passed to dealloc\n", p);
             #endif // __cplusplus >= 202002L

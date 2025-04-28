@@ -3,7 +3,7 @@
 #if defined(ARDUINO) && 1
 
 #include <Arduino.h>
-#include <SD.h>
+#include <SdFat.h>
 
 #include <platform/platform.hpp>
 #include <assert.h>
@@ -11,9 +11,6 @@
 // Hamster takes ownership of this directory
 // and it will create it if it doesn't exist
 #define SDCARD_SWAP_DIR "/.swap"
-
-// platform-dependent SD card initialization
-#define SDCARD_INIT() SD.begin(BUILTIN_SDCARD)
 
 namespace
 {
@@ -31,105 +28,85 @@ namespace
 
 int Hamster::_swap_out(int index, const uint8_t *data)
 {
-    if (index < 0)
-        return -1;
-    if (SDCARD_INIT() != 1)
-        return -2;
-
     if (make_swap_name(index) != 0)
-        return -3;
-    File f = SD.open(name_buffer, FILE_WRITE);
-    if (!f)
-        return -4;
-    f.truncate(0);
-    f.seek(0);
+        return -1;
     
-    if (f.write(data, HAMSTER_PAGE_SIZE) != HAMSTER_PAGE_SIZE)
+    SdFile file;
+    if (!file.open(name_buffer, O_RDWR | O_CREAT | O_TRUNC))
     {
-        f.close();
-        return -5;
+        return -1;
     }
-    f.close();
+    if (file.write(data, HAMSTER_PAGE_SIZE) != HAMSTER_PAGE_SIZE)
+    {
+        file.close();
+        return -1;
+    }
+    file.close();
     return 0;
 }
 
 int Hamster::_swap_in(int index, uint8_t *data)
 {
-    if (index < 0)
+    if (make_swap_name(index) != 0)
         return -1;
 
-    if (SDCARD_INIT() != 1)
-        return -2;
-
-    if (make_swap_name(index) != 0)
-        return -3;
-
-    File f = SD.open(name_buffer, FILE_READ);
-    if (!f)
-        return -4;
-    
-    int len = f.read(swap_buffer, HAMSTER_PAGE_SIZE);
-    if (len != HAMSTER_PAGE_SIZE)
+    SdFile file;
+    static uint8_t data_buf[HAMSTER_PAGE_SIZE];
+    if (!file.open(name_buffer, O_RDONLY))
     {
-        f.close();
-        return -5;
+        return -1;
     }
-    f.close();
-    memcpy(data, swap_buffer, HAMSTER_PAGE_SIZE);
+
+    // read into data_buf instead of data
+    // to avoid modifying data on error
+    if (file.read(data_buf, HAMSTER_PAGE_SIZE) != HAMSTER_PAGE_SIZE)
+    {
+        file.close();
+        return -1;
+    }
+    file.close();
+
+    memcpy(data, data_buf, HAMSTER_PAGE_SIZE);
+
     return 0;
 }
 
 int Hamster::_swap_rm(int index)
 {
-    
-    if (index < 0)
-        return -1;
-    
-    if (SDCARD_INIT() != 1)
-        return -2;
-    
     if (make_swap_name(index) != 0)
-        return -3;
+        return -1;
 
-    if (SD.remove(name_buffer) != 1)
-        return -4;
-    
+    SdFile file;
+    if (!file.open(name_buffer, O_RDWR))
+    {
+        return -1;
+    }
+    if (!file.remove())
+    {
+        file.close();
+        return -1;
+    }
+    file.close();
     return 0;
 }
 
 int Hamster::_swap_rm_all()
 {
-    if (SDCARD_INIT() != 1)
-        return -2;
-
-    File dir = SD.open(SDCARD_SWAP_DIR);
-    if (!dir)
-        return -4;
-
-    File file = dir.openNextFile();
-    while (file)
+    SdFile dir;
+    SdFile entry;
+    if (!dir.open(SDCARD_SWAP_DIR, O_RDONLY))
     {
-        if (file.isDirectory())
-        {
-            file.close();
-            continue;
-        }
-        const char *name = file.name();
-        if (name[0] < '0' || name[0] > '9')
-        {
-            file.close();
-            file = dir.openNextFile();
-            continue;
-        }
-        snprintf(name_buffer, sizeof(name_buffer), "%s/%s", SDCARD_SWAP_DIR, name);
-        if (SD.remove(name_buffer) != 1)
-        {
-            file.close();
-            dir.close();
-            return -5;
-        }
-        file.close();
-        file = dir.openNextFile();
+        return -1;
+    }
+    if (!dir.isDir())
+    {
+        dir.close();
+        return -2;
+    }
+    dir.rewindDirectory();
+    while (entry.openNext(&dir, O_RDWR))
+    {
+        entry.remove();
     }
     dir.close();
     return 0;
