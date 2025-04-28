@@ -7,6 +7,6 @@
 
 namespace Hamster
 {
-    int error = 0;
+    inline int error = 0;
 } // namespace Hamster
 
