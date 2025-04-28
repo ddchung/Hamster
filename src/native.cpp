@@ -290,6 +290,11 @@ namespace
                 return alloc<PosixRegularFile>(1, fd, full);
             else if (S_ISFIFO(st.st_mode))
                 return alloc<PosixFifoFile>(1, fd, full);
+            else if (S_ISDIR(st.st_mode))
+            {
+                close(fd);
+                return alloc<PosixDirectory>(1, full);
+            }
             else
             {
                 close(fd);

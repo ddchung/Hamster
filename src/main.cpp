@@ -80,7 +80,9 @@ int main()
     Hamster::BaseFile *file = dir->get(files[i], O_RDONLY);
     if (!file)
     {
-      Hamster::_log("Failed to open file\n");
+      Hamster::_log("Failed to open file '");
+      Hamster::_log(files[i]);
+      Hamster::_log("'\n");
       continue;
     }
 
