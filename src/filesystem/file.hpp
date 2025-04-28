@@ -31,17 +31,17 @@ namespace Hamster
         virtual int remove() = 0;
         virtual int stat(struct ::stat *buf) = 0;
 
-        virtual int mode() const = 0;
+        virtual int mode() = 0;
 
         virtual int chmod(int mode) = 0;
         virtual int chown(int uid, int gid) = 0;
 
         // returns a weak pointer, so don't modify or delete
         // data should be valid until the file is closed or renamed
-        virtual const char *name() const = 0;
+        virtual const char *name() = 0;
 
         // optional
-        virtual int get_fd() const { return -1; }
+        virtual int get_fd() { return -1; }
     };
 
     class BaseFifoFile : public BaseFile
@@ -57,9 +57,9 @@ namespace Hamster
     public:
         virtual const FileType type() const override { return FileType::Regular; }
         virtual int64_t seek(int64_t offset, int whence) = 0;
-        virtual int64_t tell() const = 0;
+        virtual int64_t tell() = 0;
         virtual int truncate(int64_t size) = 0;
-        virtual int64_t size() const = 0;
+        virtual int64_t size() = 0;
     };
 
     class BaseDirectory : public BaseFile

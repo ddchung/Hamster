@@ -50,7 +50,7 @@ namespace
             return ::fstat(fd, buf);
         }
 
-        int mode() const override
+        int mode() override
         {
             struct ::stat st;
             if (::fstat(fd, &st) < 0)
@@ -68,7 +68,7 @@ namespace
             return ::fchown(fd, uid, gid);
         }
 
-        const char *name() const override
+        const char *name() override
         {
             return strrchr(path.c_str(), '/');
         }
@@ -93,7 +93,7 @@ namespace
             return ::lseek(fd, offset, whence);
         }
 
-        int64_t tell() const override
+        int64_t tell() override
         {
             return ::lseek(fd, 0, SEEK_CUR);
         }
@@ -103,7 +103,7 @@ namespace
             return ::ftruncate(fd, size);
         }
 
-        int64_t size() const override
+        int64_t size() override
         {
             struct ::stat st;
             if (::fstat(fd, &st) < 0)
@@ -145,7 +145,7 @@ namespace
             return ::fstat(fd, buf);
         }
 
-        int mode() const override
+        int mode() override
         {
             struct ::stat st;
             if (::fstat(fd, &st) < 0)
@@ -163,7 +163,7 @@ namespace
             return ::fchown(fd, uid, gid);
         }
 
-        const char *name() const override
+        const char *name() override
         {
             return strrchr(path.c_str(), '/');
         }
@@ -205,7 +205,7 @@ namespace
             return ::stat(path.c_str(), buf);
         }
 
-        int mode() const override
+        int mode() override
         {
             struct ::stat st;
             if (::stat(path.c_str(), &st) < 0)
@@ -223,7 +223,7 @@ namespace
             return ::chown(path.c_str(), uid, gid);
         }
 
-        const char *name() const override
+        const char *name() override
         {
             return strrchr(path.c_str(), '/') + 1;
         }

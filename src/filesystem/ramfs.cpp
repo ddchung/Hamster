@@ -278,16 +278,19 @@ namespace Hamster
                     buf->st_size = ((RamFsFileNode *)node)->length;
                     buf->st_blksize = 4096;
                     buf->st_blocks = (buf->st_size + 4095) / 4096;
+                    buf->st_mode |= S_IFREG;
                     break;
                 case FileType::FIFO:
                     buf->st_size = ((RamFsFifoNode *)node)->data.size();
                     buf->st_blksize = 4096;
                     buf->st_blocks = (buf->st_size + 4095) / 4096;
+                    buf->st_mode |= S_IFIFO;
                     break;
                 case FileType::Directory:
                     buf->st_size = 0;
                     buf->st_blksize = 4096;
                     buf->st_blocks = 0;
+                    buf->st_mode |= S_IFDIR;
                     break;
                 default:
                     error = EIO;
@@ -370,11 +373,11 @@ namespace Hamster
             int rename(const char *newname) override { return RamFsFile::rename(newname); }
             int remove() override { return RamFsFile::remove(); }
             int stat(struct ::stat *buf) override { return RamFsFile::stat(buf); }
-            int mode() const override { return RamFsFile::mode(); }
+            int mode() override { return RamFsFile::mode(); }
             int chmod(int mode) override { return RamFsFile::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsFile::chown(uid, gid); }
-            const char *name() const override { return RamFsFile::name(); }
-            int get_fd() const override { return RamFsFile::get_fd(); }
+            const char *name() override { return RamFsFile::name(); }
+            int get_fd() override { return RamFsFile::get_fd(); }
 
             ssize_t read(uint8_t *buf, size_t size) override
             {
@@ -446,11 +449,11 @@ namespace Hamster
             int rename(const char *newname) override { return RamFsFile::rename(newname); }
             int remove() override { return RamFsFile::remove(); }
             int stat(struct ::stat *buf) override { return RamFsFile::stat(buf); }
-            int mode() const override { return RamFsFile::mode(); }
+            int mode() override { return RamFsFile::mode(); }
             int chmod(int mode) override { return RamFsFile::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsFile::chown(uid, gid); }
-            const char *name() const override { return RamFsFile::name(); }
-            int get_fd() const override { return RamFsFile::get_fd(); }
+            const char *name() override { return RamFsFile::name(); }
+            int get_fd() override { return RamFsFile::get_fd(); }
 
             ssize_t read(uint8_t *buf, size_t size) override
             {
@@ -555,7 +558,7 @@ namespace Hamster
                 return position;
             }
 
-            int64_t tell() const override
+            int64_t tell() override
             {   
                 if (!get_file_node())
                     return -1;
@@ -591,7 +594,7 @@ namespace Hamster
                 return 0;
             }
 
-            int64_t size() const override
+            int64_t size() override
             {
                 RamFsFileNode *node = get_file_node();
                 if (!node)
@@ -632,11 +635,11 @@ namespace Hamster
             int rename(const char *newname) override { return RamFsFile::rename(newname); }
             int remove() override { return RamFsFile::remove(); }
             int stat(struct ::stat *buf) override { return RamFsFile::stat(buf); }
-            int mode() const override { return RamFsFile::mode(); }
+            int mode() override { return RamFsFile::mode(); }
             int chmod(int mode) override { return RamFsFile::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsFile::chown(uid, gid); }
-            const char *name() const override { return RamFsFile::name(); }
-            int get_fd() const override { return RamFsFile::get_fd(); }
+            const char *name() override { return RamFsFile::name(); }
+            int get_fd() override { return RamFsFile::get_fd(); }
 
             char * const * list() override
             {

@@ -18,19 +18,19 @@ public:
     int remove() override { return 0; }
 
     int stat(struct ::stat *) override { return 0; }
-    int mode() const override { return 0777; }
+    int mode() override { return 0777; }
     int chmod(int) override { return 0; }
     int chown(int, int) override { return 0; }
-    const char *name() const override { return "TestFile"; }
+    const char *name() override { return "TestFile"; }
 
 
     ssize_t read(uint8_t *buf, size_t size) override { memset(buf, 0, size); return size; }
     ssize_t write(const uint8_t *buf, size_t size) override { return size; }
 
     int64_t seek(int64_t offset, int whence) override { return 0; }
-    int64_t tell() const override { return 0; }
+    int64_t tell() override { return 0; }
     int truncate(int64_t) override { return 0; }
-    int64_t size() const override { return 0; }
+    int64_t size() override { return 0; }
 };
 
 class TestFilesystem : public Hamster::BaseFilesystem
