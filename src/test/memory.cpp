@@ -143,40 +143,40 @@ void test_memory()
 
     // Memory Space
     Hamster::MemorySpace mem_space;
-    i = mem_space.allocate_page(0x1000);
+    i = mem_space.allocate_page(HAMSTER_PAGE_SIZE);
     assert(i >= 0);
-    assert(mem_space.get_page_data(0x1000) != nullptr);
-    assert(mem_space.get_page_data(0x1000 + HAMSTER_PAGE_SIZE - 1) != nullptr);
-    assert(mem_space.get_page_data(0x1000 + HAMSTER_PAGE_SIZE + 0x10) == nullptr);
+    assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE) != nullptr);
+    assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE + HAMSTER_PAGE_SIZE - 1) != nullptr);
+    assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE + HAMSTER_PAGE_SIZE + 0x10) == nullptr);
 
     // fill with data
     for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
     {
-        mem_space[0x1000 + j] = (uint8_t)j;
+        mem_space[HAMSTER_PAGE_SIZE + j] = (uint8_t)j;
     }
 
     // check data
     for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
     {
-        assert(mem_space[0x1000 + j] == (uint8_t)j);
+        assert(mem_space[HAMSTER_PAGE_SIZE + j] == (uint8_t)j);
     }
 
     for (int j = 1; j < 16; ++j)
     {
-        i = mem_space.allocate_page(0x1000 + j * HAMSTER_PAGE_SIZE);
+        i = mem_space.allocate_page(HAMSTER_PAGE_SIZE + j * HAMSTER_PAGE_SIZE);
         assert(i >= 0);
     }
 
     // fill with random data
     for (int j = 0; j < 16 * HAMSTER_PAGE_SIZE; ++j)
     {
-        mem_space[0x1000 + j] = (uint8_t)hash_int(j);
+        mem_space[HAMSTER_PAGE_SIZE + j] = (uint8_t)hash_int(j);
     }
 
     // check data
     for (int j = 0; j < 16 * HAMSTER_PAGE_SIZE; ++j)
     {
-        assert(mem_space[0x1000 + j] == (uint8_t)hash_int(j));
+        assert(mem_space[HAMSTER_PAGE_SIZE + j] == (uint8_t)hash_int(j));
     }
 
     // swap in and out
@@ -186,20 +186,20 @@ void test_memory()
     // check data
     for (int j = 0; j < 16 * HAMSTER_PAGE_SIZE; ++j)
     {
-        assert(mem_space[0x1000 + j] == (uint8_t)hash_int(j));
+        assert(mem_space[HAMSTER_PAGE_SIZE + j] == (uint8_t)hash_int(j));
     }
 
     // deallocate pages
     for (int j = 0; j < 16; ++j)
     {
-        i = mem_space.deallocate_page(0x1000 + j * HAMSTER_PAGE_SIZE);
+        i = mem_space.deallocate_page(HAMSTER_PAGE_SIZE + j * HAMSTER_PAGE_SIZE);
         assert(i == 0);
     }
 
     // check that all pages are deallocated
     for (int j = 0; j < 16; ++j)
     {
-        assert(mem_space.get_page_data(0x1000 + j * HAMSTER_PAGE_SIZE) == nullptr);
+        assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE + j * HAMSTER_PAGE_SIZE) == nullptr);
     }
 
     // big data
