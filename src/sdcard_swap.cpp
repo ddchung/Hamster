@@ -15,8 +15,7 @@
 namespace
 {
     char name_buffer[sizeof(SDCARD_SWAP_DIR) + 13]; // "/.swap/xxxxxxxx.bin"
-    uint8_t swap_buffer[HAMSTER_PAGE_SIZE];
-
+    
     int make_swap_name(int index)
     {
         if (index < 0)

@@ -119,7 +119,8 @@ namespace
                 return -1;
             }
 
-            uint16_t ddate, dtime;
+            uint16_t ddate = 0;
+            uint16_t dtime = 0;
 
             buf->st_dev = 0;
             buf->st_ino = 0;
