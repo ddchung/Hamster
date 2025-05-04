@@ -38,6 +38,8 @@ namespace Hamster
 
         FileType type(const char *path) override;
 
+        bool is_busy() override;
+
     private:
         RamFsData *data;
     };

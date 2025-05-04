@@ -135,6 +135,12 @@ namespace Hamster
                 }
 
                 int fd = ++fd_counter;
+                while (fd_ref_count[fd] > 0)
+                {
+                    // if fd counter overflows, and it matches an existing fd
+                    ++fd;
+                }
+
                 fd_map[fd] = node;
                 fd_ref_count[fd] = 1;
                 fd_set.insert(node);
@@ -177,6 +183,11 @@ namespace Hamster
                 if (it != fd_ref_count.end())
                     return it->second;
                 return 0;
+            }
+
+            bool is_busy()
+            {
+                return !fd_set.empty();
             }
 
         private:
@@ -1695,5 +1706,10 @@ namespace Hamster
         if (S_ISBLK(buf.st_mode))
             return FileType::BlockDevice;
         return FileType::Invalid;
+    }
+
+    bool RamFs::is_busy()
+    {
+        return data->fd_manager.is_busy();
     }
 } // namespace Hamster

@@ -91,6 +91,11 @@ namespace Hamster
             return -1;
         if (!is_valid(path))
             return -2;
+        Path mount = get_mount(path);
+        if (!mount.fs)
+            return -3;
+        if (mount.fs->is_busy())
+            return -4;
         
         auto it = mounts.begin();
         while (it != mounts.end())
