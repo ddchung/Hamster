@@ -717,13 +717,15 @@ namespace Hamster
                     return nullptr;
                 }
 
-                char **strings = alloc<char*>(it.children().size());
+                char **strings = alloc<char*>(it.children().size() + 1);
 
                 for (size_t i = 0; i < it.children().size(); ++i)
                 {
-                    strings[i] = alloc<char>(it.children()[i].data->name.length());
+                    strings[i] = alloc<char>(it.children()[i].data->name.length() + 1);
                     strcpy(strings[i], it.children()[i].data->name.c_str());
                 }
+
+                strings[it.children().size()] = nullptr;
 
                 return strings;
             }
@@ -991,7 +993,16 @@ namespace Hamster
                 }
                 else
                 {
-                    return get_by_name(next, (flags & ~O_CREAT & ~O_EXCL) | O_DIRECTORY, args);
+                    String next_name(name, next - name);
+                    BaseDirectory *dir = (BaseDirectory*)get_by_name(next_name.c_str(), (flags & ~O_CREAT & ~O_EXCL) | O_DIRECTORY, args);
+                    if (dir == nullptr)
+                    {
+                        error = ENOTDIR;
+                        return nullptr;
+                    }
+                    BaseFile *file = dir->open(next + 1, flags, args);
+                    dealloc(dir);
+                    return file;
                 }
             }
 
@@ -1277,11 +1288,6 @@ namespace Hamster
             return nullptr;
         }
         BaseDirectory *root = alloc<RamFsDirectory>(1, root_fd, *data, flags);
-        if (!root)
-        {
-            error = EIO;
-            return nullptr;
-        }
         BaseFile *file = root->open(path, flags, args);
         dealloc(root);
 
