@@ -8,15 +8,8 @@
 
 namespace Hamster
 {
-    class Mounts
+    class Mounts : public BaseFilesystem
     {
-        Mounts() = default;
-        Mounts(const Mounts &) = delete;
-        Mounts &operator=(const Mounts &) = delete;
-        Mounts(Mounts &&) = delete;
-        Mounts &operator=(Mounts &&) = delete;
-        ~Mounts() = default;
-
         struct Mount
         {
             Mount(BaseFilesystem *fs, const char *path);
@@ -36,12 +29,6 @@ namespace Hamster
             const char *path;
         };
 
-        inline static Mounts &instance()
-        {
-            static Mounts instance;
-            return instance;
-        }
-
         // mounts a filesystem
         // takes ownership of fs
         // will free with `Hamster::dealloc<BaseFilesystem>(fs)`
@@ -55,23 +42,28 @@ namespace Hamster
         // returns the mountpoint and the remaining path
         Path get_mount(const char *path);
 
-        // filesystem functions
+        // Filesystem functions
 
-        BaseFile *open(const char *path, int flags, ...);
-        BaseFile *open(const char *path, int flags, va_list args);
+        using BaseFilesystem::open;
+        BaseFile *open(const char *path, int flags, va_list args) override;
+        int rename(const char *old_path, const char *new_path) override;
+        int unlink(const char *path) override;
+        int link(const char *old_path, const char *new_path) override;
+        int stat(const char *path, struct ::stat *buf) override;
+        int lstat(const char *path, struct ::stat *buf) override;
 
-        // old_path and new_path must be on the same filesystem
-        int rename(const char *old_path, const char *new_path);
-        int unlink(const char *path);
+        BaseRegularFile *mkfile(const char *name, int flags, int mode) override;
+        BaseDirectory *mkdir(const char *name, int flags, int mode) override;
+        BaseSymbolicFile *mksfile(const char *name, int flags, FileType type, int mode) override;
 
-        // old_path and new_path must be on the same filesystem
-        int link(const char *old_path, const char *new_path);
-        int stat(const char *path, struct ::stat *buf);
-        BaseRegularFile *mkfile(const char *name, int flags, int mode);
-        BaseDirectory *mkdir(const char *name, int flags, int mode);
-        BaseFifoFile *mkfifo(const char *name, int flags, int mode);
+        int symlink(const char *old_path, const char *new_path) override;
+        int readlink(const char *path, char *buf, size_t buf_size) override;
+        char *readlink(const char *path) override;
 
+        FileType type(const char *path) override;
     private:
         List<Mount> mounts;
     };
+
+    inline Mounts mounts;
 } // namespace Hamster

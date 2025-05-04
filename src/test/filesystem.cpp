@@ -18,7 +18,9 @@ public:
     int remove() override { return 0; }
 
     int stat(struct ::stat *) override { return 0; }
-    int mode() override { return 0777; }
+    int get_mode() override { return 0777; }
+    int get_uid() override { return 0; }
+    int get_gid() override { return 0; }
     int chmod(int) override { return 0; }
     int chown(int, int) override { return 0; }
     const char *name() override { return "TestFile"; }
@@ -38,12 +40,8 @@ class TestFilesystem : public Hamster::BaseFilesystem
 public:
     TestFilesystem() = default;
     ~TestFilesystem() override = default;
-
-    Hamster::BaseFile *open(const char *path, int flags, ...) override
-    {
-        return Hamster::alloc<TestFile>();
-    }
-
+    
+    using BaseFilesystem::open;
     Hamster::BaseFile *open(const char *path, int flags, va_list args) override
     {
         return Hamster::alloc<TestFile>();
@@ -55,14 +53,19 @@ public:
     int stat(const char *path, struct ::stat *buf) override { return 0; }
     Hamster::BaseRegularFile *mkfile(const char *name, int flags, int mode) override { return (Hamster::BaseRegularFile*)open(0, 0); }
     Hamster::BaseDirectory *mkdir(const char *name, int flags, int mode) override { return nullptr; }
-    Hamster::BaseFifoFile *mkfifo(const char *name, int flags, int mode) override { return nullptr; }
+    Hamster::BaseSymbolicFile *mksfile(const char *name, int flags, Hamster::FileType type, int mode) override { return nullptr; }
+    int symlink(const char *old_path, const char *new_path) override { return 0; }
+    int readlink(const char *path, char *buf, size_t buf_size) override { return 0; }
+    char *readlink(const char *path) override { return nullptr; }
+    Hamster::FileType type(const char *path) override { return Hamster::FileType::Regular; }
+    int lstat(const char *path, struct ::stat *buf) override { return 0; }
 };
 
 void test_filesystem()
 {
     int i;
 
-    Hamster::Mounts &mounts = Hamster::Mounts::instance();
+    Hamster::Mounts &mounts = Hamster::mounts;
     
     TestFilesystem *fs1 = Hamster::alloc<TestFilesystem>();
     TestFilesystem *fs2 = Hamster::alloc<TestFilesystem>();
