@@ -46,9 +46,10 @@ namespace Hamster
          * @brief Rename this file
          * @param new_name The new name of the file
          * @return 0 on success, or on error return -1 and set `error`
-         * @note Equivelant to POSIX `rename`
+         * @note `new_name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
+         * @warning NOT equivelant to POSIX `rename`, as this cannot change the location of the file
          */
-        virtual int rename(const char *) = 0;
+        virtual int rename(const char *new_name) = 0;
 
         /**
          * @brief Remove this file
@@ -70,6 +71,14 @@ namespace Hamster
          * @return The mode of the file, or on error return -1 and set `error`
          */
         virtual int get_mode() = 0;
+
+        /**
+         * @brief Get the open flags of the file.
+         * @return The open flags of the file, or on error return -1 and set `error`
+         * @note This is not the same as the mode, and is not set in `stat`
+         * @note This should return the flags that were used to open the file
+         */
+        virtual int get_flags() = 0;
 
         /**
          * @brief Get the user id of the file.
@@ -105,7 +114,7 @@ namespace Hamster
          * @return A newly allocated string with the name of the file, or on error, it returns nullptr and sets `error`
          * @note Be sure to free the string
          */
-        virtual char *get_name() = 0;
+        virtual char *basename() = 0;
     };
 
     class BaseRegularFile : public BaseFile
@@ -215,6 +224,7 @@ namespace Hamster
          * @note Be sure to free the file
          * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
          * @note If `flags | O_CREAT && flags | O_DIRECTORY`, then the file is created as a directory
+         * @note A directory can with any of the three `O_RDONLY`, `O_WRONLY`, or `O_RDWR` flags, which enables or disables some of these functions
          * @note Other than these, it is equivelant to POSIX `open`
          * @warning When implementing, you MUST ensure that if `flags | O_DIRECTORY`, then the returned file derives from `BaseDirectory`
          */
@@ -244,6 +254,28 @@ namespace Hamster
          */
         virtual BaseDirectory *mkdir(const char *name, int flags, int mode) = 0;
 
+        /**
+         * @brief Create a symlink in the directory.
+         * @param name The name of the symlink
+         * @param target The target of the symlink
+         * @return A newly allocated `BaseSymlink` that operates on the new symlink, or on error, it returns nullptr and sets `error`
+         * @note Be sure to free the file
+         * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
+         * @note `target` must be treated only like a string, and must not be validated in any way
+         */
+        virtual BaseSymlink *mksym(const char *name, const char *target) = 0;
+
+        /**
+         * @brief Make a special file in the directory.
+         * @param name The name of the special file
+         * @param type The type of the special file
+         * @return A newly allocated `BaseSpecialFile` that operates on the new special file, or on error, it returns nullptr and sets `error`
+         * @note Be sure to free the file
+         * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
+         * @note This is NOT equivelant to POSIX `mknod`, as this just makes a stub special file that can only be used to identify the file type
+         */
+        virtual BaseSpecialFile *mksfile(const char *name, SpecialFileType type) = 0;
+
         using BaseFile::remove;
         
         /**
@@ -251,7 +283,7 @@ namespace Hamster
          * @param name The name of the file
          * @return 0 on success, or on error return -1 and set `error`
          * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
-         * @note Equivelant to POSIX `remove`
+         * @warning NOT equivelant to POSIX `remove`, as this cannot traverse directories, but can only remove files directly present here
          */
         virtual int remove(const char *name) = 0;
     };
