@@ -36,8 +36,8 @@ int main()
     return -1;
   }
 
-  Hamster::dealloc(Hamster::mounts.mkdir("/tmp", O_RDWR, 0777));
-  if (Hamster::mounts.mount(Hamster::alloc<Hamster::RamFs>(), "/tmp") < 0)
+  Hamster::dealloc(Hamster::Mounts::instance().mkdir("/tmp", O_RDWR, 0777));
+  if (Hamster::Mounts::instance().mount(Hamster::alloc<Hamster::RamFs>(), "/tmp") < 0)
   {
     Hamster::_log("Failed to mount ramfs on /tmp\n");
     return -1;
@@ -46,7 +46,7 @@ int main()
 
   // make test files
   Hamster::_log("Creating test files...\n");
-  auto file = Hamster::mounts.mkfile("/test.txt", O_RDWR, 0777);
+  auto file = Hamster::Mounts::instance().mkfile("/test.txt", O_RDWR, 0777);
   if (!file)
   {
     Hamster::_log("Failed to create test file\n");
@@ -60,7 +60,7 @@ int main()
 
   // List files
   Hamster::_log("Listing files...\n");
-  Hamster::BaseFile *file2 = Hamster::mounts.open("/", O_RDONLY);
+  Hamster::BaseFile *file2 = Hamster::Mounts::instance().open("/", O_RDONLY);
   if (!file2 || file2->type() != Hamster::FileType::Directory)
   {
     Hamster::_log("Failed to open root directory\n");
@@ -77,7 +77,7 @@ int main()
 
   for (int i = 0; files[i]; ++i)
   {
-    Hamster::BaseFile *file = dir->open(files[i], O_RDONLY);
+    Hamster::BaseFile *file = dir->get(files[i], O_RDONLY);
     if (!file)
     {
       Hamster::_log("Failed to open file '");
@@ -87,7 +87,7 @@ int main()
     }
 
     Hamster::FileType type = file->type();
-    int mode = file->get_mode();
+    int mode = file->mode();
 
     if (type == Hamster::FileType::Directory) Hamster::_log("d"); else Hamster::_log("-");
     if (mode & 0b100000000) Hamster::_log("r"); else Hamster::_log("-");

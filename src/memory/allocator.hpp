@@ -75,7 +75,7 @@ namespace Hamster
     // dealloc<T>(p) — destroy the N objects and free only the original malloc() pointer
     template <typename T>
     void dealloc(T *cv_p
-#if __cplusplus >= 202002L && !defined(NDEBUG)
+#if __cplusplus >= 202002L
                  , std::source_location loc = std::source_location::current()
 #endif // __cplusplus >= 202002L
     )
