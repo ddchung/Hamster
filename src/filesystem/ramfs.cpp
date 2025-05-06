@@ -660,13 +660,15 @@ namespace Hamster
                     return nullptr;
                 }
 
-                char **strings = alloc<char*>(it.children().size());
+                char **strings = alloc<char*>(it.children().size() + 1);
 
                 for (size_t i = 0; i < it.children().size(); ++i)
                 {
-                    strings[i] = alloc<char>(it.children()[i].data->name.length());
+                    strings[i] = alloc<char>(it.children()[i].data->name.length() + 1);
                     strcpy(strings[i], it.children()[i].data->name.c_str());
                 }
+
+                strings[it.children().size()] = nullptr;
 
                 return strings;
             }
