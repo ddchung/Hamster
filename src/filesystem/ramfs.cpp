@@ -180,6 +180,20 @@ namespace Hamster
         {
         }
 
+        RamFsData(const RamFsData&) = delete;
+        RamFsData &operator=(const RamFsData &) = delete;
+
+        RamFsData(RamFsData &&) = delete;
+        RamFsData &operator=(RamFsData &&) = delete;
+
+        ~RamFsData()
+        {
+            for (auto &node : tree)
+            {
+                dealloc(node);
+            }
+        }
+
         RamFsFdManager fd_manager;
         Tree<RamFsTreeNode *> tree;
     };
@@ -1049,6 +1063,23 @@ namespace Hamster
         data = nullptr;
     }
 
+    RamFs::RamFs(RamFs &&other) 
+    {
+        data = other.data;
+        other.data = nullptr;
+    }
+
+    RamFs &RamFs::operator=(RamFs &&other) 
+    {
+        if (this != &other)
+        {
+            dealloc(data);
+            data = other.data;
+            other.data = nullptr;
+        }
+        return *this;
+    }
+
 
     BaseFile *RamFs::open(const char *path, int flags, ...) 
     {
@@ -1089,7 +1120,9 @@ namespace Hamster
             if (next == nullptr)
             {
                 // last part of the path
-                return dir->get(path, flags, args);
+                BaseFile *f = dir->get(path, flags, args);
+                dealloc(dir);
+                return f;
             }
             else
             {
@@ -1099,11 +1132,11 @@ namespace Hamster
                 name[next - path] = '\0';
                 BaseFile *file = dir->get(name, (flags & ~O_CREAT & ~O_ACCMODE) | O_DIRECTORY | O_RDWR, args);
                 dealloc(name);
+                dealloc(dir);
                 name = nullptr;
                 if (file == nullptr)
                     return nullptr;
                 assert(file->type() == FileType::Directory);
-                dealloc(dir);
                 dir = (BaseDirectory *)file;
                 path = next;
             }

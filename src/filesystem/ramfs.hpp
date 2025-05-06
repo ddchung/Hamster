@@ -14,6 +14,12 @@ namespace Hamster
         RamFs();
         ~RamFs() override;
 
+        RamFs(const RamFs &) = delete;
+        RamFs &operator=(const RamFs &) = delete;
+
+        RamFs(RamFs &&);
+        RamFs &operator=(RamFs &&);
+
         BaseFile *open(const char *path, int flags, ...) override;
         BaseFile *open(const char *path, int flags, va_list args) override;
         int rename(const char *old_path, const char *new_path) override;

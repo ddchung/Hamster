@@ -235,6 +235,9 @@ void test_filesystem()
 
     // Reset file by removing and creating it again
     i = f2->remove();
+
+    dealloc(f2);
+
     assert(i == 0);
     f2 = mounts.mkfile("/mnt/test1/file.txt", O_RDWR, 0777);
     assert(f2 != nullptr);
@@ -260,6 +263,8 @@ void test_filesystem()
     r = f2->read(&ch, 1);
     assert(r == 1);
     assert(ch == 'e');
+
+    dealloc(f2);
 
     mounts.umount("/");
 }

@@ -37,9 +37,11 @@ int main()
   }
 
   Hamster::dealloc(Hamster::Mounts::instance().mkdir("/tmp", O_RDWR, 0777));
-  if (Hamster::Mounts::instance().mount(Hamster::alloc<Hamster::RamFs>(), "/tmp") < 0)
+  auto ramfs = Hamster::alloc<Hamster::RamFs>();
+  if (Hamster::Mounts::instance().mount(ramfs, "/tmp") < 0)
   {
     Hamster::_log("Failed to mount ramfs on /tmp\n");
+    Hamster::dealloc(ramfs);
     return -1;
   }
   Hamster::_log("Done\n");
