@@ -79,8 +79,6 @@ namespace Hamster
         int truncate(int fd, int64_t size);
         int64_t size(int fd);
 
-        SpecialFileType type(int fd);
-
         // `get_target` returns nullptr instead of -1 on error, but still sets `error`
 
         char *get_target(int fd);
@@ -102,8 +100,6 @@ namespace Hamster
         int symlink(const char *path, const char *target);
         int symlinkat(int dir, const char *path, const char *target);
 
-        int mksfile(const char *path, SpecialFileType type);
-        int mksfileat(int dir, const char *path, SpecialFileType type);
     private:
         VFSData *data;
     };
