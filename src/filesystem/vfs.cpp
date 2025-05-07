@@ -3,6 +3,7 @@
 #include <filesystem/vfs.hpp>
 #include <memory/allocator.hpp>
 #include <memory/stl_sequential.hpp>
+#include <memory/stl_map.hpp>
 #include <cstring>
 
 namespace Hamster
@@ -90,12 +91,87 @@ namespace Hamster
     {
         class FDManager
         {
+            struct Entry
+            {
+                BaseFile *file;
+                MountPoint *mount;
+            };
         public:
-            int add_fd(BaseFile *file);
-            int remove_fd(int fd);
-            BaseFile *get_fd(int fd);
-            void close_all();
-            bool is_busy();
+            // Takes ownership of file, but not mount
+            // Mount is just for reference counting
+            int add_fd(BaseFile *file, MountPoint *mount)
+            {
+                if (file == nullptr || mount == nullptr)
+                    return -1;
+                
+                
+                // handle overflow
+                if (next_fd < 0)
+                    next_fd = 0;
+                
+                // handle overflow
+                while (fds.find(next_fd) != fds.end())
+                    ++next_fd;
+
+                fds[next_fd] = {file, mount};
+                mount_refcount[mount]++;
+                return next_fd++;
+            }
+
+            int remove_fd(int fd)
+            {
+                auto it = fds.find(fd);
+                if (it == fds.end())
+                    return -1;
+                auto &entry = it->second;
+
+                --mount_refcount[entry.mount];
+                fds.erase(it);
+
+                return 0;
+            }
+
+            BaseFile *get_fd(int fd)
+            {
+                auto it = fds.find(fd);
+                if (it == fds.end())
+                    return nullptr;
+                return it->second.file;
+            }
+
+            void close_all()
+            {
+                for (auto &fd : fds)
+                {
+                    dealloc(fd.second.file);
+                }
+                fds.clear();
+                mount_refcount.clear();
+                next_fd = 0;
+            }
+
+            bool is_busy()
+            {
+                for (auto &ref : mount_refcount)
+                {
+                    if (ref.second > 0)
+                        return true;
+                }
+                return false;
+            }
+
+            bool is_busy(MountPoint *mount)
+            {
+                auto it = mount_refcount.find(mount);
+                if (it == mount_refcount.end())
+                    return false;
+                return it->second > 0;
+            }
+            
+        private:
+            UnorderedMap<int, Entry> fds;
+            UnorderedMap<MountPoint *, size_t> mount_refcount;
+            int next_fd = 0;
         };
     } // namespace
     
