@@ -9,6 +9,9 @@
 // expose some macros
 #include <fcntl.h>
 
+// ssize_t
+#include <unistd.h>
+
 namespace Hamster
 {
     enum class FileType : uint8_t
