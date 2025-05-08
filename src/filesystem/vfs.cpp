@@ -4,10 +4,18 @@
 #include <memory/allocator.hpp>
 #include <memory/stl_sequential.hpp>
 #include <memory/stl_map.hpp>
+#include <errno/errno.h>
 #include <cstring>
 
 namespace Hamster
 {
+    namespace
+    {
+        // Resolves a path, possibly containing symbolic links, to a normalized absolute path.
+        // returns a newly allocated string with the resolved path.
+        char *resolve_path(const char *path, VFSData *data);
+    }
+
     /* Mounts */
     namespace
     {
@@ -52,17 +60,6 @@ namespace Hamster
                 fs = nullptr;
             }
 
-            const char *get_path() const
-            {
-                return path;
-            }
-
-            BaseFilesystem *get_fs() const
-            {
-                return fs;
-            }
-
-        private:
             char *path;
             BaseFilesystem *fs;
         };
@@ -76,13 +73,67 @@ namespace Hamster
         class Mounts
         {
         public:
-            int mount(const char *path, BaseFilesystem *fs);
-            int unmount(const char *path);
+            Mounts() = default;
+            ~Mounts()
+            {
+                for (MountPoint *mp : mounts)
+                {
+                    dealloc(mp);
+                }
+                mounts.clear();
+            }
 
-            RelativePath resolve(const char *path);
+            // Note: this function takes ownershiop of `fs`
+            MountPoint *mount(const char *path, BaseFilesystem *fs)
+            {
+                for (MountPoint *mp : mounts)
+                {
+                    if (strcmp(mp->path, path) == 0)
+                        return nullptr; // Already mounted
+                }
+
+                MountPoint *newMount = alloc<MountPoint>(1, path, fs);
+                mounts.push_back(newMount);
+
+                mounts.sort([](MountPoint *a, MountPoint *b)
+                            { return strlen(a->path) > strlen(b->path); });
+
+                return newMount;
+            }
+
+            int unmount(const char *path)
+            {
+                for (auto it = mounts.begin(); it != mounts.end(); ++it)
+                {
+                    if (strcmp((*it)->path, path) == 0)
+                    {
+                        dealloc(*it);
+                        mounts.erase(it);
+                        return 0;
+                    }
+                }
+                return -1;
+            }
+
+            RelativePath resolve(const char *path)
+            {
+                for (MountPoint *mp : mounts)
+                {
+                    size_t len = strlen(mp->path);
+                    if (strncmp(path, mp->path, len) == 0 &&
+                        (path[len] == '/' || path[len] == '\0'))
+                    {
+                        const char *rel = path + len;
+                        if (*rel == '/')
+                            rel++;
+                        return {mp, rel};
+                    }
+                }
+                return {nullptr, path};
+            }
 
         private:
-            List<MountPoint> mounts;
+            List<MountPoint *> mounts;
         };
     } // namespace
 
@@ -96,6 +147,7 @@ namespace Hamster
                 BaseFile *file;
                 MountPoint *mount;
             };
+
         public:
             // Takes ownership of file, but not mount
             // Mount is just for reference counting
@@ -103,12 +155,11 @@ namespace Hamster
             {
                 if (file == nullptr || mount == nullptr)
                     return -1;
-                
-                
+
                 // handle overflow
                 if (next_fd < 0)
                     next_fd = 0;
-                
+
                 // handle overflow
                 while (fds.find(next_fd) != fds.end())
                     ++next_fd;
@@ -167,14 +218,13 @@ namespace Hamster
                     return false;
                 return it->second > 0;
             }
-            
+
         private:
             UnorderedMap<int, Entry> fds;
             UnorderedMap<MountPoint *, size_t> mount_refcount;
             int next_fd = 0;
         };
     } // namespace
-    
 
     class VFSData
     {
@@ -190,4 +240,3 @@ namespace Hamster
         FDManager fd_manager;
     };
 } // namespace Hamster
-
