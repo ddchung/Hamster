@@ -42,6 +42,7 @@ namespace Hamster
         int open(const char *path, int flags, int mode = 0);
         int close(int fd);
 
+        // Note that this version cannot move the file, but only rename it
         int rename(int fd, const char *new_name);
 
         // note that this is not the same as opening a file and then renaming it
