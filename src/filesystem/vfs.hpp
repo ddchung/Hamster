@@ -82,7 +82,7 @@ namespace Hamster
 
         // `get_target` returns nullptr instead of -1 on error, but still sets `error`
 
-        char *get_target(int fd);
+        char *get_target(const char *path);
 
         int set_target(int fd, const char *target);
 

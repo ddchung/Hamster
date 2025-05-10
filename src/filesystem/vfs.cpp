@@ -16,7 +16,7 @@ namespace Hamster
         {
         public:
             MountPoint(const char *path, BaseFilesystem *fs)
-                : path(alloc<char>(strlen(path))), fs(fs)
+                : path(alloc<char>(strlen(path) + 1)), fs(fs)
             {
                 strcpy(this->path, path);
             }
@@ -104,7 +104,7 @@ namespace Hamster
             {
                 if (!file || file->type() != FileType::Directory)
                     return nullptr;
-                
+
                 uint16_t mount_id = (file->get_vfs_flags() & MOUNT_ID_MASK) >> 16;
                 if (mount_id >= mounts.size())
                     return nullptr;
@@ -122,7 +122,7 @@ namespace Hamster
             {
                 if (!path)
                     return nullptr;
-                
+
                 if (!dir)
                 {
                     // Open the root directory
@@ -146,13 +146,13 @@ namespace Hamster
                     if (!dir)
                         return nullptr;
                 }
-                
+
                 while (*path == '/')
                     ++path;
-                
+
                 if (*path == '\0')
                     return dir;
-                
+
                 if (path[0] == '.' && (path[1] == '/' || path[1] == '\0'))
                     return dir;
 
@@ -164,11 +164,11 @@ namespace Hamster
                     error = ENOENT;
                     return nullptr;
                 }
-                
+
                 const char *next = strchr(path, '/');
 
                 // 'blah/..' will just return the current directory
-                if (next[0] == '.' && next[1] == '.' && (next[2] == '/' || next[2] == '\0'))
+                if (next && next[0] == '.' && next[1] == '.' && (next[2] == '/' || next[2] == '\0'))
                     return dir;
 
                 if (!next)
@@ -177,7 +177,7 @@ namespace Hamster
                     dealloc(dir);
                     if (!file)
                         return nullptr;
-                    
+
                     if (file->type() != FileType::Directory && (flags & O_DIRECTORY))
                     {
                         dealloc(file);
@@ -203,34 +203,39 @@ namespace Hamster
 
                     switch (next->type())
                     {
-                        case FileType::Symlink:
-                            BaseSymlink *link = (BaseSymlink *)next;
-                            char *target = link->get_target();
-                            dealloc(link);
-                            if (!target)
-                            {
-                                error = ENOENT;
-                                return nullptr;
-                            }
-
-                            BaseFile *f = lopen(target, flags, mode);
-                            dealloc(target);
-                            return f;
-                        case FileType::Directory:
-                            BaseDirectory *next_dir = (BaseDirectory *)next;
-
-                            if (next_dir->get_vfs_flags() & FLAG_MOUNTPOINT)
-                            {
-                                next_dir = resolve_mount(next_dir);
-                            }
-
-                            BaseFile *file = lopen(next_name.c_str(), flags, mode, next_dir);
-                            dealloc(next_dir);
-                            return file;
-                        default:
-                            dealloc(next);
-                            error = ENOTDIR;
+                    case FileType::Symlink:
+                    {
+                        BaseSymlink *link = (BaseSymlink *)next;
+                        char *target = link->get_target();
+                        dealloc(link);
+                        if (!target)
+                        {
+                            error = ENOENT;
                             return nullptr;
+                        }
+
+                        BaseFile *f = lopen(target, flags, mode);
+                        dealloc(target);
+                        return f;
+                    }
+                    case FileType::Directory:
+                    {
+                        BaseDirectory *next_dir = (BaseDirectory *)next;
+
+                        if (next_dir->get_vfs_flags() & FLAG_MOUNTPOINT)
+                        {
+                            next_dir = resolve_mount(next_dir);
+                        }
+
+                        BaseFile *file = lopen(next_name.c_str(), flags, mode, next_dir);
+                        return file;
+                    }
+                    default:
+                    {
+                        dealloc(next);
+                        error = ENOTDIR;
+                        return nullptr;
+                    }
                     }
 
                     // unreachable
@@ -253,7 +258,7 @@ namespace Hamster
                     error = ENOSPC;
                     return -1;
                 }
-                
+
                 BaseFile *file = lopen(path, O_RDONLY | O_DIRECTORY, 0);
                 if (!file)
                     return -1;
@@ -276,6 +281,11 @@ namespace Hamster
                         mount_id = i;
                         break;
                     }
+                }
+
+                if (mount_id >= mounts.size())
+                {
+                    mounts.resize(mount_id + 1);
                 }
 
                 // Mount the filesystem
@@ -330,14 +340,14 @@ namespace Hamster
                 return 0;
             }
 
-        private:
-            Vector<MountPoint *> mounts;
-
             // Set this to identify as a mountpoint
             static constexpr uint32_t FLAG_MOUNTPOINT = 1 << 0;
 
             // Upper 16 bits are the mount id
             static constexpr uint32_t MOUNT_ID_MASK = 0xFFFF << 16;
+
+        private:
+            Vector<MountPoint *> mounts;
         };
     } // namespace
 
@@ -349,7 +359,6 @@ namespace Hamster
             struct Entry
             {
                 BaseFile *file;
-                MountPoint *mount;
             };
 
         public:
@@ -357,12 +366,12 @@ namespace Hamster
             {
                 close_all();
             }
-            
+
             // Takes ownership of file, but not mount
             // Mount is just for reference counting
-            int add_fd(BaseFile *file, MountPoint *mount)
+            int add_fd(BaseFile *file)
             {
-                if (file == nullptr || mount == nullptr)
+                if (file == nullptr)
                     return -1;
 
                 // handle overflow
@@ -373,8 +382,7 @@ namespace Hamster
                 while (fds.find(next_fd) != fds.end())
                     ++next_fd;
 
-                fds[next_fd] = {file, mount};
-                mount_refcount[mount]++;
+                fds[next_fd] = {file};
                 return next_fd++;
             }
 
@@ -383,9 +391,7 @@ namespace Hamster
                 auto it = fds.find(fd);
                 if (it == fds.end())
                     return -1;
-                auto &entry = it->second;
 
-                --mount_refcount[entry.mount];
                 fds.erase(it);
 
                 return 0;
@@ -406,31 +412,11 @@ namespace Hamster
                     dealloc(fd.second.file);
                 }
                 fds.clear();
-                mount_refcount.clear();
                 next_fd = 0;
-            }
-
-            bool is_busy()
-            {
-                for (auto &ref : mount_refcount)
-                {
-                    if (ref.second > 0)
-                        return true;
-                }
-                return false;
-            }
-
-            size_t get_refcount(MountPoint *mount)
-            {
-                auto it = mount_refcount.find(mount);
-                if (it == mount_refcount.end())
-                    return 0;
-                return it->second;
             }
 
         private:
             UnorderedMap<int, Entry> fds;
-            UnorderedMap<MountPoint *, size_t> mount_refcount;
             int next_fd = 0;
         };
     } // namespace
@@ -448,4 +434,502 @@ namespace Hamster
         Mounts mounts;
         FDManager fd_manager;
     };
+
+    VFS::VFS()
+        : data(alloc<VFSData>(1))
+    {
+    }
+
+    VFS::~VFS()
+    {
+        dealloc(data);
+    }
+
+    VFS::VFS(VFS &&other)
+        : data(other.data)
+    {
+        other.data = nullptr;
+    }
+
+    VFS &VFS::operator=(VFS &&other)
+    {
+        if (this == &other)
+            return *this;
+        dealloc(data);
+        data = other.data;
+        other.data = nullptr;
+        return *this;
+    }
+
+    int VFS::mount(const char *path, BaseFilesystem *fs)
+    {
+        return data->mounts.mount(path, fs);
+    }
+
+    int VFS::unmount(const char *path)
+    {
+        return data->mounts.unmount(path);
+    }
+
+    int VFS::open(const char *path, int flags, int mode)
+    {
+        BaseFile *file = data->mounts.lopen(path, flags, mode);
+        if (!file)
+            return -1;
+
+        if (file->type() == FileType::Symlink)
+        {
+            if (flags & O_NOFOLLOW)
+            {
+                dealloc(file);
+                error = ELOOP;
+                return -1;
+            }
+            BaseSymlink *link = (BaseSymlink *)file;
+            char *target = link->get_target();
+            dealloc(link);
+
+            if (!target)
+            {
+                error = ENOENT;
+                return -1;
+            }
+
+            int fd = open(target, flags, mode);
+            dealloc(target);
+            return fd;
+        }
+
+        int fd = data->fd_manager.add_fd(file);
+        if (fd < 0)
+        {
+            dealloc(file);
+            return -1;
+        }
+
+        return fd;
+    }
+
+    int VFS::close(int fd)
+    {
+        return data->fd_manager.remove_fd(fd);
+    }
+
+    int VFS::rename(int fd, const char *new_name)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        int ret = file->rename(new_name);
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::rename(const char *old_path, const char *new_path)
+    {
+        // TODO: Implement this. Note that this must move the file, not just rename it
+        // This is a bit tricky as it must also handle moving between different filesystems
+        // and mountpoints
+        error = ENOTSUP;
+        return -1;
+    }
+
+    int VFS::remove(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        int ret = file->remove();
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::stat(int fd, struct ::stat *buf)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        int ret = file->stat(buf);
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::lstat(const char *path, struct ::stat *buf)
+    {
+        BaseFile *file = data->mounts.lopen(path, O_RDONLY | O_DIRECTORY, 0);
+        if (!file)
+            return -1;
+
+        int ret = file->stat(buf);
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::get_mode(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        int ret = file->get_mode();
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::get_flags(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        int ret = file->get_flags();
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::get_uid(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        int ret = file->get_uid();
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::get_gid(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        int ret = file->get_gid();
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::chmod(int fd, int mode)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        int ret = file->chmod(mode);
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::chown(int fd, int uid, int gid)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        int ret = file->chown(uid, gid);
+        dealloc(file);
+        return ret;
+    }
+
+    char *VFS::basename(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return nullptr;
+
+        char *ret = file->basename();
+        dealloc(file);
+        return ret;
+    }
+
+    ssize_t VFS::read(int fd, uint8_t *buf, size_t size)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        if (file->type() != FileType::Regular)
+        {
+            dealloc(file);
+            error = EISDIR;
+            return -1;
+        }
+        ssize_t ret = ((BaseRegularFile *)file)->read(buf, size);
+        dealloc(file);
+        return ret;
+    }
+
+    ssize_t VFS::write(int fd, const uint8_t *buf, size_t size)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        if (file->type() != FileType::Regular)
+        {
+            dealloc(file);
+            error = EISDIR;
+            return -1;
+        }
+        ssize_t ret = ((BaseRegularFile *)file)->write(buf, size);
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::seek(int fd, int64_t offset, int whence)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        if (file->type() != FileType::Regular)
+        {
+            dealloc(file);
+            error = EISDIR;
+            return -1;
+        }
+        int ret = ((BaseRegularFile *)file)->seek(offset, whence);
+        dealloc(file);
+        return ret;
+    }
+
+    int64_t VFS::tell(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        if (file->type() != FileType::Regular)
+        {
+            dealloc(file);
+            error = EISDIR;
+            return -1;
+        }
+        int64_t ret = ((BaseRegularFile *)file)->tell();
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::truncate(int fd, int64_t size)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        if (file->type() != FileType::Regular)
+        {
+            dealloc(file);
+            error = EISDIR;
+            return -1;
+        }
+        int ret = ((BaseRegularFile *)file)->truncate(size);
+        dealloc(file);
+        return ret;
+    }
+
+    int64_t VFS::size(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        if (file->type() != FileType::Regular)
+        {
+            dealloc(file);
+            error = EISDIR;
+            return -1;
+        }
+        int64_t ret = ((BaseRegularFile *)file)->size();
+        dealloc(file);
+        return ret;
+    }
+
+    char *VFS::get_target(const char *path)
+    {
+        BaseFile *file = data->mounts.lopen(path, O_RDONLY | O_DIRECTORY, 0);
+        if (!file)
+            return nullptr;
+
+        if (file->type() != FileType::Symlink)
+        {
+            dealloc(file);
+            error = EINVAL;
+            return nullptr;
+        }
+
+        char *ret = ((BaseSymlink *)file)->get_target();
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::set_target(int fd, const char *target)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        if (file->type() != FileType::Symlink)
+        {
+            dealloc(file);
+            error = EINVAL;
+            return -1;
+        }
+
+        int ret = ((BaseSymlink *)file)->set_target(target);
+        dealloc(file);
+        return ret;
+    }
+
+    char *const *VFS::list(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return nullptr;
+
+        if (file->type() != FileType::Directory)
+        {
+            dealloc(file);
+            error = ENOTDIR;
+            return nullptr;
+        }
+
+        char *const *ret = ((BaseDirectory *)file)->list();
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::openat(int dir, const char *path, int flags, int mode)
+    {
+        BaseFile *file = data->fd_manager.get_fd(dir);
+        if (!file)
+            return -1;
+
+        if (file->type() != FileType::Directory)
+        {
+            dealloc(file);
+            error = ENOTDIR;
+            return -1;
+        }
+
+        BaseFile *new_file = data->mounts.lopen(path, flags, mode, (BaseDirectory *)file);
+        dealloc(file);
+        if (!new_file)
+            return -1;
+
+        if (new_file->type() == FileType::Symlink)
+        {
+            if (flags & O_NOFOLLOW)
+            {
+                dealloc(new_file);
+                error = ELOOP;
+                return -1;
+            }
+            BaseSymlink *link = (BaseSymlink *)new_file;
+            char *target = link->get_target();
+            dealloc(link);
+
+            if (!target)
+            {
+                error = ENOENT;
+                return -1;
+            }
+
+            int fd = openat(dir, target, flags, mode);
+            dealloc(target);
+            return fd;
+        }
+
+        int fd = data->fd_manager.add_fd(new_file);
+        if (fd < 0)
+        {
+            dealloc(new_file);
+            return -1;
+        }
+        return fd;
+    }
+
+    int VFS::mkfile(const char *path, int flags, int mode)
+    {
+        return open(path, flags | O_CREAT | O_EXCL, mode);
+    }
+
+    int VFS::mkfileat(int dir, const char *path, int flags, int mode)
+    {
+        return openat(dir, path, flags | O_CREAT | O_EXCL, mode);
+    }
+
+    int VFS::mkdir(const char *path, int flags, int mode)
+    {
+        return open(path, flags | O_CREAT | O_EXCL | O_DIRECTORY, mode);
+    }
+
+    int VFS::mkdirat(int dir, const char *path, int flags, int mode)
+    {
+        return openat(dir, path, flags | O_CREAT | O_EXCL | O_DIRECTORY, mode);
+    }
+
+    int VFS::symlink(const char *path, const char *target)
+    {
+        if (!path || !target)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        const char *last = strrchr(path, '/');
+        if (!last)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        String parent_path(path, last - path);
+
+        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0);
+        if (!parent)
+            return -1;
+        assert(parent->type() == FileType::Directory);
+        ((BaseDirectory *)parent)->mksym(last + 1, target);
+        dealloc(parent);
+        return 0;
+    }
+
+    int VFS::symlinkat(int dir_fd, const char *path, const char *target)
+    {
+        if (!path || !target)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        BaseFile *dir = data->fd_manager.get_fd(dir_fd);
+        if (!dir)
+            return -1;
+        if (dir->type() != FileType::Directory)
+        {
+            dealloc(dir);
+            error = ENOTDIR;
+            return -1;
+        }
+
+        const char *last = strrchr(path, '/');
+        if (!last)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        String parent_path(path, last - path);
+
+        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0, (BaseDirectory *)dir);
+        if (!parent)
+            return -1;
+        assert(parent->type() == FileType::Directory);
+        ((BaseDirectory *)parent)->mksym(last + 1, target);
+        dealloc(parent);
+        return 0;
+    }
 } // namespace Hamster
