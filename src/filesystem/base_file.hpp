@@ -118,6 +118,14 @@ namespace Hamster
          * @note Be sure to free the string
          */
         virtual char *basename() = 0;
+
+        /**
+         * @brief Used by the VFS to store some flags
+         * @warning Do not touch this, it is used by the VFS
+         * @note This is not a part of the public API
+         */
+        virtual int set_vfs_flags(uint32_t flags) = 0;
+        virtual uint32_t get_vfs_flags() = 0;
     };
 
     class BaseRegularFile : public BaseFile
