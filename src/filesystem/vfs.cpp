@@ -300,6 +300,25 @@ namespace Hamster
                 return 0;
             }
 
+            int mount_root(BaseFilesystem *fs)
+            {
+                if (!fs)
+                {
+                    error = EINVAL;
+                    return -1;
+                }
+
+                if (mounts.size() > 0)
+                {
+                    error = EIO;
+                    return -1;
+                }
+
+                mounts.push_back(alloc<MountPoint>(1, "/", fs));
+
+                return 0;
+            }
+
             int unmount(const char *path)
             {
                 if (!path)
@@ -463,7 +482,8 @@ namespace Hamster
 
     int VFS::mount(const char *path, BaseFilesystem *fs)
     {
-        return data->mounts.mount(path, fs);
+        return strcmp(path, "/") != 0 ? data->mounts.mount(path, fs)
+            : data->mounts.mount_root(fs);
     }
 
     int VFS::unmount(const char *path)
