@@ -32,6 +32,7 @@ namespace Hamster
         Socket,
         Pipe,
         Fifo,
+        INVALID,
     };
 
     class BaseFile
@@ -188,6 +189,7 @@ namespace Hamster
         /**
          * @brief Get the type of the special file.
          * @return The type of the special file
+         * @note Return `SpecialFileType::INVALID` and set `error` if an error occurs while fetching the type
          */
         virtual SpecialFileType special_type() = 0;
     };
