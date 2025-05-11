@@ -695,7 +695,6 @@ namespace Hamster
             return -1;
         }
         ssize_t ret = ((BaseRegularFile *)file)->write(buf, size);
-        dealloc(file);
         return ret;
     }
 
@@ -712,7 +711,6 @@ namespace Hamster
             return -1;
         }
         int ret = ((BaseRegularFile *)file)->seek(offset, whence);
-        dealloc(file);
         return ret;
     }
 
@@ -729,7 +727,6 @@ namespace Hamster
             return -1;
         }
         int64_t ret = ((BaseRegularFile *)file)->tell();
-        dealloc(file);
         return ret;
     }
 
@@ -746,7 +743,6 @@ namespace Hamster
             return -1;
         }
         int ret = ((BaseRegularFile *)file)->truncate(size);
-        dealloc(file);
         return ret;
     }
 
@@ -763,7 +759,6 @@ namespace Hamster
             return -1;
         }
         int64_t ret = ((BaseRegularFile *)file)->size();
-        dealloc(file);
         return ret;
     }
 
@@ -781,7 +776,6 @@ namespace Hamster
         }
 
         char *ret = ((BaseSymlink *)file)->get_target();
-        dealloc(file);
         return ret;
     }
 
@@ -799,7 +793,6 @@ namespace Hamster
         }
 
         int ret = ((BaseSymlink *)file)->set_target(target);
-        dealloc(file);
         return ret;
     }
 
@@ -817,7 +810,6 @@ namespace Hamster
         }
 
         char *const *ret = ((BaseDirectory *)file)->list();
-        dealloc(file);
         return ret;
     }
 
@@ -829,13 +821,11 @@ namespace Hamster
 
         if (file->type() != FileType::Directory)
         {
-            dealloc(file);
             error = ENOTDIR;
             return -1;
         }
 
         BaseFile *new_file = data->mounts.lopen(path, flags, mode, (BaseDirectory *)file);
-        dealloc(file);
         if (!new_file)
             return -1;
 
@@ -930,7 +920,6 @@ namespace Hamster
             return -1;
         if (dir->type() != FileType::Directory)
         {
-            dealloc(dir);
             error = ENOTDIR;
             return -1;
         }
