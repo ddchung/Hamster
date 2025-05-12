@@ -46,7 +46,7 @@ namespace Hamster
             using RamFsNode::RamFsNode;
 
             MemorySpace data;
-            int64_t size;
+            int64_t size = 0;
         };
 
         class RamFsSpecialNode : public RamFsNode
@@ -56,7 +56,7 @@ namespace Hamster
 
             using RamFsNode::RamFsNode;
 
-            SpecialFileType special_type;
+            SpecialFileType special_type = SpecialFileType::INVALID;
         };
 
         class RamFsSymlinkNode : public RamFsNode
@@ -273,7 +273,7 @@ namespace Hamster
         {
         public:
             RamFsRegularHandle(RamFsRegularNode *node, int flags)
-                : RamFsNodeHandle(node, flags)
+                : RamFsNodeHandle(node, flags), offset(0)
             {
             }
 

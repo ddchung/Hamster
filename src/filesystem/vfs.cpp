@@ -381,13 +381,31 @@ namespace Hamster
             };
 
         public:
+            FDManager() = default;
+            FDManager(const FDManager &) = delete;
+            FDManager &operator=(const FDManager &) = delete;
             ~FDManager()
             {
                 close_all();
             }
 
-            // Takes ownership of file, but not mount
-            // Mount is just for reference counting
+            FDManager(FDManager &&other)
+            {
+                fds = std::move(other.fds);
+                next_fd = other.next_fd;
+                other.fds = Map<int, Entry>();
+            }
+
+            FDManager &operator=(FDManager &&other)
+            {
+                if (this == &other)
+                    return *this;
+                std::swap(fds, other.fds);
+                std::swap(next_fd, other.next_fd);
+                return *this;
+            }
+
+            // Takes ownership of file
             int add_fd(BaseFile *file)
             {
                 if (file == nullptr)
@@ -410,6 +428,8 @@ namespace Hamster
                 auto it = fds.find(fd);
                 if (it == fds.end())
                     return -1;
+                
+                dealloc(it->second.file);
 
                 fds.erase(it);
 
@@ -435,7 +455,7 @@ namespace Hamster
             }
 
         private:
-            UnorderedMap<int, Entry> fds;
+            Map<int, Entry> fds;
             int next_fd = 0;
         };
     } // namespace
@@ -542,7 +562,6 @@ namespace Hamster
             return -1;
 
         int ret = file->rename(new_name);
-        dealloc(file);
         return ret;
     }
 
@@ -562,7 +581,6 @@ namespace Hamster
             return -1;
 
         int ret = file->remove();
-        dealloc(file);
         return ret;
     }
 
@@ -573,7 +591,6 @@ namespace Hamster
             return -1;
 
         int ret = file->stat(buf);
-        dealloc(file);
         return ret;
     }
 
@@ -595,7 +612,6 @@ namespace Hamster
             return -1;
 
         int ret = file->get_mode();
-        dealloc(file);
         return ret;
     }
 
@@ -606,7 +622,6 @@ namespace Hamster
             return -1;
 
         int ret = file->get_flags();
-        dealloc(file);
         return ret;
     }
 
@@ -617,7 +632,6 @@ namespace Hamster
             return -1;
 
         int ret = file->get_uid();
-        dealloc(file);
         return ret;
     }
 
@@ -628,7 +642,6 @@ namespace Hamster
             return -1;
 
         int ret = file->get_gid();
-        dealloc(file);
         return ret;
     }
 
@@ -639,7 +652,6 @@ namespace Hamster
             return -1;
 
         int ret = file->chmod(mode);
-        dealloc(file);
         return ret;
     }
 
@@ -650,7 +662,6 @@ namespace Hamster
             return -1;
 
         int ret = file->chown(uid, gid);
-        dealloc(file);
         return ret;
     }
 
@@ -661,7 +672,6 @@ namespace Hamster
             return nullptr;
 
         char *ret = file->basename();
-        dealloc(file);
         return ret;
     }
 
@@ -678,7 +688,6 @@ namespace Hamster
             return -1;
         }
         ssize_t ret = ((BaseRegularFile *)file)->read(buf, size);
-        dealloc(file);
         return ret;
     }
 
