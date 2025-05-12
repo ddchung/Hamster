@@ -316,6 +316,14 @@ namespace Hamster
 
                 mounts.push_back(alloc<MountPoint>(1, "/", fs));
 
+                // set the mountpoint flag on the root
+                BaseFile *file = lopen("/", O_RDONLY | O_DIRECTORY, 0);
+                if (!file)
+                    return -1;
+                uint32_t flags = file->get_vfs_flags();
+                file->set_vfs_flags(flags | FLAG_MOUNTPOINT | (0 << 16));
+                dealloc(file);
+
                 return 0;
             }
 
@@ -347,12 +355,12 @@ namespace Hamster
                     return -1;
                 }
 
+                // Clear flags
+                file->set_vfs_flags(flags & ~FLAG_MOUNTPOINT & ~MOUNT_ID_MASK);
+
                 // Unmount the filesystem
                 dealloc(mounts[mount_id]);
                 mounts[mount_id] = nullptr;
-
-                // Clear flags
-                file->set_vfs_flags(flags & ~FLAG_MOUNTPOINT & ~MOUNT_ID_MASK);
 
                 // OK
                 dealloc(file);
@@ -428,7 +436,7 @@ namespace Hamster
                 auto it = fds.find(fd);
                 if (it == fds.end())
                     return -1;
-                
+
                 dealloc(it->second.file);
 
                 fds.erase(it);
@@ -503,7 +511,7 @@ namespace Hamster
     int VFS::mount(const char *path, BaseFilesystem *fs)
     {
         return strcmp(path, "/") != 0 ? data->mounts.mount(path, fs)
-            : data->mounts.mount_root(fs);
+                                      : data->mounts.mount_root(fs);
     }
 
     int VFS::unmount(const char *path)
@@ -596,7 +604,7 @@ namespace Hamster
 
     int VFS::lstat(const char *path, struct ::stat *buf)
     {
-        BaseFile *file = data->mounts.lopen(path, O_RDONLY | O_DIRECTORY, 0);
+        BaseFile *file = data->mounts.lopen(path, O_RDONLY, 0);
         if (!file)
             return -1;
 
@@ -683,7 +691,6 @@ namespace Hamster
 
         if (file->type() != FileType::Regular)
         {
-            dealloc(file);
             error = EISDIR;
             return -1;
         }
@@ -699,7 +706,6 @@ namespace Hamster
 
         if (file->type() != FileType::Regular)
         {
-            dealloc(file);
             error = EISDIR;
             return -1;
         }
@@ -715,7 +721,6 @@ namespace Hamster
 
         if (file->type() != FileType::Regular)
         {
-            dealloc(file);
             error = EISDIR;
             return -1;
         }
@@ -731,7 +736,6 @@ namespace Hamster
 
         if (file->type() != FileType::Regular)
         {
-            dealloc(file);
             error = EISDIR;
             return -1;
         }
@@ -747,7 +751,6 @@ namespace Hamster
 
         if (file->type() != FileType::Regular)
         {
-            dealloc(file);
             error = EISDIR;
             return -1;
         }
@@ -763,7 +766,6 @@ namespace Hamster
 
         if (file->type() != FileType::Regular)
         {
-            dealloc(file);
             error = EISDIR;
             return -1;
         }
@@ -773,7 +775,7 @@ namespace Hamster
 
     char *VFS::get_target(const char *path)
     {
-        BaseFile *file = data->mounts.lopen(path, O_RDONLY | O_DIRECTORY, 0);
+        BaseFile *file = data->mounts.lopen(path, O_RDONLY, 0);
         if (!file)
             return nullptr;
 
@@ -785,12 +787,19 @@ namespace Hamster
         }
 
         char *ret = ((BaseSymlink *)file)->get_target();
+        dealloc(file);
         return ret;
     }
 
-    int VFS::set_target(int fd, const char *target)
+    int VFS::set_target(const char *path, const char *target)
     {
-        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!path || !target)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        BaseFile *file = data->mounts.lopen(path, O_WRONLY, 0);
         if (!file)
             return -1;
 
@@ -802,6 +811,7 @@ namespace Hamster
         }
 
         int ret = ((BaseSymlink *)file)->set_target(target);
+        dealloc(file);
         return ret;
     }
 
@@ -834,7 +844,12 @@ namespace Hamster
             return -1;
         }
 
-        BaseFile *new_file = data->mounts.lopen(path, flags, mode, (BaseDirectory *)file);
+        BaseFile *cloned_file = file->clone();
+        if (!cloned_file)
+            return -1;
+        assert(cloned_file->type() == FileType::Directory);
+
+        BaseFile *new_file = data->mounts.lopen(path, flags, mode, (BaseDirectory *)cloned_file);
         if (!new_file)
             return -1;
 
@@ -911,9 +926,10 @@ namespace Hamster
         if (!parent)
             return -1;
         assert(parent->type() == FileType::Directory);
-        ((BaseDirectory *)parent)->mksym(last + 1, target);
+        auto sym = ((BaseDirectory *)parent)->mksym(last + 1, target);
         dealloc(parent);
-        return 0;
+        dealloc(sym);
+        return sym == nullptr ? -1 : 0;
     }
 
     int VFS::symlinkat(int dir_fd, const char *path, const char *target)
@@ -933,6 +949,11 @@ namespace Hamster
             return -1;
         }
 
+        BaseFile *cloned_file = dir->clone();
+        if (!cloned_file)
+            return -1;
+        assert(cloned_file->type() == FileType::Directory);
+
         const char *last = strrchr(path, '/');
         if (!last)
         {
@@ -942,12 +963,13 @@ namespace Hamster
 
         String parent_path(path, last - path);
 
-        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0, (BaseDirectory *)dir);
+        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0, (BaseDirectory *)cloned_file);
         if (!parent)
             return -1;
         assert(parent->type() == FileType::Directory);
-        ((BaseDirectory *)parent)->mksym(last + 1, target);
+        auto sym = ((BaseDirectory *)parent)->mksym(last + 1, target);
         dealloc(parent);
-        return 0;
+        dealloc(sym);
+        return sym == nullptr ? -1 : 0;
     }
 } // namespace Hamster
