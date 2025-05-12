@@ -2,17 +2,21 @@
 
 #pragma once
 
-#include <filesystem/file.hpp>
+#include <filesystem/base_file.hpp>
 
 namespace Hamster
 {
-    struct RamFsData;
+    class RamFsData;
 
+    /**
+     * @brief A filesystem that is stored in RAM, and can also use swap to store files
+     * @note This is NOT persistent, and data will be lost on unmount
+     */
     class RamFs : public BaseFilesystem
     {
     public:
         RamFs();
-        ~RamFs() override;
+        ~RamFs();
 
         RamFs(const RamFs &) = delete;
         RamFs &operator=(const RamFs &) = delete;
@@ -20,18 +24,18 @@ namespace Hamster
         RamFs(RamFs &&);
         RamFs &operator=(RamFs &&);
 
-        BaseFile *open(const char *path, int flags, ...) override;
-        BaseFile *open(const char *path, int flags, va_list args) override;
-        int rename(const char *old_path, const char *new_path) override;
-        int unlink(const char *path) override;
-        int link(const char *old_path, const char *new_path) override;
-        int stat(const char *path, struct ::stat *buf) override;
-
-        BaseRegularFile *mkfile(const char *name, int flags, int mode) override;
-        BaseDirectory *mkdir(const char *name, int flags, int mode) override;
-        BaseFifoFile *mkfifo(const char *name, int flags, int mode) override;
+        /**
+         * @brief Open the root directory of the filesystem.
+         * @param flags The flags to open the directory with
+         * @return A newly allocated `BaseDirectory` that operates on the root directory, or on error, it returns nullptr and sets `error`
+         * @note Be sure to free the directory
+         * @note This is equivelant to POSIX `open` on the filesystem's base
+         * @note The filesystem's base is not necessarily the root of Hamster's FS, due to mounts
+         */
+        BaseDirectory *open_root(int flags) override;
 
     private:
         RamFsData *data;
     };
 } // namespace Hamster
+

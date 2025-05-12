@@ -1,323 +1,194 @@
-// Ram filesystem
+// Ram FS implementaiton
 
+#include <filesystem/base_file.hpp>
 #include <filesystem/ramfs.hpp>
-#include <memory/tree.hpp>
-#include <memory/stl_sequential.hpp>
-#include <memory/stl_map.hpp>
-#include <memory/stl_set.hpp>
 #include <memory/allocator.hpp>
 #include <memory/memory_space.hpp>
+#include <memory/stl_sequential.hpp>
+#include <memory/stl_map.hpp>
 #include <errno/errno.h>
 #include <cstring>
-#include <algorithm>
-#include <fcntl.h>
 
 namespace Hamster
 {
-    // Tree
+    /* Ram FS Tree */
     namespace
     {
-        class RamFsTreeNode
+        class RamFsDirectoryNode;
+
+        class RamFsNode
         {
         public:
-            RamFsTreeNode(const String &name, int mode)
-                : name(name), mode(mode), uid(0), gid(0)
-            {}
-
-            RamFsTreeNode(const RamFsTreeNode &other) = delete;
-            RamFsTreeNode &operator=(const RamFsTreeNode &other) = delete;
-
-            virtual ~RamFsTreeNode() = default;
+            virtual ~RamFsNode() = default;
 
             virtual FileType type() const = 0;
 
+            RamFsNode(const String &name, int mode, int uid, int gid, RamFsDirectoryNode *parent)
+                : name(name), mode(mode), uid(uid), gid(gid), vfs_flags(0), parent(parent)
+            {
+            }
+
+            RamFsNode(const RamFsNode &) = delete;
+            RamFsNode &operator=(const RamFsNode &) = delete;
+
             String name;
             int mode;
-
-            int uid;
-            int gid;
+            int uid, gid;
+            uint32_t vfs_flags;
+            RamFsDirectoryNode *parent;
         };
 
-        class RamFsDirNode : public RamFsTreeNode
+        class RamFsRegularNode : public RamFsNode
         {
         public:
-            // empty because Tree takes care of everyting
-            RamFsDirNode(const String &name, int mode)
-                : RamFsTreeNode(name, mode)
-            {
-            }
-
-            ~RamFsDirNode() override = default;
-
-            FileType type() const override { return FileType::Directory; }
-        };
-
-        class RamFsFileNode : public RamFsTreeNode
-        {
-        public:
-            RamFsFileNode(const String &name, int mode)
-                : RamFsTreeNode(name, mode), length(0)
-            {
-            }
-
-            ~RamFsFileNode() override = default;
-
             FileType type() const override { return FileType::Regular; }
 
+            using RamFsNode::RamFsNode;
+
             MemorySpace data;
-            int64_t length;
+            int64_t size = 0;
         };
 
-        class RamFsFifoNode : public RamFsTreeNode
+        class RamFsSpecialNode : public RamFsNode
         {
         public:
-            RamFsFifoNode(int mode, const String &name)
-                : RamFsTreeNode(name, mode)
+            FileType type() const override { return FileType::Special; }
+
+            using RamFsNode::RamFsNode;
+
+            SpecialFileType special_type = SpecialFileType::INVALID;
+        };
+
+        class RamFsSymlinkNode : public RamFsNode
+        {
+        public:
+            FileType type() const override { return FileType::Symlink; }
+
+            using RamFsNode::RamFsNode;
+
+            String target;
+        };
+
+        class RamFsDirectoryNode : public RamFsNode
+        {
+        public:
+            FileType type() const override { return FileType::Directory; }
+
+            using RamFsNode::RamFsNode;
+
+            ~RamFsDirectoryNode()
             {
+                for (auto &[name, node] : children)
+                {
+                    dealloc(node);
+                }
             }
 
-            ~RamFsFifoNode() override = default;
-
-            FileType type() const override { return FileType::FIFO; }
-
-            Deque<char> data;
+            Map<String, RamFsNode *> children;
         };
-    } // namespace
+    } // namespace 
 
-    // File descriptor manager
+    /* File Handles */
     namespace
     {
-        class RamFsFdManager
+        class RamFsNodeHandle
         {
         public:
-            RamFsFdManager() : fd_counter(0) 
+            RamFsNodeHandle(RamFsNode *node, int flags)
+                : node(node), flags(flags)
             {
             }
 
-            ~RamFsFdManager() = default;
+            ~RamFsNodeHandle() = default;
 
-            int add_fd(RamFsTreeNode *node)
+            int rename(const char *new_name)
             {
-                if (node == nullptr)
-                    return -1;
-                if (fd_set.find(node) != fd_set.end())
+                if (strchr(new_name, '/'))
                 {
-                    // already in use, get the fd
-                    for (auto &[fd, n] : fd_map)
-                    {
-                        if (n == node)
-                        {
-                            ++fd_ref_count[fd];
-                            return fd;
-                        }
-                    }
-                }
-
-                if (node->type() == FileType::Regular)
-                {
-                    ((RamFsFileNode *)node)->data.swap_in_pages();
-                }
-
-                int fd = ++fd_counter;
-                fd_map[fd] = node;
-                fd_ref_count[fd] = 1;
-                fd_set.insert(node);
-                return fd;
-            }
-
-            void remove_fd(int fd)
-            {
-                auto ref_it = fd_ref_count.find(fd);
-                if (ref_it == fd_ref_count.end())
-                    return;
-                if (--ref_it->second > 0)
-                    return;
-                auto it = fd_map.find(fd);
-                if (it != fd_map.end())
-                {
-                    if (it->second->type() == FileType::Regular)
-                    {
-                        ((RamFsFileNode *)it->second)->data.swap_out_pages();
-                    }
-                    fd_set.erase(it->second);
-                    fd_ref_count.erase(ref_it);
-                    fd_map.erase(it);
-                }
-            }
-
-            // please do not keep this pointer for long, as it
-            // defeats the point of this manager
-            RamFsTreeNode *get_node(int fd)
-            {
-                auto it = fd_map.find(fd);
-                if (it != fd_map.end())
-                    return it->second;
-                return nullptr;
-            }
-
-            unsigned int get_ref_count(int fd)
-            {
-                auto it = fd_ref_count.find(fd);
-                if (it != fd_ref_count.end())
-                    return it->second;
-                return 0;
-            }
-
-        private:
-            // pointers in this map are weak and do not own the object
-            UnorderedMap<int, RamFsTreeNode *> fd_map;
-            UnorderedMap<int, unsigned int> fd_ref_count;
-            UnorderedSet<RamFsTreeNode *> fd_set;
-
-            int fd_counter;
-        };
-    } // namespace
-
-    struct RamFsData
-    {
-        RamFsData()
-            : tree(alloc<RamFsDirNode>(1, "/", 0777))
-        {
-        }
-
-        RamFsData(const RamFsData&) = delete;
-        RamFsData &operator=(const RamFsData &) = delete;
-
-        RamFsData(RamFsData &&) = delete;
-        RamFsData &operator=(RamFsData &&) = delete;
-
-        ~RamFsData()
-        {
-            for (auto &node : tree)
-            {
-                dealloc(node);
-            }
-        }
-
-        RamFsFdManager fd_manager;
-        Tree<RamFsTreeNode *> tree;
-    };
-
-    // user file and directory and fifo
-    namespace
-    {
-        class RamFsFile // don't inherit from BaseFile to prevent diamond problem
-        {
-        public:
-            // takes ownership of the fd
-            RamFsFile(int fd, RamFsData &fs_data, int flags)
-                : fd(fd), fs_data(fs_data), open_flags(flags)
-            {
-            }
-
-            ~RamFsFile()
-            {
-                fs_data.fd_manager.remove_fd(fd);
-            }
-
-            int rename(const char *newname)
-            {
-                if ((open_flags & O_ACCMODE) == O_RDONLY)
-                {
-                    error = EACCES;
+                    error = EINVAL;
                     return -1;
                 }
 
-                RamFsTreeNode *node = fs_data.fd_manager.get_node(fd);
-                if (node == nullptr)
+                if (!node)
                 {
                     error = EBADF;
                     return -1;
                 }
 
-                node->name = newname;
+                node->name = new_name;
                 return 0;
             }
 
             int remove()
             {
-                if ((open_flags & O_ACCMODE) == O_RDONLY)
-                {
-                    error = EACCES;
-                    return -1;
-                }
-                
-                RamFsTreeNode *node = fs_data.fd_manager.get_node(fd);
-                if (node == nullptr)
+                if (!node)
                 {
                     error = EBADF;
                     return -1;
                 }
-                
-                for (auto it = fs_data.tree.begin(); it != fs_data.tree.end(); ++it)
+
+                if (node->parent)
                 {
-                    if (*it == node)
-                    {
-                        it.remove();
-                        fs_data.fd_manager.remove_fd(fd);
-                        return 0;
-                    }
+                    node->parent->children.erase(node->name);
+
+                    dealloc(node);
+                    node = nullptr;
+                    return 0;
                 }
-                
-                // should not happen
-                error = EIO;
-                return -1;
+                else
+                {
+                    error = EINVAL;
+                    return -1;
+                }
             }
 
             int stat(struct ::stat *buf)
             {
-                RamFsTreeNode *node = fs_data.fd_manager.get_node(fd);
-                if (node == nullptr)
+                if (!node)
                 {
                     error = EBADF;
                     return -1;
                 }
 
-                // see: https://pubs.opengroup.org/onlinepubs/007904875/basedefs/sys/stat.h.html
-                buf->st_dev = (int)(uintptr_t)node;
-                buf->st_ino = 0;
+                memset(buf, 0, sizeof(struct ::stat));
+
                 buf->st_mode = node->mode;
-                buf->st_nlink = fs_data.fd_manager.get_ref_count(fd);
-                if (buf->st_nlink == 0) buf->st_nlink = 1;
                 buf->st_uid = node->uid;
                 buf->st_gid = node->gid;
-                buf->st_rdev = 0;
-                buf->st_atime = 0;
-                buf->st_mtime = 0;
-                buf->st_ctime = 0;
+                buf->st_size = 0;
 
-                switch (node->type())
+                if (node->type() == FileType::Regular)
                 {
-                case FileType::Regular:
-                    buf->st_size = ((RamFsFileNode *)node)->length;
-                    buf->st_blksize = 4096;
-                    buf->st_blocks = (buf->st_size + 4095) / 4096;
+                    auto *regular_node = static_cast<RamFsRegularNode *>(node);
+                    buf->st_size = regular_node->size;
+                    buf->st_blocks = (regular_node->size + HAMSTER_PAGE_SIZE - 1) / HAMSTER_PAGE_SIZE;
+                    buf->st_blksize = HAMSTER_PAGE_SIZE;
                     buf->st_mode |= S_IFREG;
-                    break;
-                case FileType::FIFO:
-                    buf->st_size = ((RamFsFifoNode *)node)->data.size();
-                    buf->st_blksize = 4096;
-                    buf->st_blocks = (buf->st_size + 4095) / 4096;
-                    buf->st_mode |= S_IFIFO;
-                    break;
-                case FileType::Directory:
-                    buf->st_size = 0;
-                    buf->st_blksize = 4096;
-                    buf->st_blocks = 0;
+                }
+                else if (node->type() == FileType::Directory)
+                {
                     buf->st_mode |= S_IFDIR;
-                    break;
-                default:
+                }
+                else if (node->type() == FileType::Symlink)
+                {
+                    buf->st_mode |= S_IFLNK;
+                }
+                else if (node->type() == FileType::Special)
+                {
+                    buf->st_mode |= S_IFCHR;
+                }
+                else
+                {
                     error = EIO;
                     return -1;
-                };
+                }
 
                 return 0;
             }
 
-            int mode() const
+            int get_mode()
             {
-                RamFsTreeNode *node = fs_data.fd_manager.get_node(fd);
-                if (node == nullptr)
+                if (!node)
                 {
                     error = EBADF;
                     return -1;
@@ -326,10 +197,42 @@ namespace Hamster
                 return node->mode;
             }
 
+            int get_uid()
+            {
+                if (!node)
+                {
+                    error = EBADF;
+                    return -1;
+                }
+
+                return node->uid;
+            }
+
+            int get_gid()
+            {
+                if (!node)
+                {
+                    error = EBADF;
+                    return -1;
+                }
+
+                return node->gid;
+            }
+
+            int get_flags()
+            {
+                if (!node)
+                {
+                    error = EBADF;
+                    return -1;
+                }
+
+                return flags;
+            }
+
             int chmod(int mode)
             {
-                RamFsTreeNode *node = fs_data.fd_manager.get_node(fd);
-                if (node == nullptr)
+                if (!node)
                 {
                     error = EBADF;
                     return -1;
@@ -341,204 +244,168 @@ namespace Hamster
 
             int chown(int uid, int gid)
             {
-                RamFsTreeNode *node = fs_data.fd_manager.get_node(fd);
-                if (node == nullptr)
+                if (!node)
+                {
+                    error = EBADF;
                     return -1;
+                }
+
                 node->uid = uid;
                 node->gid = gid;
                 return 0;
             }
 
-            const char *name() const
+            char *basename()
             {
-                RamFsTreeNode *node = fs_data.fd_manager.get_node(fd);
-                if (node == nullptr)
+                if (!node)
                 {
                     error = EBADF;
                     return nullptr;
                 }
 
-                return node->name.c_str();
+                const char *name = node->name.c_str();
+                char *result = alloc<char>(strlen(name) + 1);
+                strcpy(result, name);
+                return result;
             }
 
-            int get_fd() const
+            int set_vfs_flags(uint32_t flags)
             {
-                return fd;
-            }
-
-        protected:
-            int fd;
-            RamFsData &fs_data;
-
-            int open_flags;
-        };
-
-        class RamFsFifoFile : private RamFsFile, public BaseFifoFile
-        {
-        public:
-            // takes ownership of the fd
-            RamFsFifoFile(int fd, RamFsData &fs_data, int flags)
-                : RamFsFile(fd, fs_data, flags)
-            {
-            }
-            
-            ~RamFsFifoFile() override = default;
-
-            int rename(const char *newname) override { return RamFsFile::rename(newname); }
-            int remove() override { return RamFsFile::remove(); }
-            int stat(struct ::stat *buf) override { return RamFsFile::stat(buf); }
-            int mode() override { return RamFsFile::mode(); }
-            int chmod(int mode) override { return RamFsFile::chmod(mode); }
-            int chown(int uid, int gid) override { return RamFsFile::chown(uid, gid); }
-            const char *name() override { return RamFsFile::name(); }
-            int get_fd() override { return RamFsFile::get_fd(); }
-
-            ssize_t read(uint8_t *buf, size_t size) override
-            {
-                if ((open_flags & O_ACCMODE) == O_WRONLY)
-                {
-                    error = EACCES;
-                    return -1;
-                }
-                RamFsTreeNode *node = fs_data.fd_manager.get_node(fd);
-                if (node == nullptr)
+                if (!node)
                 {
                     error = EBADF;
                     return -1;
                 }
-                if (node->type() != FileType::FIFO)
-                {
-                    error = EINVAL;
-                    return -1;
-                }
-                RamFsFifoNode *fifo_node = (RamFsFifoNode *)node;
-                if (fifo_node->data.size() == 0)
-                {
-                    error = EAGAIN;
-                    return -1;
-                }
-                size_t read_size = std::min(size, fifo_node->data.size());
-                for (size_t i = 0; i < read_size; ++i)
-                {
-                    buf[i] = fifo_node->data.front();
-                }
-                fifo_node->data.erase(fifo_node->data.begin(), fifo_node->data.begin() + read_size);
-                return read_size;
+
+                node->vfs_flags = flags;
+                return 0;
             }
 
-            ssize_t write(const uint8_t *buf, size_t size) override
+            uint32_t get_vfs_flags()
             {
-                if ((open_flags & O_ACCMODE) == O_RDONLY)
-                {
-                    error = EACCES;
-                    return -1;
-                }
-                RamFsTreeNode *node = fs_data.fd_manager.get_node(fd);
-                if (node == nullptr)
+                if (!node)
                 {
                     error = EBADF;
-                    return -1;
-                }
-                if (node->type() != FileType::FIFO)
-                {
-                    error = EINVAL;
-                    return -1;
-                }
-                RamFsFifoNode *fifo_node = (RamFsFifoNode *)node;
-                fifo_node->data.insert(fifo_node->data.end(), buf, buf + size);
-                return size;
-            }
-        };
-
-        class RamFsRegularFile : private RamFsFile, public BaseRegularFile
-        {
-        public:
-            RamFsRegularFile(int fd, RamFsData &fs_data, int flags)
-                : RamFsFile(fd, fs_data, flags), position(0)
-            {
-            }
-
-            ~RamFsRegularFile() override = default;
-
-            int rename(const char *newname) override { return RamFsFile::rename(newname); }
-            int remove() override { return RamFsFile::remove(); }
-            int stat(struct ::stat *buf) override { return RamFsFile::stat(buf); }
-            int mode() override { return RamFsFile::mode(); }
-            int chmod(int mode) override { return RamFsFile::chmod(mode); }
-            int chown(int uid, int gid) override { return RamFsFile::chown(uid, gid); }
-            const char *name() override { return RamFsFile::name(); }
-            int get_fd() override { return RamFsFile::get_fd(); }
-
-            ssize_t read(uint8_t *buf, size_t size) override
-            {
-                if ((open_flags & O_ACCMODE) == O_WRONLY)
-                {
-                    error = EACCES;
-                    return -1;
-                }
-                RamFsFileNode *file_node = get_file_node();
-                if (file_node == nullptr)
-                    return -1;
-                if (position >= file_node->length)
-                {
-                    // read past end
-                    error = EINVAL;
                     return 0;
                 }
 
-                size_t read_size = std::min((int64_t)size, file_node->length - position);
-                for (size_t i = 0; i < read_size; ++i)
+                return node->vfs_flags;
+            }
+
+        protected:
+            RamFsNode *node;
+            int flags;
+        };
+
+        class RamFsRegularHandle : public BaseRegularFile, private RamFsNodeHandle
+        {
+        public:
+            RamFsRegularHandle(RamFsRegularNode *node, int flags)
+                : RamFsNodeHandle(node, flags), offset(0)
+            {
+            }
+
+            ~RamFsRegularHandle() override = default;
+
+            int rename(const char *new_name) override { return RamFsNodeHandle::rename(new_name); }
+            int remove() override { return RamFsNodeHandle::remove(); }
+            int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
+            int get_mode() override { return RamFsNodeHandle::get_mode(); }
+            int get_uid() override { return RamFsNodeHandle::get_uid(); }
+            int get_gid() override { return RamFsNodeHandle::get_gid(); }
+            int get_flags() override { return RamFsNodeHandle::get_flags(); }
+            int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
+            int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
+            char *basename() override { return RamFsNodeHandle::basename(); }
+            int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
+            uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
+
+            RamFsRegularHandle *clone() override
+            {
+                auto *reg_node = get_node();
+                if (!reg_node)
+                    return nullptr;
+                
+                auto *new_handle = alloc<RamFsRegularHandle>(1, reg_node, flags);
+                new_handle->offset = offset;
+                return new_handle;
+            }
+
+            ssize_t read(uint8_t *buf, size_t size) override
+            {
+                auto *reg_node = get_node();
+                if (!reg_node)
+                    return -1;
+                if (offset >= reg_node->size)
                 {
-                    buf[i] = file_node->data[position + i];
+                    error = EINVAL;
+                    return 0;
                 }
-                position += read_size;
-                return read_size;
+                if (offset + (int64_t)size > reg_node->size)
+                    size = reg_node->size - offset;
+                if (size == 0)
+                    return 0;
+                
+                for (uint64_t addr = offset; addr < offset + size; ++addr)
+                {
+                    buf[addr - offset] = reg_node->data[addr];
+                }
+                offset += size;
+                return size;
             }
 
             ssize_t write(const uint8_t *buf, size_t size) override
             {
-                if ((open_flags & O_ACCMODE) == O_RDONLY)
-                {
-                    error = EACCES;
+                auto *reg_node = get_node();
+                if (!reg_node)
                     return -1;
-                }
-                RamFsFileNode *file_node = get_file_node();
-                if (file_node == nullptr)
-                    return -1;
-                for (size_t i = 0; i < size; ++i)
-                {
-                    uint8_t &byte = file_node->data[position + i];
-                    if (&byte != &Page::get_dummy())
+                
+                /*
+                As defined by POSIX:
+                    If the O_APPEND flag of the file status flags is set, the file offset 
+                    shall be set to the end of the file prior to each write and no intervening 
+                    file modification operation shall occur between changing the file offset and 
+                    the write operation.
+                */
+                if (flags & O_APPEND)
+                    seek(0, SEEK_END);
+                
+                // See: the comment on the seek function
+                if (offset > reg_node->size)
+                    for (uint64_t addr = MemorySpace::get_page_start(offset); 
+                         addr <= MemorySpace::get_page_start(offset + size);
+                         addr += HAMSTER_PAGE_SIZE)
                     {
-                        // ok
-                        byte = buf[i];
-                    }
-                    else if (file_node->data.allocate_page(position + i) < 0)
-                    {
-                        // failed allocation
-                        if (i == 0)
-                        {
-                            error = EIO;
+                        if (reg_node->data.allocate_page(addr) < 0)
                             return -1;
-                        }
-                        return i;
+                        memset(reg_node->data.get_page_data(addr), 0, HAMSTER_PAGE_SIZE);
                     }
-                    else
-                    {
-                        // allocated page
-                        file_node->data[position + i] = buf[i];
-                    }
+                
+                for (uint64_t addr = offset; addr < offset + size; ++addr)
+                {
+                    reg_node->data.allocate_page(addr);
+                    reg_node->data[addr] = buf[addr - offset];
                 }
-                file_node->length = std::max(file_node->length, position + (int64_t)size);
-                position += size;
+                offset += size;
+                reg_node->size = std::max(reg_node->size, offset);
                 return size;
             }
 
             int64_t seek(int64_t offset, int whence) override
             {
-                RamFsFileNode *file_node = get_file_node();
-                if (file_node == nullptr)
+                auto *reg_node = get_node();
+                if (!reg_node)
                     return -1;
+                
+                /*
+                Note that this should not check for seeking past the end of the file, as POSIX
+                defines:
+                    The lseek() function shall allow the file offset to be set beyond the end 
+                    of the existing data in the file. If data is later written at this point, 
+                    subsequent reads of data in the gap shall return bytes with the value 0 
+                    until data is actually written into the gap.
+                */
+
                 switch (whence)
                 {
                 case SEEK_SET:
@@ -547,82 +414,90 @@ namespace Hamster
                         error = EINVAL;
                         return -1;
                     }
-                    position = offset;
+                    this->offset = offset;
                     break;
                 case SEEK_CUR:
-                    if (position + offset < 0)
+                    if (this->offset + offset < 0)
                     {
                         error = EINVAL;
                         return -1;
                     }
-                    position += offset;
+                    this->offset += offset;
                     break;
                 case SEEK_END:
-                    if (file_node->length + offset < 0)
+                    if (reg_node->size + offset < 0)
                     {
                         error = EINVAL;
                         return -1;
                     }
-                    position = file_node->length + offset;
+                    this->offset = reg_node->size + offset;
                     break;
                 default:
                     error = EINVAL;
                     return -1;
                 }
-                return position;
+
+                return this->offset;
             }
 
             int64_t tell() override
-            {   
-                if (!get_file_node())
-                    return -1;
-                return position;
+            {
+                return seek(0, SEEK_CUR);
             }
 
             int truncate(int64_t size) override
             {
-                if ((open_flags & O_ACCMODE) == O_RDONLY)
-                {
-                    error = EACCES;
+                auto *reg_node = get_node();
+                if (!reg_node)
                     return -1;
-                }
-                RamFsFileNode *file_node = get_file_node();
-                if (file_node == nullptr)
-                    return -1;
+
                 if (size < 0)
                 {
                     error = EINVAL;
                     return -1;
                 }
 
-                // free whole pages past the end
-                if (size < file_node->length)
+                if (size > reg_node->size)
                 {
-                    for (int64_t i = MemorySpace::get_page_start(size); i <= (int64_t)MemorySpace::get_page_start(file_node->length); i += HAMSTER_PAGE_SIZE)
+                    for (uint64_t addr = MemorySpace::get_page_start(reg_node->size);
+                         addr <= MemorySpace::get_page_start(size);
+                         addr += HAMSTER_PAGE_SIZE)
                     {
-                        file_node->data.deallocate_page(i);
+                        if (reg_node->data.allocate_page(addr) < 0)
+                            return -1;
+                        memset(reg_node->data.get_page_data(addr), 0, HAMSTER_PAGE_SIZE);
+                    }
+                }
+                else
+                {
+                    for (uint64_t addr = MemorySpace::get_page_start(size);
+                         addr <= MemorySpace::get_page_start(reg_node->size);
+                         addr += HAMSTER_PAGE_SIZE)
+                    {
+                        if (reg_node->data.deallocate_page(addr))
+                            return -1;
                     }
                 }
 
-                file_node->length = size;
+                reg_node->size = size;
                 return 0;
             }
 
             int64_t size() override
             {
-                RamFsFileNode *node = get_file_node();
-                if (!node)
+                auto *reg_node = get_node();
+                if (!reg_node)
                     return -1;
-                return node->length;
+
+                return reg_node->size;
             }
 
         private:
-            int64_t position;
+            int64_t offset;
 
-            RamFsFileNode *get_file_node() const
+            RamFsRegularNode *get_node()
             {
-                RamFsTreeNode *node = fs_data.fd_manager.get_node(fd);
-                if (node == nullptr)
+                if (!node)
                 {
                     error = EBADF;
                     return nullptr;
@@ -632,444 +507,429 @@ namespace Hamster
                     error = EINVAL;
                     return nullptr;
                 }
-                return (RamFsFileNode *)node;
+                return static_cast<RamFsRegularNode *>(node);
             }
         };
 
-        class RamFsDirectory : private RamFsFile, public BaseDirectory
+        class RamFsSpecialHandle : public BaseSpecialFile, private RamFsNodeHandle
         {
         public:
-            RamFsDirectory(int fd, RamFsData &data, int flags)
-                : RamFsFile(fd, data, flags)
+            RamFsSpecialHandle(RamFsSpecialNode *node, int flags)
+                : RamFsNodeHandle(node, flags)
             {
             }
 
-            ~RamFsDirectory() override = default;
+            ~RamFsSpecialHandle() override = default;
 
-            int rename(const char *newname) override { return RamFsFile::rename(newname); }
-            int remove() override { return RamFsFile::remove(); }
-            int stat(struct ::stat *buf) override { return RamFsFile::stat(buf); }
-            int mode() override { return RamFsFile::mode(); }
-            int chmod(int mode) override { return RamFsFile::chmod(mode); }
-            int chown(int uid, int gid) override { return RamFsFile::chown(uid, gid); }
-            const char *name() override { return RamFsFile::name(); }
-            int get_fd() override { return RamFsFile::get_fd(); }
+            int rename(const char *new_name) override { return RamFsNodeHandle::rename(new_name); }
+            int remove() override { return RamFsNodeHandle::remove(); }
+            int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
+            int get_mode() override { return RamFsNodeHandle::get_mode(); }
+            int get_uid() override { return RamFsNodeHandle::get_uid(); }
+            int get_gid() override { return RamFsNodeHandle::get_gid(); }
+            int get_flags() override { return RamFsNodeHandle::get_flags(); }
+            int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
+            int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
+            char *basename() override { return RamFsNodeHandle::basename(); }
+            int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
+            uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
 
-            char * const * list() override
+            RamFsSpecialHandle *clone() override
             {
-                if ((open_flags & O_ACCMODE) == O_WRONLY)
-                {
-                    error = EACCES;
+                auto *special_node = get_node();
+                if (!special_node)
                     return nullptr;
-                }
-
-                RamFsDirNode *node = get_node();
-                Tree<RamFsTreeNode *>::Iterator it = fs_data.tree.begin();
-                for (; it != fs_data.tree.end(); ++it)
-                    if (*it == node)
-                        break;
-                if (!it)
-                {
-                    error = EBADF;
-                    return nullptr;
-                }
-
-                char **strings = alloc<char*>(it.children().size() + 1);
-
-                for (size_t i = 0; i < it.children().size(); ++i)
-                {
-                    strings[i] = alloc<char>(it.children()[i].data->name.length() + 1);
-                    strcpy(strings[i], it.children()[i].data->name.c_str());
-                }
-
-                strings[it.children().size()] = nullptr;
-
-                return strings;
-            }
-
-            BaseFile *get(const char *name, int flags, ...) override
-            {
-                va_list args;
-                va_start(args, flags);
-                BaseFile *f = get(name, flags, args);
-                va_end(args);
-                return f;
-            }
-
-            BaseFile *get(const char *name, int flags, va_list args) override
-            {
-                if (!name)
-                {
-                    error = EINVAL;
-                    return nullptr;
-                }
-                if (strchr(name, '/') != nullptr)
-                {
-                    error = EINVAL;
-                    return nullptr;
-                }
-                RamFsDirNode *node = get_node();
-                if (node == nullptr)
-                    return nullptr;
-
-                if ((node->mode & O_ACCMODE) == O_WRONLY)
-                {
-                    error = EACCES;
-                    return nullptr;
-                }
-
-                Tree<RamFsTreeNode *>::Iterator it = fs_data.tree.begin();
-                for (; it != fs_data.tree.end(); ++it)
-                    if (*it == node)
-                        break;
-                if (!it)
-                {
-                    error = EBADF;
-                    return nullptr;
-                }
-
-                for (auto &node : it.children())
-                {
-                    RamFsTreeNode *child = node.data;
-                    if (child->name == name)
-                    {
-                        if (flags & O_EXCL)
-                        {
-                            error = EEXIST;
-                            return nullptr;
-                        }
-                        if (!(child->mode & 0b100000000) && (flags & O_ACCMODE) != O_WRONLY)
-                        {
-                            // Read not permitted
-                            error = EACCES;
-                            return nullptr;
-                        }
-                        if (!(child->mode & 0b010000000) && (flags & O_ACCMODE) != O_RDONLY)
-                        {
-                            // Write not permitted
-                            error = EACCES;
-                            return nullptr;
-                        }
-                        // match
-                        int fd = fs_data.fd_manager.add_fd(child);
-                        if (fd < 0)
-                        {
-                            error = EIO;
-                            return nullptr;
-                        }
-                        switch (child->type())
-                        {
-                        case FileType::Regular:
-                            if (flags & O_DIRECTORY)
-                            {
-                                error = ENOTDIR;
-                                return nullptr;
-                            }
-                            if (flags & O_TRUNC)
-                                ((RamFsFileNode*)child)->length = 0; 
-                            return alloc<RamFsRegularFile>(1, fd, fs_data, flags);
-                        case FileType::FIFO:
-                            return alloc<RamFsFifoFile>(1, fd, fs_data, flags);
-                        case FileType::Directory:
-                            return alloc<RamFsDirectory>(1, fd, fs_data, flags);
-                        default:
-                            error = EPERM;
-                            return nullptr;
-                        }
-                    }
-                }
-
-                // not found
-                if (!(flags & O_CREAT))
-                {
-                    error = ENOENT;
-                    return nullptr;
-                }
-
-                // create
-                int mode = va_arg(args, int);
-
-                if (flags & O_DIRECTORY)
-                {
-                    return mkdir(name, flags, mode);
-                }
-                else
-                {
-                    return mkfile(name, flags, mode);
-                }
-            }
-
-            BaseFile *mkfile(const char *name, int flags, int mode) override
-            {
-                if ((open_flags & O_ACCMODE) == O_RDONLY)
-                {
-                    error = EACCES;
-                    return nullptr;
-                }
-                if (!name)
-                {
-                    error = EINVAL;
-                    return nullptr;
-                }
-                if (strchr(name, '/') != nullptr)
-                {
-                    error = EINVAL;
-                    return nullptr;
-                }
-                RamFsDirNode *node = get_node();
-                if (node == nullptr)
-                    return nullptr;
-
-                // get an iterator to the current node
-                Tree<RamFsTreeNode *>::Iterator it = fs_data.tree.begin();
-                for (; it != fs_data.tree.end(); ++it)
-                    if (*it == node)
-                        break;
-                if (!it)
-                {
-                    // shouldn't happen
-                    error = EBADF;
-                    return nullptr;
-                }
-                // check if the file already exists
-                for (auto &child : it.children())
-                {
-                    if (child.data->name == name)
-                    {
-                        error = EEXIST;
-                        return nullptr;
-                    }
-                }
-                // create the file
-                RamFsFileNode *file_node = alloc<RamFsFileNode>(1, name, mode);
-                file_node->uid = node->uid;
-                file_node->gid = node->gid;
-
-                it.insert(file_node);
-
-                int fd = fs_data.fd_manager.add_fd(file_node);
-                if (fd < 0)
-                {
-                    error = EIO;
-                    return nullptr;
-                }
-
-                return alloc<RamFsRegularFile>(1, fd, fs_data, flags);
-            }
-
-            BaseFile *mkfifo(const char *name, int flags, int mode) override
-            {
-                if ((open_flags & O_ACCMODE) == O_RDONLY)
-                {
-                    error = EACCES;
-                    return nullptr;
-                }
-                if (!name)
-                {
-                    error = EINVAL;
-                    return nullptr;
-                }
-                if (strchr(name, '/') != nullptr)
-                {
-                    error = EINVAL;
-                    return nullptr;
-                }
-                RamFsDirNode *node = get_node();
-                if (node == nullptr)
-                    return nullptr;
-
-                // get an iterator to the current node
-                Tree<RamFsTreeNode *>::Iterator it = fs_data.tree.begin();
-                for (; it != fs_data.tree.end(); ++it)
-                    if (*it == node)
-                        break;
-                if (!it)
-                {
-                    // shouldn't happen
-                    error = EBADF;
-                    return nullptr;
-                }
-                // check if the file already exists
-                for (auto &child : it.children())
-                {
-                    if (child.data->name == name)
-                    {
-                        error = EEXIST;
-                        return nullptr;
-                    }
-                }
                 
-                // create the file
-                RamFsFifoNode *fifo_node = alloc<RamFsFifoNode>(1, mode, name);
-                fifo_node->uid = node->uid;
-                fifo_node->gid = node->gid;
-
-                it.insert(fifo_node);
-
-                int fd = fs_data.fd_manager.add_fd(fifo_node);
-                if (fd < 0)
-                {
-                    error = EIO;
-                    return nullptr;
-                }
-
-                return alloc<RamFsFifoFile>(1, fd, fs_data, flags);
+                return alloc<RamFsSpecialHandle>(1, special_node, flags);
             }
 
-            BaseFile *mkdir(const char *name, int flags, int mode) override
+            SpecialFileType special_type() override
             {
-                if ((open_flags & O_ACCMODE) == O_RDONLY)
-                {
-                    error = EACCES;
-                    return nullptr;
-                }
-                if (!name)
-                {
-                    error = EINVAL;
-                    return nullptr;
-                }
-                if (strchr(name, '/') != nullptr)
-                {
-                    error = EINVAL;
-                    return nullptr;
-                }
-                RamFsDirNode *node = get_node();
-                if (node == nullptr)
-                    return nullptr;
-
-                // get an iterator to the current node
-                Tree<RamFsTreeNode *>::Iterator it = fs_data.tree.begin();
-                for (; it != fs_data.tree.end(); ++it)
-                    if (*it == node)
-                        break;
-                if (!it)
-                {
-                    // shouldn't happen
-                    error = EBADF;
-                    return nullptr;
-                }
-                
-                // check if the directory already exists
-                for (auto &child : it.children())
-                {
-                    if (child.data->name == name)
-                    {
-                        error = EEXIST;
-                        return nullptr;
-                    }
-                }
-
-                // create the directory
-                RamFsDirNode *dir_node = alloc<RamFsDirNode>(1, name, mode);
-                dir_node->uid = node->uid;
-                dir_node->gid = node->gid;
-
-                it.insert(dir_node);
-
-                int fd = fs_data.fd_manager.add_fd(dir_node);
-                if (fd < 0)
-                {
-                    error = EIO;
-                    return nullptr;
-                }
-
-                return alloc<RamFsDirectory>(1, fd, fs_data, flags);
-            }
-
-            int remove(const char *name) override
-            {
-                if ((open_flags & O_ACCMODE) == O_RDONLY)
-                {
-                    error = EACCES;
-                    return -1;
-                }
-                if (!name)
-                {
-                    error = EINVAL;
-                    return -1;
-                }
-                if (strchr(name, '/') != nullptr)
-                {
-                    error = EINVAL;
-                    return -1;
-                }
-                RamFsDirNode *node = get_node();
-                if (node == nullptr)
-                    return -1;
-
-                // get an iterator to the current node
-                Tree<RamFsTreeNode *>::Iterator it = fs_data.tree.begin();
-                for (; it != fs_data.tree.end(); ++it)
-                    if (*it == node)
-                        break;
-                if (!it)
-                {
-                    // shouldn't happen
-                    error = EBADF;
-                    return -1;
-                }
-
-                for (size_t i = 0; i < it.children().size(); ++i)
-                {
-                    if (it.children()[i].data->name == name)
-                    {
-                        // found the file
-                        if (it.children()[i].data->type() == FileType::Directory)
-                        {
-                            // check if empty
-                            if (it.children()[i].children.size() > 0)
-                            {
-                                error = ENOTEMPTY;
-                                return -1;
-                            }
-                        }
-                        it.remove(i);
-                        fs_data.fd_manager.remove_fd(fd);
-                        return 0;
-                    }
-                }
-
-                // not found
-                error = ENOENT;
-                return -1;
+                auto *special_node = get_node();
+                if (!special_node)
+                    return SpecialFileType::INVALID;
+                return special_node->special_type;
             }
 
         private:
-            RamFsDirNode *get_node() const
+            RamFsSpecialNode *get_node()
             {
-                RamFsTreeNode *node = fs_data.fd_manager.get_node(fd);
                 if (!node)
                 {
                     error = EBADF;
                     return nullptr;
                 }
-                return (RamFsDirNode *)node;
+                if (node->type() != FileType::Special)
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+                return static_cast<RamFsSpecialNode *>(node);
+            }
+        };
+
+        class RamFsSymlinkHandle : public BaseSymlink, private RamFsNodeHandle
+        {
+        public:
+            RamFsSymlinkHandle(RamFsSymlinkNode *node, int flags)
+                : RamFsNodeHandle(node, flags)
+            {
+            }
+
+            ~RamFsSymlinkHandle() override = default;
+
+            int rename(const char *new_name) override { return RamFsNodeHandle::rename(new_name); }
+            int remove() override { return RamFsNodeHandle::remove(); }
+            int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
+            int get_mode() override { return RamFsNodeHandle::get_mode(); }
+            int get_uid() override { return RamFsNodeHandle::get_uid(); }
+            int get_gid() override { return RamFsNodeHandle::get_gid(); }
+            int get_flags() override { return RamFsNodeHandle::get_flags(); }
+            int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
+            int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
+            char *basename() override { return RamFsNodeHandle::basename(); }
+            int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
+            uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
+
+            RamFsSymlinkHandle *clone() override
+            {
+                auto *symlink_node = get_node();
+                if (!symlink_node)
+                    return nullptr;
+                
+                return alloc<RamFsSymlinkHandle>(1, symlink_node, flags);
+            }
+
+            char *get_target() override
+            {
+                auto *symlink_node = get_node();
+                if (!symlink_node)
+                    return nullptr;
+
+                const char *target = symlink_node->target.c_str();
+                char *result = alloc<char>(strlen(target) + 1);
+                strcpy(result, target);
+                return result;
+            }
+
+            int set_target(const char *target) override
+            {
+                auto *symlink_node = get_node();
+                if (!symlink_node)
+                    return -1;
+
+                symlink_node->target = target;
+                return 0;
+            }
+        private:
+            RamFsSymlinkNode *get_node()
+            {
+                if (!node)
+                {
+                    error = EBADF;
+                    return nullptr;
+                }
+                if (node->type() != FileType::Symlink)
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+                return static_cast<RamFsSymlinkNode *>(node);
+            }
+        };
+
+        class RamFsDirectoryHandle : public BaseDirectory, private RamFsNodeHandle
+        {
+        public:
+            RamFsDirectoryHandle(RamFsDirectoryNode *node, int flags)
+                : RamFsNodeHandle(node, flags)
+            {
+            }
+
+            ~RamFsDirectoryHandle() override = default;
+
+            int rename(const char *new_name) override { return RamFsNodeHandle::rename(new_name); }
+            int remove() override { return RamFsNodeHandle::remove(); }
+            int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
+            int get_mode() override { return RamFsNodeHandle::get_mode(); }
+            int get_uid() override { return RamFsNodeHandle::get_uid(); }
+            int get_gid() override { return RamFsNodeHandle::get_gid(); }
+            int get_flags() override { return RamFsNodeHandle::get_flags(); }
+            int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
+            int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
+            char *basename() override { return RamFsNodeHandle::basename(); }
+            int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
+            uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
+
+            RamFsDirectoryHandle *clone() override
+            {
+                auto *dir_node = get_node();
+                if (!dir_node)
+                    return nullptr;
+                
+                return alloc<RamFsDirectoryHandle>(1, dir_node, flags);
+            }
+
+            char * const *list() override
+            {
+                auto *dir_node = get_node();
+                if (!dir_node)
+                    return nullptr;
+
+                size_t count = dir_node->children.size();
+                char **result = alloc<char *>(count + 1);
+                size_t i = 0;
+                for (const auto &[name, _] : dir_node->children)
+                {
+                    result[i] = alloc<char>(name.size() + 1);
+                    strcpy(result[i], name.c_str());
+                    ++i;
+                }
+                result[i] = nullptr;
+                return result;
+            }
+
+            BaseFile *get(const char *name, int flags, int mode) override
+            {
+                auto *dir_node = get_node();
+                if (!dir_node)
+                    return nullptr;
+
+                if (strchr(name, '/'))
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+
+                auto it = dir_node->children.find(name);
+                if (it != dir_node->children.end())
+                {
+                    if (flags & O_EXCL)
+                    {
+                        error = EEXIST;
+                        return nullptr;
+                    }
+
+                    RamFsNode *node = it->second;
+
+                    if (flags & O_DIRECTORY && node->type() != FileType::Directory)
+                    {
+                        error = ENOTDIR;
+                        return nullptr;
+                    }
+
+                    switch (node->type())
+                    {
+                    case FileType::Regular:
+                        return alloc<RamFsRegularHandle>(1, static_cast<RamFsRegularNode *>(node), flags);
+                    case FileType::Special:
+                        return alloc<RamFsSpecialHandle>(1, static_cast<RamFsSpecialNode *>(node), flags);
+                    case FileType::Symlink:
+                        return alloc<RamFsSymlinkHandle>(1, static_cast<RamFsSymlinkNode *>(node), flags);
+                    case FileType::Directory:
+                        return alloc<RamFsDirectoryHandle>(1, static_cast<RamFsDirectoryNode *>(node), flags);
+                    default:
+                        error = EIO;
+                        return nullptr;
+                    }
+                }
+                else
+                {
+                    if (!(flags & O_CREAT))
+                    {
+                        error = ENOENT;
+                        return nullptr;
+                    }
+
+                    if (flags & O_DIRECTORY)
+                    {
+                        return mkdir(name, flags, mode);
+                    }
+                    else
+                    {
+                        return mkfile(name, flags, mode);
+                    }
+                }
+            }
+
+            BaseRegularFile *mkfile(const char *name, int flags, int mode) override
+            {
+                auto *dir_node = get_node();
+                if (!dir_node)
+                    return nullptr;
+
+                if (strchr(name, '/'))
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+
+                auto it = dir_node->children.find(name);
+                if (it != dir_node->children.end())
+                {
+                    error = EEXIST;
+                    return nullptr;
+                }
+
+                auto *new_node = alloc<RamFsRegularNode>(1, name, mode, 0, 0, dir_node);
+                dir_node->children[name] = new_node;
+
+                return alloc<RamFsRegularHandle>(1, new_node, flags);
+            }
+
+            BaseDirectory *mkdir(const char *name, int flags, int mode) override
+            {
+                auto *dir_node = get_node();
+                if (!dir_node)
+                    return nullptr;
+
+                if (strchr(name, '/'))
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+
+                auto it = dir_node->children.find(name);
+                if (it != dir_node->children.end())
+                {
+                    error = EEXIST;
+                    return nullptr;
+                }
+
+                auto *new_node = alloc<RamFsDirectoryNode>(1, name, mode, 0, 0, dir_node);
+                dir_node->children[name] = new_node;
+
+                return alloc<RamFsDirectoryHandle>(1, new_node, flags);
+            }
+
+            BaseSymlink *mksym(const char *name, const char *target) override
+            {
+                auto *dir_node = get_node();
+                if (!dir_node)
+                    return nullptr;
+
+                if (strchr(name, '/'))
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+
+                auto it = dir_node->children.find(name);
+                if (it != dir_node->children.end())
+                {
+                    error = EEXIST;
+                    return nullptr;
+                }
+
+                auto *new_node = alloc<RamFsSymlinkNode>(1, name, 0777, 0, 0, dir_node);
+                new_node->target = target;
+                dir_node->children[name] = new_node;
+
+                return alloc<RamFsSymlinkHandle>(1, new_node, flags);
+            }
+
+            BaseSpecialFile *mksfile(const char *name, SpecialFileType type) override
+            {
+                auto *dir_node = get_node();
+                if (!dir_node)
+                    return nullptr;
+
+                if (strchr(name, '/'))
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+
+                auto it = dir_node->children.find(name);
+                if (it != dir_node->children.end())
+                {
+                    error = EEXIST;
+                    return nullptr;
+                }
+
+                auto *new_node = alloc<RamFsSpecialNode>(1, name, 0777, 0, 0, dir_node);
+                new_node->special_type = type;
+                dir_node->children[name] = new_node;
+
+                return alloc<RamFsSpecialHandle>(1, new_node, flags);
+            }
+
+            int remove(const char *name) override
+            {
+                auto *dir_node = get_node();
+                if (!dir_node)
+                    return -1;
+
+                if (strchr(name, '/'))
+                {
+                    error = EINVAL;
+                    return -1;
+                }
+
+                auto it = dir_node->children.find(name);
+                if (it == dir_node->children.end())
+                {
+                    error = ENOENT;
+                    return -1;
+                }
+
+                RamFsNode *node = it->second;
+                dir_node->children.erase(it);
+
+                dealloc(node);
+                return 0;
+            }
+        private:
+            RamFsDirectoryNode *get_node()
+            {
+                if (!node)
+                {
+                    error = EBADF;
+                    return nullptr;
+                }
+                if (node->type() != FileType::Directory)
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+                return static_cast<RamFsDirectoryNode *>(node);
             }
         };
     } // namespace
-    
 
-    
-
-    // placeholders
-    RamFs::RamFs()
+    class RamFsData
     {
-        data = alloc<RamFsData>();
+    public:
+        RamFsData()
+            : root(alloc<RamFsDirectoryNode>(1, "/", 0777, 0, 0, nullptr))
+        {
+        }
+
+        ~RamFsData()
+        {
+            dealloc(root);
+        }
+
+        RamFsDirectoryNode *root;
+    };
+
+    RamFs::RamFs()
+        : data(alloc<RamFsData>(1))
+    {
     }
 
-    RamFs::~RamFs() 
+    RamFs::~RamFs()
     {
         dealloc(data);
-        data = nullptr;
     }
 
-    RamFs::RamFs(RamFs &&other) 
+    RamFs::RamFs(RamFs &&other)
+        : data(other.data)
     {
-        data = other.data;
         other.data = nullptr;
     }
 
-    RamFs &RamFs::operator=(RamFs &&other) 
+    RamFs &RamFs::operator=(RamFs &&other)
     {
         if (this != &other)
         {
@@ -1080,208 +940,14 @@ namespace Hamster
         return *this;
     }
 
-
-    BaseFile *RamFs::open(const char *path, int flags, ...) 
+    BaseDirectory *RamFs::open_root(int flags)
     {
-        va_list args;
-        va_start(args, flags);
-        BaseFile *file = open(path, flags, args);
-        va_end(args);
-        return file;
-    }
-
-    BaseFile *RamFs::open(const char *path, int flags, va_list args) 
-    {
-        if (!path)
+        if (!data)
         {
             error = EINVAL;
             return nullptr;
         }
 
-        int fd = data->fd_manager.add_fd(*data->tree.root());
-        if (fd < 0)
-        {
-            error = EIO;
-            return nullptr;
-        }
-        BaseDirectory *dir = alloc<RamFsDirectory>(1, fd, *data, O_RDWR);
-
-        while (true)
-        {
-            while (path[0] == '/')
-                ++path;
-            if (path[0] == '\0')
-            {
-                // reached the end of the path
-                return dir;
-            }
-
-            const char *next = strchr(path, '/');
-            if (next == nullptr)
-            {
-                // last part of the path
-                BaseFile *f = dir->get(path, flags, args);
-                dealloc(dir);
-                return f;
-            }
-            else
-            {
-                // get the next part of the path
-                char *name = alloc<char>(next - path + 1);
-                strncpy(name, path, next - path);
-                name[next - path] = '\0';
-                BaseFile *file = dir->get(name, (flags & ~O_CREAT & ~O_ACCMODE) | O_DIRECTORY | O_RDWR, args);
-                dealloc(name);
-                dealloc(dir);
-                name = nullptr;
-                if (file == nullptr)
-                    return nullptr;
-                assert(file->type() == FileType::Directory);
-                dir = (BaseDirectory *)file;
-                path = next;
-            }
-        }
-
-        // should not happen
-        return nullptr;
-    }
-
-    int RamFs::rename(const char *old_path, const char *new_path)
-    {
-        if (!old_path || !new_path || !*old_path || !*new_path)
-        {
-            error = EINVAL;
-            return -1;
-        }
-
-        BaseFile *file = open(old_path, O_RDONLY);
-        if (!file)
-            return -1;
-
-        const char *new_path_last = strrchr(new_path, '/');
-        size_t new_dir_len = 0;
-        if (new_path_last)
-            new_dir_len = new_path_last - new_path;
-
-        String new_dir_path{new_path, new_dir_len};
-
-        BaseFile *dir = open(new_dir_path.c_str(), O_RDONLY);
-        if (!dir)
-        {
-            dealloc(file);
-            return -1;
-        }
-
-        int file_fd, dir_fd;
-        file_fd = file->get_fd();
-        dir_fd = dir->get_fd();
-        RamFsTreeNode *file_node = data->fd_manager.get_node(file_fd);
-        RamFsTreeNode *dir_node = data->fd_manager.get_node(dir_fd);
-
-        if (!file_node || !dir_node)
-        {
-            error = EBADF;
-            dealloc(file);
-            dealloc(dir);
-            return -1;
-        }
-
-        auto file_it = data->tree.begin();
-        auto dir_it = data->tree.begin();
-
-        for (; file_it != data->tree.end(); ++file_it)
-            if (*file_it == file_node)
-                break;
-        for (; dir_it != data->tree.end(); ++dir_it)
-            if (*dir_it == dir_node)
-                break;
-        if (!file_it || !dir_it)
-        {
-            dealloc(file);
-            dealloc(dir);
-            return -1;
-        }
-
-        for (auto &child : dir_it.children())
-            if (child.data->name == new_path_last)
-            {
-                error = EEXIST;
-                dealloc(file);
-                dealloc(dir);
-                return -1;
-            }
-        file_it.node()->parent->children.erase(file_it.node()->parent->children.begin() + (file_it.node() - file_it.node()->parent->children.data()));
-        dir_it.insert(file_node);
-        file_node->name = new_path_last;
-
-        dealloc(file);
-        dealloc(dir);
-        return 0;
-    }
-
-    int RamFs::unlink(const char *path) 
-    {
-        BaseFile *file = open(path, O_WRONLY);
-        if (!file)
-            return -1;
-        int ret = file->remove();
-        dealloc(file);
-        return ret;
-    }
-
-    int RamFs::link(const char *old_path, const char *new_path) 
-    {
-        error = ENOSYS;
-        return -1;
-    }
-
-    int RamFs::stat(const char *path, struct ::stat *buf) 
-    {
-        BaseFile *file = open(path, O_RDONLY);
-        if (!file)
-            return -1;
-        int ret = file->stat(buf);
-        dealloc(file);
-        return ret;
-    }
-
-    BaseRegularFile *RamFs::mkfile(const char *name, int flags, int mode) 
-    {
-        BaseFile *f = open(name, (flags & ~O_DIRECTORY)|O_CREAT|O_TRUNC, mode);
-        if (!f)
-            return nullptr;
-        assert(f->type() == FileType::Regular);
-        return (BaseRegularFile *)f;
-    }
-
-    BaseDirectory *RamFs::mkdir(const char *name, int flags, int mode) 
-    {
-        BaseFile *f = open(name, flags|O_CREAT|O_DIRECTORY, mode);
-        if (!f)
-            return nullptr;
-        assert(f->type() == FileType::Directory);
-        return (BaseDirectory *)f;
-    }
-
-    BaseFifoFile *RamFs::mkfifo(const char *name, int flags, int mode) 
-    {
-        if (!name)
-        {
-            error = EINVAL;
-            return nullptr;
-        }
-        const char *last = strrchr(name, '/');
-        String dir_path{name, last ? last - name : strlen(name)};
-        BaseDirectory *dir = (BaseDirectory *)open(dir_path.c_str(), O_RDWR, mode);
-        if (!dir)
-            return nullptr;
-        BaseFile *f = dir->mkfifo(last ? last : name, flags, mode);
-        if (!f)
-        {
-            dealloc(dir);
-            return nullptr;
-        }
-        assert(f->type() == FileType::FIFO);
-        return (BaseFifoFile *)f;
+        return alloc<RamFsDirectoryHandle>(1, data->root, flags);
     }
 } // namespace Hamster
