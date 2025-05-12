@@ -300,6 +300,17 @@ namespace Hamster
             int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
             uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
 
+            RamFsRegularHandle *clone() override
+            {
+                auto *reg_node = get_node();
+                if (!reg_node)
+                    return nullptr;
+                
+                auto *new_handle = alloc<RamFsRegularHandle>(1, reg_node, flags);
+                new_handle->offset = offset;
+                return new_handle;
+            }
+
             ssize_t read(uint8_t *buf, size_t size) override
             {
                 auto *reg_node = get_node();
@@ -503,6 +514,15 @@ namespace Hamster
             int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
             uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
 
+            RamFsSpecialHandle *clone() override
+            {
+                auto *special_node = get_node();
+                if (!special_node)
+                    return nullptr;
+                
+                return alloc<RamFsSpecialHandle>(1, special_node, flags);
+            }
+
             SpecialFileType special_type() override
             {
                 auto *special_node = get_node();
@@ -550,6 +570,15 @@ namespace Hamster
             char *basename() override { return RamFsNodeHandle::basename(); }
             int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
             uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
+
+            RamFsSymlinkHandle *clone() override
+            {
+                auto *symlink_node = get_node();
+                if (!symlink_node)
+                    return nullptr;
+                
+                return alloc<RamFsSymlinkHandle>(1, symlink_node, flags);
+            }
 
             char *get_target() override
             {
@@ -611,6 +640,15 @@ namespace Hamster
             char *basename() override { return RamFsNodeHandle::basename(); }
             int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
             uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
+
+            RamFsDirectoryHandle *clone() override
+            {
+                auto *dir_node = get_node();
+                if (!dir_node)
+                    return nullptr;
+                
+                return alloc<RamFsDirectoryHandle>(1, dir_node, flags);
+            }
 
             char * const *list() override
             {

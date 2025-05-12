@@ -47,6 +47,12 @@ namespace Hamster
         virtual FileType type() const = 0;
 
         /**
+         * @brief Replicate this file
+         * @return A newly allocated file object, or nullptr on error
+         */
+        virtual BaseFile *clone() = 0;
+
+        /**
          * @brief Rename this file
          * @param new_name The new name of the file
          * @return 0 on success, or on error return -1 and set `error`
