@@ -76,6 +76,14 @@ namespace Hamster
 
             using RamFsNode::RamFsNode;
 
+            ~RamFsDirectoryNode()
+            {
+                for (auto &[name, node] : children)
+                {
+                    dealloc(node);
+                }
+            }
+
             Map<String, RamFsNode *> children;
         };
     } // namespace 
@@ -302,7 +310,7 @@ namespace Hamster
                     error = EINVAL;
                     return 0;
                 }
-                if (offset + size > reg_node->size)
+                if (offset + (int64_t)size > reg_node->size)
                     size = reg_node->size - offset;
                 if (size == 0)
                     return 0;
