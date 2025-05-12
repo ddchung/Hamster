@@ -161,6 +161,26 @@ namespace Hamster
                 {
                     auto *regular_node = static_cast<RamFsRegularNode *>(node);
                     buf->st_size = regular_node->size;
+                    buf->st_blocks = (regular_node->size + HAMSTER_PAGE_SIZE - 1) / HAMSTER_PAGE_SIZE;
+                    buf->st_blksize = HAMSTER_PAGE_SIZE;
+                    buf->st_mode |= S_IFREG;
+                }
+                else if (node->type() == FileType::Directory)
+                {
+                    buf->st_mode |= S_IFDIR;
+                }
+                else if (node->type() == FileType::Symlink)
+                {
+                    buf->st_mode |= S_IFLNK;
+                }
+                else if (node->type() == FileType::Special)
+                {
+                    buf->st_mode |= S_IFCHR;
+                }
+                else
+                {
+                    error = EIO;
+                    return -1;
                 }
 
                 return 0;
