@@ -348,15 +348,9 @@ namespace Hamster
                 
                 for (uint64_t addr = offset; addr < offset + size; ++addr)
                 {
-                    auto val = reg_node->data.get(addr);
-                    if (val < 0)
-                    {
-                        error = EIO;
-                        return -1;
-                    }
-                    buf[addr - offset] = static_cast<uint8_t>(val);
-                    ++offset;
+                    buf[addr - offset] = reg_node->data[addr];
                 }
+                offset += size;
                 return size;
             }
 
@@ -378,12 +372,19 @@ namespace Hamster
                 
                 // See: the comment on the seek function
                 if (offset > reg_node->size)
-                    reg_node->data.memset(offset, 0, offset - reg_node->size);
+                    for (uint64_t addr = MemorySpace::get_page_start(offset); 
+                         addr <= MemorySpace::get_page_start(offset + size);
+                         addr += HAMSTER_PAGE_SIZE)
+                    {
+                        if (reg_node->data.allocate_page(addr) < 0)
+                            return -1;
+                        memset(reg_node->data.get_page_data(addr), 0, HAMSTER_PAGE_SIZE);
+                    }
                 
                 for (uint64_t addr = offset; addr < offset + size; ++addr)
                 {
                     reg_node->data.allocate_page(addr);
-                    reg_node->data.set(addr, buf[addr - offset]);
+                    reg_node->data[addr] = buf[addr - offset];
                 }
                 offset += size;
                 reg_node->size = std::max(reg_node->size, offset);
@@ -458,7 +459,24 @@ namespace Hamster
 
                 if (size > reg_node->size)
                 {
-                    reg_node->data.memset(size, 0, size - reg_node->size);
+                    for (uint64_t addr = MemorySpace::get_page_start(reg_node->size);
+                         addr <= MemorySpace::get_page_start(size);
+                         addr += HAMSTER_PAGE_SIZE)
+                    {
+                        if (reg_node->data.allocate_page(addr) < 0)
+                            return -1;
+                        memset(reg_node->data.get_page_data(addr), 0, HAMSTER_PAGE_SIZE);
+                    }
+                }
+                else
+                {
+                    for (uint64_t addr = MemorySpace::get_page_start(size);
+                         addr <= MemorySpace::get_page_start(reg_node->size);
+                         addr += HAMSTER_PAGE_SIZE)
+                    {
+                        if (reg_node->data.deallocate_page(addr))
+                            return -1;
+                    }
                 }
 
                 reg_node->size = size;

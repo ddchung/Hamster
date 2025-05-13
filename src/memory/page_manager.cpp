@@ -75,8 +75,6 @@ namespace Hamster
 
     int PageManager::PageImpl::swap_out(int swp_idx)
     {
-        if (!data)
-            return -1;
         int ret = _swap_out(swp_idx, data);
         if (ret < 0)
             return ret;
