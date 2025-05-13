@@ -575,11 +575,121 @@ namespace Hamster
 
     int VFS::rename(const char *old_path, const char *new_path)
     {
-        // TODO: Implement this. Note that this must move the file, not just rename it
-        // This is a bit tricky as it must also handle moving between different filesystems
-        // and mountpoints
-        error = ENOTSUP;
-        return -1;
+        if (!old_path || !new_path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        BaseFile *old_file = data->mounts.lopen(old_path, O_RDONLY, 0);
+        if (!old_file)
+            return -1;
+
+        // Ensure that the new path does not exist
+        BaseFile *new_file = data->mounts.lopen(new_path, O_WRONLY | O_CREAT | O_EXCL, 0);
+        if (!new_file)
+        {
+            dealloc(old_file);
+            return -1;
+        }
+        new_file->remove();
+        dealloc(new_file);
+        new_file = nullptr;
+
+        switch (old_file->type())
+        {
+        case FileType::Regular:
+        {
+            BaseRegularFile *old_reg_file = (BaseRegularFile *)old_file;
+            BaseRegularFile *new_reg_file =
+                (BaseRegularFile *)data->mounts.lopen(
+                    new_path, O_WRONLY | O_CREAT | O_EXCL,
+                    old_file->get_mode());
+            if (!new_reg_file)
+            {
+                dealloc(old_file);
+                return -1;
+            }
+
+            // Copy contents
+            static constexpr size_t BUF_SIZE = 512;
+            static uint8_t buf[BUF_SIZE];
+            ssize_t bytes_read;
+            while ((bytes_read = old_reg_file->read(buf, BUF_SIZE)) > 0)
+            {
+                new_reg_file->write(buf, bytes_read);
+            }
+
+            if (bytes_read >= 0)
+                old_file->remove();
+            dealloc(old_reg_file);
+            dealloc(new_reg_file);
+            return bytes_read >= 0 ? 0 : -1;
+        }
+        case FileType::Symlink:
+        {
+            BaseSymlink *old_symlink = (BaseSymlink *)old_file;
+            char *target = old_symlink->get_target();
+
+            if (!target)
+            {
+                dealloc(old_symlink);
+                return -1;
+            }
+
+            int ret = symlink(new_path, target);
+            dealloc(target);
+            if (ret == 0)
+                old_symlink->remove();
+            dealloc(old_symlink);
+            return ret;
+        }
+        case FileType::Special:
+        {
+            BaseSpecialFile *old_special_file = (BaseSpecialFile *)old_file;
+            SpecialFileType type = old_special_file->special_type();
+
+            const char *last_slash = strrchr(new_path, '/');
+            if (!last_slash)
+            {
+                dealloc(old_special_file);
+
+                error = ENOENT;
+                return -1;
+            }
+            String new_parent(last_slash, last_slash - new_path);
+            BaseDirectory *new_parent_file = (BaseDirectory *)data->mounts.lopen(new_parent.c_str(), O_RDWR | O_DIRECTORY, 0);
+            if (!new_parent_file)
+            {
+                dealloc(old_special_file);
+
+                error = ENOENT;
+                return -1;
+            }
+
+            BaseSpecialFile *new_special_file = new_parent_file->mksfile(
+                last_slash + 1, type);
+            if (new_special_file)
+            {
+                old_special_file->remove();
+                dealloc(old_special_file);
+                dealloc(new_special_file);
+            }
+            dealloc(new_parent_file);
+            return new_special_file ? 0 : -1;
+        }
+        case FileType::Directory:
+        {
+            // TODO: Recursive move
+            error = ENOTSUP;
+            dealloc(old_file);
+            return -1;
+        }
+        default:
+            dealloc(old_file);
+            error = EINVAL;
+            return -1;
+        }
     }
 
     int VFS::remove(int fd)
