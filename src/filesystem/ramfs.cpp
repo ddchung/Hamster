@@ -649,7 +649,21 @@ namespace Hamster
             ~RamFsDirectoryHandle() override = default;
 
             int rename(const char *new_name) override { return RamFsNodeHandle::rename(new_name); }
-            int remove() override { return RamFsNodeHandle::remove(); }
+            int remove() override 
+            {
+                // Check if the directory is empty
+                auto *dir_node = get_node();
+                if (!dir_node)
+                    return -1;
+                if (dir_node->children.size() > 0)
+                {
+                    error = ENOTEMPTY;
+                    return -1;
+                }
+
+                return RamFsNodeHandle::remove();
+            }
+
             int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
@@ -874,6 +888,16 @@ namespace Hamster
                 }
 
                 RamFsNode *node = it->second;
+
+                if (node->type() == FileType::Directory)
+                {
+                    if (((RamFsDirectoryNode *)node)->children.size() > 0)
+                    {
+                        error = ENOTEMPTY;
+                        return -1;
+                    }
+                }
+
                 dir_node->children.erase(it);
 
                 dealloc(node);
