@@ -98,6 +98,78 @@ namespace Hamster
         return page.get_data();
     }
 
+    bool MemorySpace::is_page_allocated(uint64_t addr)
+    {
+        addr = get_page_start(addr);
+        return pages.find(addr) != pages.end();
+    }
+
+    bool MemorySpace::is_page_range_allocated(uint64_t addr, size_t size)
+    {
+        uint64_t page_start = get_page_start(addr);
+        uint64_t page_end = get_page_start(addr + size - 1);
+
+        for (uint64_t page = page_start; page <= page_end; page += HAMSTER_PAGE_SIZE)
+        {
+            if (pages.find(page) == pages.end())
+                return false;
+        }
+        return true;
+    }
+
+    int MemorySpace::memcpy(uint64_t dest, uint64_t src, size_t size)
+    {
+        if (!is_page_range_allocated(dest, size) || !is_page_range_allocated(src, size))
+            return -1;
+
+        for (size_t i = 0; i < size; i++)
+        {
+            uint64_t dest_addr = dest + i;
+            uint64_t src_addr = src + i;
+            (*this)[dest_addr] = (*this)[src_addr];
+        }
+        return 0;
+    }
+
+    int MemorySpace::memcpy(uint64_t dest, uint8_t *src, size_t size)
+    {
+        if (!is_page_range_allocated(dest, size))
+            return -1;
+
+        for (size_t i = 0; i < size; i++)
+        {
+            uint64_t dest_addr = dest + i;
+            (*this)[dest_addr] = src[i];
+        }
+        return 0;
+    }
+
+    int MemorySpace::memcpy(uint8_t *dest, uint64_t src, size_t size)
+    {
+        if (!is_page_range_allocated(src, size))
+            return -1;
+
+        for (size_t i = 0; i < size; i++)
+        {
+            uint64_t src_addr = src + i;
+            dest[i] = (*this)[src_addr];
+        }
+        return 0;
+    }
+
+    int MemorySpace::memset(uint64_t dest, uint8_t value, size_t size)
+    {
+        if (!is_page_range_allocated(dest, size))
+            return -1;
+
+        for (size_t i = 0; i < size; i++)
+        {
+            uint64_t dest_addr = dest + i;
+            (*this)[dest_addr] = value;
+        }
+        return 0;
+    }
+
     int MemorySpace::queue(uint64_t page_start)
     {
         // ensure it is page start

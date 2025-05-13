@@ -202,6 +202,38 @@ void test_memory()
         assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE + j * HAMSTER_PAGE_SIZE) == nullptr);
     }
 
+    // memcpy
+    uint8_t *src = Hamster::alloc<uint8_t>(0x1234);
+    uint8_t *dest = Hamster::alloc<uint8_t>(0x1234);
+
+    for (int j = 0; j < 0x1234; ++j)
+    {
+        src[j] = (uint8_t)hash_int(j);
+    }
+
+    for (uint64_t j = Hamster::MemorySpace::get_page_start(0x1234); j <= Hamster::MemorySpace::get_page_start(0x1234 * 2); j += HAMSTER_PAGE_SIZE)
+    {
+        assert(mem_space.allocate_page(j) >= 0);
+    }
+
+    assert(mem_space.memcpy(0x1234, src, 0x1234) == 0);
+    assert(mem_space.memcpy(dest, 0x1234, 0x1234) == 0);
+
+    for (uint64_t j = 0; j < 0x1234; ++j)
+    {
+        assert(dest[j] == src[j]);
+        assert(mem_space[0x1234 + j] == src[j]);
+
+    }
+
+    for (uint64_t j = Hamster::MemorySpace::get_page_start(0x1234); j <= Hamster::MemorySpace::get_page_start(0x1234 * 2); j += HAMSTER_PAGE_SIZE)
+    {
+        assert(mem_space.deallocate_page(j) == 0);
+    }
+
+    Hamster::dealloc(src);
+    Hamster::dealloc(dest);
+
     // big data
     // might be slow, so disable
 #   if !defined(ARDUINO)
