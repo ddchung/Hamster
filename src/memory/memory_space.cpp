@@ -170,6 +170,15 @@ namespace Hamster
         return 0;
     }
 
+    uint16_t &MemorySpace::get_page_flags(uint64_t addr)
+    {
+        uint64_t page_start = get_page_start(addr);
+        auto it = pages.find(page_start);
+        if (it == pages.end())
+            return PageManager::get_flag_dummy();
+        return it->second.get_flags();
+    }
+
     int MemorySpace::queue(uint64_t page_start)
     {
         // ensure it is page start

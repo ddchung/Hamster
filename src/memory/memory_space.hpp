@@ -59,6 +59,8 @@ namespace Hamster
         int memcpy(uint8_t *dest, uint64_t src, size_t size);
 
         int memset(uint64_t dest, uint8_t value, size_t size);
+
+        uint16_t &get_page_flags(uint64_t addr);
     private:
         UnorderedMap<uint64_t, Page> pages;
         List<uint64_t> swapped_on_pages;
