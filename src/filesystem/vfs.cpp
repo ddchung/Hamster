@@ -647,7 +647,7 @@ namespace Hamster
         case FileType::Special:
         {
             BaseSpecialFile *old_special_file = (BaseSpecialFile *)old_file;
-            SpecialFileType type = old_special_file->special_type();
+            int dev_id = old_special_file->get_device_id();
 
             const char *last_slash = strrchr(new_path, '/');
             if (!last_slash)
@@ -668,7 +668,7 @@ namespace Hamster
             }
 
             BaseSpecialFile *new_special_file = new_parent_file->mksfile(
-                last_slash + 1, type);
+                last_slash + 1, dev_id, old_special_file->get_mode());
             if (new_special_file)
             {
                 old_special_file->remove();

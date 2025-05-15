@@ -56,7 +56,7 @@ namespace Hamster
 
             using RamFsNode::RamFsNode;
 
-            SpecialFileType special_type = SpecialFileType::INVALID;
+            int device_id = -1;
         };
 
         class RamFsSymlinkNode : public RamFsNode
@@ -269,6 +269,18 @@ namespace Hamster
                 return result;
             }
 
+            int set_flags(int flags)
+            {
+                if (!node)
+                {
+                    error = EBADF;
+                    return -1;
+                }
+
+                this->flags = flags;
+                return 0;
+            }
+
             int set_vfs_flags(uint32_t flags)
             {
                 if (!node)
@@ -317,6 +329,7 @@ namespace Hamster
             int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
             char *basename() override { return RamFsNodeHandle::basename(); }
+            int set_flags(int flags) override { return RamFsNodeHandle::set_flags(flags); }
             int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
             uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
 
@@ -531,6 +544,7 @@ namespace Hamster
             int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
             char *basename() override { return RamFsNodeHandle::basename(); }
+            int set_flags(int flags) override { return RamFsNodeHandle::set_flags(flags); }
             int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
             uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
 
@@ -543,12 +557,13 @@ namespace Hamster
                 return alloc<RamFsSpecialHandle>(1, special_node, flags);
             }
 
-            SpecialFileType special_type() override
+            int get_device_id() override
             {
                 auto *special_node = get_node();
                 if (!special_node)
-                    return SpecialFileType::INVALID;
-                return special_node->special_type;
+                    return -1;
+
+                return special_node->device_id;
             }
 
         private:
@@ -588,6 +603,7 @@ namespace Hamster
             int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
             char *basename() override { return RamFsNodeHandle::basename(); }
+            int set_flags(int flags) override { return RamFsNodeHandle::set_flags(flags); }
             int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
             uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
 
@@ -672,6 +688,7 @@ namespace Hamster
             int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
             char *basename() override { return RamFsNodeHandle::basename(); }
+            int set_flags(int flags) override { return RamFsNodeHandle::set_flags(flags); }
             int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
             uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
 
@@ -842,13 +859,19 @@ namespace Hamster
                 return alloc<RamFsSymlinkHandle>(1, new_node, flags);
             }
 
-            BaseSpecialFile *mksfile(const char *name, SpecialFileType type) override
+            BaseSpecialFile *mksfile(const char *name, int devid, int mode) override
             {
                 auto *dir_node = get_node();
                 if (!dir_node)
                     return nullptr;
 
                 if (strchr(name, '/'))
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+
+                if (devid < 0)
                 {
                     error = EINVAL;
                     return nullptr;
@@ -861,8 +884,8 @@ namespace Hamster
                     return nullptr;
                 }
 
-                auto *new_node = alloc<RamFsSpecialNode>(1, name, 0777, 0, 0, dir_node);
-                new_node->special_type = type;
+                auto *new_node = alloc<RamFsSpecialNode>(1, name, mode, 0, 0, dir_node);
+                new_node->device_id = devid;
                 dir_node->children[name] = new_node;
 
                 return alloc<RamFsSpecialHandle>(1, new_node, flags);

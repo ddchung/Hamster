@@ -285,6 +285,13 @@ namespace Hamster
          */
         int symlinkat(int dir, const char *path, const char *target);
 
+        /**
+         * @brief Create a special file at a given path
+         * @param path The path to the special file to be created
+         * @param driver The thing that will handle operations on the special file
+         * @return A file descriptor on success, or on error return -1 and set `error`
+         */
+        int mksfile(const char *path, BaseSpecialDriver *driver);
     private:
         VFSData *data;
     };
