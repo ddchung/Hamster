@@ -400,8 +400,7 @@ namespace Hamster
             FDManager(FDManager &&other)
             {
                 fds = std::move(other.fds);
-                next_fd = other.next_fd;
-                other.fds = Map<int, Entry>();
+                other.fds = Vector<Entry>();
             }
 
             FDManager &operator=(FDManager &&other)
@@ -409,7 +408,6 @@ namespace Hamster
                 if (this == &other)
                     return *this;
                 std::swap(fds, other.fds);
-                std::swap(next_fd, other.next_fd);
                 return *this;
             }
 
@@ -418,55 +416,186 @@ namespace Hamster
             {
                 if (file == nullptr)
                     return -1;
+                
+                int fd = -1;
+                for (int i = 0; i < fds.size(); ++i)
+                {
+                    if (fds[i].file == nullptr)
+                    {
+                        fd = i;
+                        break;
+                    }
+                }
+                if (fd == -1)
+                {
+                    fd = fds.size();
+                    fds.push_back(Entry{nullptr});
+                }
+                fds[fd].file = file;
 
-                // handle overflow
-                if (next_fd < 0)
-                    next_fd = 0;
-
-                // handle overflow
-                while (fds.find(next_fd) != fds.end())
-                    ++next_fd;
-
-                fds[next_fd] = {file};
-                return next_fd++;
+                return fd;
             }
 
             int remove_fd(int fd)
             {
-                auto it = fds.find(fd);
-                if (it == fds.end())
+                if (fd < 0 || fd >= fds.size())
+                {
+                    error = EBADF;
                     return -1;
+                }
 
-                dealloc(it->second.file);
+                if (fds[fd].file == nullptr)
+                {
+                    error = EBADF;
+                    return -1;
+                }
 
-                fds.erase(it);
+                dealloc(fds[fd].file);
+                fds[fd].file = nullptr;
 
                 return 0;
             }
 
             BaseFile *get_fd(int fd)
             {
-                auto it = fds.find(fd);
-                if (it == fds.end())
+                if (fd < 0 || fd >= fds.size())
+                {
+                    error = EBADF;
                     return nullptr;
-                return it->second.file;
+                }
+
+                if (fds[fd].file == nullptr)
+                {
+                    error = EBADF;
+                    return nullptr;
+                }
+
+                return fds[fd].file;
             }
 
             void close_all()
             {
                 for (auto &fd : fds)
                 {
-                    dealloc(fd.second.file);
+                    dealloc(fd.file);
+                    fd.file = nullptr;
                 }
                 fds.clear();
-                next_fd = 0;
             }
 
         private:
-            Map<int, Entry> fds;
-            int next_fd = 0;
+            Vector<Entry> fds;
         };
     } // namespace
+
+    /* Special File Driver Manager */
+
+    namespace
+    {
+        class SpecialDriverManager
+        {
+        public:
+            SpecialDriverManager() = default;
+            SpecialDriverManager(const SpecialDriverManager &) = delete;
+            SpecialDriverManager &operator=(const SpecialDriverManager &) = delete;
+
+            SpecialDriverManager(SpecialDriverManager &&other)
+                : drivers(std::move(other.drivers))
+            {
+                other.drivers = Vector<BaseSpecialDriver *>();
+            }
+
+            SpecialDriverManager &operator=(SpecialDriverManager &&other)
+            {
+                if (this == &other)
+                    return *this;
+                std::swap(drivers, other.drivers);
+                return *this;
+            }
+            
+            ~SpecialDriverManager()
+            {
+                remove_all_drivers();
+            }
+            
+            int remove_all_drivers()
+            {
+                for (BaseSpecialDriver *driver : drivers)
+                {
+                    dealloc(driver);
+                }
+                drivers.clear();
+                return 0;
+            }
+
+            int add_driver(BaseSpecialDriver *driver)
+            {
+                if (!driver)
+                {
+                    error = EINVAL;
+                    return -1;
+                }
+
+                // Find the first available slot
+                int id = -1;
+                for (int i = 0; i < drivers.size(); ++i)
+                {
+                    if (drivers[i] == nullptr)
+                    {
+                        id = i;
+                        break;
+                    }
+                }
+                if (id == -1)
+                {
+                    id = drivers.size();
+                    drivers.push_back(nullptr);
+                }
+                drivers[id] = driver;
+                return id;
+            }
+
+            int remove_driver(int id)
+            {
+                if (id < 0 || id >= drivers.size())
+                {
+                    error = EINVAL;
+                    return -1;
+                }
+
+                if (drivers[id] == nullptr)
+                {
+                    error = EINVAL;
+                    return -1;
+                }
+
+                dealloc(drivers[id]);
+                drivers[id] = nullptr;
+
+                return 0;
+            }
+
+            BaseSpecialDriver *get_driver(int id)
+            {
+                if (id < 0 || id >= drivers.size())
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+
+                if (drivers[id] == nullptr)
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+
+                return drivers[id];
+            }
+        private:
+            Vector<BaseSpecialDriver *> drivers;
+        };
+    } // namespace
+    
 
     class VFSData
     {
@@ -480,6 +609,7 @@ namespace Hamster
 
         Mounts mounts;
         FDManager fd_manager;
+        SpecialDriverManager special_driver_manager;
     };
 
     VFS::VFS()
@@ -1081,5 +1211,59 @@ namespace Hamster
         dealloc(parent);
         dealloc(sym);
         return sym == nullptr ? -1 : 0;
+    }
+
+    int VFS::mksfile(const char *path, int flags, BaseSpecialDriver *driver, int mode)
+    {
+        if (!path || !driver)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        const char *last = strrchr(path, '/');
+        if (!last)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        String parent_path(path, last - path);
+
+        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0);
+        if (!parent)
+        {
+            return -1;
+        }
+
+        assert(parent->type() == FileType::Directory);
+
+        // Register the driver
+        int driver_id = data->special_driver_manager.add_driver(driver);
+        if (driver_id < 0)
+        {
+            dealloc(parent);
+            return -1;
+        }
+
+        // Create the special file
+        BaseSpecialFile *sfile = ((BaseDirectory *)parent)->mksfile(last + 1, driver_id, mode);
+        dealloc(parent);
+        if (!sfile)
+        {
+            data->special_driver_manager.remove_driver(driver_id);
+            return -1;
+        }
+
+        // Create the handle
+        int fd = data->fd_manager.add_fd(sfile);
+        if (fd < 0)
+        {
+            dealloc(sfile);
+            data->special_driver_manager.remove_driver(driver_id);
+            return -1;
+        }
+
+        
     }
 } // namespace Hamster

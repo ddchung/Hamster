@@ -288,10 +288,26 @@ namespace Hamster
         /**
          * @brief Create a special file at a given path
          * @param path The path to the special file to be created
-         * @param driver The thing that will handle operations on the special file
+         * @param driver The thing that will handle operations on the special file\
+         * @param flags The flags to open the special file with
+         * @param mode The mode to create the special file with
          * @return A file descriptor on success, or on error return -1 and set `error`
+         * @warning This takes ownership of `driver`, and will deallocate it later
          */
-        int mksfile(const char *path, BaseSpecialDriver *driver);
+        int mksfile(const char *path, int flags, BaseSpecialDriver *driver, int mode);
+
+        /**
+         * @brief Create a special file at a given path relative to a directory
+         * @param dir The file descriptor of the directory to create the special file in
+         * @param path The path to the special file to be created, starting from the directory
+         * @param flags The flags to open the special file with
+         * @param driver The thing that will handle operations on the special file
+         * @param mode The mode to create the special file with
+         * @return A file descriptor on success, or on error return -1 and set `error`
+         * @warning This takes ownership of `driver`, and will deallocate it later
+         */
+        int mksfileat(int dir, const char *path, int flags, BaseSpecialDriver *driver, int mode);
+
     private:
         VFSData *data;
     };
