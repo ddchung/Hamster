@@ -859,7 +859,7 @@ namespace Hamster
                 return alloc<RamFsSymlinkHandle>(1, new_node, flags);
             }
 
-            BaseSpecialFile *mksfile(const char *name, int devid, int mode) override
+            BaseSpecialFile *mksfile(const char *name, int flags, int devid, int mode) override
             {
                 auto *dir_node = get_node();
                 if (!dir_node)

@@ -283,6 +283,7 @@ namespace Hamster
         /**
          * @brief Make a special file in the directory.
          * @param name The name of the special file
+         * @param flags The flags to open the special file with
          * @param type The ID of the special file
          * @param mode The mode to create the special file with
          * @return A newly allocated `BaseSpecialFile` that operates on the new special file, or on error, it returns nullptr and sets `error`
@@ -290,7 +291,7 @@ namespace Hamster
          * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
          * @note This is NOT equivelant to POSIX `mknod`, as this just makes a stub special file that can only be used to identify the file type
          */
-        virtual BaseSpecialFile *mksfile(const char *name, int type, int mode) = 0;
+        virtual BaseSpecialFile *mksfile(const char *name, int flags, int type, int mode) = 0;
 
         using BaseFile::remove;
         
@@ -322,6 +323,8 @@ namespace Hamster
     /* Special File Hierarchy */
     // This is only used by the VFS to create special files, so that they can do stuff
     // Note that for now, it remains incomplete
+    // Please note that there is exactly one special file driver for each special file, so
+    // * it is perfectly OK to keep state in the driver
     // TODO: complete
 
     enum class SpecialFileType : uint8_t
