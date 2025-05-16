@@ -311,5 +311,7 @@ namespace Hamster
     private:
         VFSData *data;
     };
+
+    inline VFS vfs;
 } // namespace Hamster
 
