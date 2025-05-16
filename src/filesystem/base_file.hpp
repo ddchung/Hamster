@@ -25,16 +25,6 @@ namespace Hamster
         Special,
     };
 
-    enum class SpecialFileType : uint8_t
-    {
-        BlockDevice,
-        CharDevice,
-        Socket,
-        Pipe,
-        Fifo,
-        INVALID,
-    };
-
     class BaseFile
     {
     public:
@@ -118,6 +108,13 @@ namespace Hamster
          * @note Equivelant to POSIX `chown`
          */
         virtual int chown(int uid, int gid) = 0;
+        
+        /**
+         * @brief Change the flags that the file was opened with.
+         * @param flags The new flags
+         * @return 0 on success, or on error return -1 and set `error`
+         */
+        virtual int set_flags(int flags) = 0;
 
         /**
          * @brief Get the name of the file.
@@ -193,11 +190,10 @@ namespace Hamster
         virtual FileType type() const override { return FileType::Special; }
 
         /**
-         * @brief Get the type of the special file.
-         * @return The type of the special file
-         * @note Return `SpecialFileType::INVALID` and set `error` if an error occurs while fetching the type
+         * @brief Get the Device ID of the special file.
+         * @return The Device ID of the special file, or on error return -1 and set `error`
          */
-        virtual SpecialFileType special_type() = 0;
+        virtual int get_device_id() = 0;
     };
 
     class BaseSymlink : public BaseFile
@@ -287,13 +283,15 @@ namespace Hamster
         /**
          * @brief Make a special file in the directory.
          * @param name The name of the special file
-         * @param type The type of the special file
+         * @param flags The flags to open the special file with
+         * @param type The ID of the special file
+         * @param mode The mode to create the special file with
          * @return A newly allocated `BaseSpecialFile` that operates on the new special file, or on error, it returns nullptr and sets `error`
          * @note Be sure to free the file
          * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
          * @note This is NOT equivelant to POSIX `mknod`, as this just makes a stub special file that can only be used to identify the file type
          */
-        virtual BaseSpecialFile *mksfile(const char *name, SpecialFileType type) = 0;
+        virtual BaseSpecialFile *mksfile(const char *name, int flags, int type, int mode) = 0;
 
         using BaseFile::remove;
         
@@ -320,6 +318,94 @@ namespace Hamster
          * @note The filesystem's base is not necessarily the root of Hamster's FS, due to mounts
          */
         virtual BaseDirectory *open_root(int flags) = 0;
+    };
+
+    /* Special File Hierarchy */
+    // This is only used by the VFS to create special files, so that they can do stuff
+    // Note that for now, it remains incomplete
+    // Please note that there is exactly one special file driver for each special file, so
+    // * it is perfectly OK to keep state in the driver
+    // TODO: complete
+
+    enum class SpecialFileType : uint8_t
+    {
+        BlockDevice,
+        CharacterDevice,
+        FIFO,
+        Socket,
+    };
+
+    class BaseSpecialDriver
+    {
+    public:
+        virtual ~BaseSpecialDriver() = default;
+
+        /**
+         * @brief Get the type of the special file.
+         * @return The type of the special file
+         */
+        virtual SpecialFileType special_type() = 0;
+
+        /**
+         * @brief Write to the special file.
+         * @param buf The buffer to write
+         * @param size The size of the buffer
+         * @return The number of bytes written, or on error return -1 and set `error`
+         * @note Equivelant to POSIX `write`
+         */
+        virtual ssize_t write(const uint8_t *buf, size_t size) = 0;
+
+        /**
+         * @brief Read from the special file.
+         * @param buf The buffer to read into
+         * @param size The size of the buffer
+         * @return The number of bytes read, or on error return -1 and set `error`
+         * @note Equivelant to POSIX `read`
+         */
+        virtual ssize_t read(uint8_t *buf, size_t size) = 0;        
+    };
+
+    class BaseCharacterDevice : public BaseSpecialDriver
+    {
+    public:
+        virtual SpecialFileType special_type() override { return SpecialFileType::CharacterDevice; }
+
+        // Nothing needed here, character devices only support read/write
+    };
+
+    class BaseSocketDevice : public BaseSpecialDriver
+    {
+    public:
+        virtual SpecialFileType special_type() override { return SpecialFileType::Socket; }
+
+        // TODO: Implement special socket operations
+    };
+
+    class BaseBlockDevice : public BaseSpecialDriver
+    {
+    public:
+        virtual SpecialFileType special_type() override { return SpecialFileType::BlockDevice; }
+
+        /**
+         * @brief Seek to a given position in the block device.
+         * @param offset The offset to seek to
+         * @param whence The reference point for the offset
+         * @return The new position in the block device, or on error return -1 and set `error`
+         * @note Equivelant to POSIX `lseek`
+         */
+        virtual int64_t seek(int64_t offset, int whence) = 0;
+
+        /**
+         * @brief Get the current position in the block device.
+         * @return The current position in the block device
+         */
+        virtual int64_t tell() = 0;
+
+        /**
+         * @brief Get the size of the block device.
+         * @return The size of the block device in bytes
+         */
+        virtual int64_t size() = 0;
     };
 } // namespace Hamster
 

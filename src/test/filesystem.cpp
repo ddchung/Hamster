@@ -3,6 +3,8 @@
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
 #include <memory/allocator.hpp>
+#include <memory/stl_sequential.hpp>
+#include <errno/errno.h>
 #include <cassert>
 #include <cstring>
 
@@ -134,4 +136,71 @@ void test_filesystem()
     // Unmount and cleanup
     assert(vfs->unmount("/") == 0);
     dealloc<VFS>(vfs);
+
+    // New VFS for testing special files
+
+    vfs = alloc<VFS>(1);
+    fs = alloc<RamFs>(1);
+
+    assert(vfs->mount("/", fs) == 0);
+
+    // 8. Special files
+    const char *special_path = "/special";
+
+    Deque<int> deque;
+
+    class TestSpecialDriver : public BaseCharacterDevice
+    {
+    public:
+        TestSpecialDriver(Deque<int> &deque) : deque(deque) {}
+
+        ssize_t read(uint8_t *buf, size_t count) override
+        {
+            if (deque.empty())
+            {
+                error = EAGAIN;
+                return -1;
+            }
+            while (count --> 0)
+            {
+                if (deque.empty())
+                    return count;
+                *buf++ = deque.front();
+                deque.pop_front();
+            }
+            return count;
+        }
+
+        ssize_t write(const uint8_t *buf, size_t count) override
+        {
+            for (size_t i = 0; i < count; ++i)
+                deque.push_back(buf[i]);
+            return count;
+        }
+    private:
+        Deque<int> &deque;
+    };
+
+    TestSpecialDriver *driver = alloc<TestSpecialDriver>(1, deque);
+    int special_fd = vfs->mksfile(special_path, O_RDWR | O_CREAT, driver, 0777);
+    assert(special_fd >= 0);
+
+    // Write to special file
+    const char data[] = "Hello, Special!";
+    written = vfs->write(special_fd, (const uint8_t*)data, strlen(data));
+    assert(written == (ssize_t)strlen(data));
+    assert(deque.size() == strlen(data));
+
+    for (size_t i = 0; i < strlen(data); ++i)
+    {
+        assert(deque.front() == data[i]);
+        deque.pop_front();
+    }
+    assert(deque.empty());
+
+    // cleanup
+    vfs->close(special_fd);
+    assert(vfs->unmount("/") == 0);
+
+    dealloc(vfs);
 }

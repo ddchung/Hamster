@@ -400,8 +400,7 @@ namespace Hamster
             FDManager(FDManager &&other)
             {
                 fds = std::move(other.fds);
-                next_fd = other.next_fd;
-                other.fds = Map<int, Entry>();
+                other.fds = Vector<Entry>();
             }
 
             FDManager &operator=(FDManager &&other)
@@ -409,7 +408,6 @@ namespace Hamster
                 if (this == &other)
                     return *this;
                 std::swap(fds, other.fds);
-                std::swap(next_fd, other.next_fd);
                 return *this;
             }
 
@@ -419,52 +417,183 @@ namespace Hamster
                 if (file == nullptr)
                     return -1;
 
-                // handle overflow
-                if (next_fd < 0)
-                    next_fd = 0;
+                int fd = -1;
+                for (int i = 0; i < (int)fds.size(); ++i)
+                {
+                    if (fds[i].file == nullptr)
+                    {
+                        fd = i;
+                        break;
+                    }
+                }
+                if (fd == -1)
+                {
+                    fd = fds.size();
+                    fds.push_back(Entry{nullptr});
+                }
+                fds[fd].file = file;
 
-                // handle overflow
-                while (fds.find(next_fd) != fds.end())
-                    ++next_fd;
-
-                fds[next_fd] = {file};
-                return next_fd++;
+                return fd;
             }
 
             int remove_fd(int fd)
             {
-                auto it = fds.find(fd);
-                if (it == fds.end())
+                if (fd < 0 || fd >= (int)fds.size())
+                {
+                    error = EBADF;
                     return -1;
+                }
 
-                dealloc(it->second.file);
+                if (fds[fd].file == nullptr)
+                {
+                    error = EBADF;
+                    return -1;
+                }
 
-                fds.erase(it);
+                dealloc(fds[fd].file);
+                fds[fd].file = nullptr;
 
                 return 0;
             }
 
             BaseFile *get_fd(int fd)
             {
-                auto it = fds.find(fd);
-                if (it == fds.end())
+                if (fd < 0 || fd >= (int)fds.size())
+                {
+                    error = EBADF;
                     return nullptr;
-                return it->second.file;
+                }
+
+                if (fds[fd].file == nullptr)
+                {
+                    error = EBADF;
+                    return nullptr;
+                }
+
+                return fds[fd].file;
             }
 
             void close_all()
             {
                 for (auto &fd : fds)
                 {
-                    dealloc(fd.second.file);
+                    dealloc(fd.file);
+                    fd.file = nullptr;
                 }
                 fds.clear();
-                next_fd = 0;
             }
 
         private:
-            Map<int, Entry> fds;
-            int next_fd = 0;
+            Vector<Entry> fds;
+        };
+    } // namespace
+
+    /* Special File Driver Manager */
+
+    namespace
+    {
+        class SpecialDriverManager
+        {
+        public:
+            SpecialDriverManager() = default;
+            SpecialDriverManager(const SpecialDriverManager &) = delete;
+            SpecialDriverManager &operator=(const SpecialDriverManager &) = delete;
+
+            SpecialDriverManager(SpecialDriverManager &&other)
+                : drivers(std::move(other.drivers))
+            {
+                other.drivers = Vector<BaseSpecialDriver *>();
+            }
+
+            SpecialDriverManager &operator=(SpecialDriverManager &&other)
+            {
+                if (this == &other)
+                    return *this;
+                std::swap(drivers, other.drivers);
+                return *this;
+            }
+
+            ~SpecialDriverManager()
+            {
+                remove_all_drivers();
+            }
+
+            int remove_all_drivers()
+            {
+                for (BaseSpecialDriver *driver : drivers)
+                {
+                    dealloc(driver);
+                }
+                drivers.clear();
+                return 0;
+            }
+
+            int add_driver(BaseSpecialDriver *driver)
+            {
+                if (!driver)
+                {
+                    error = EINVAL;
+                    return -1;
+                }
+
+                // Find the first available slot
+                int id = -1;
+                for (int i = 0; i < (int)drivers.size(); ++i)
+                {
+                    if (drivers[i] == nullptr)
+                    {
+                        id = i;
+                        break;
+                    }
+                }
+                if (id == -1)
+                {
+                    id = drivers.size();
+                    drivers.push_back(nullptr);
+                }
+                drivers[id] = driver;
+                return id;
+            }
+
+            int remove_driver(int id)
+            {
+                if (id < 0 || id >= (int)drivers.size())
+                {
+                    error = EINVAL;
+                    return -1;
+                }
+
+                if (drivers[id] == nullptr)
+                {
+                    error = EINVAL;
+                    return -1;
+                }
+
+                dealloc(drivers[id]);
+                drivers[id] = nullptr;
+
+                return 0;
+            }
+
+            BaseSpecialDriver *get_driver(int id)
+            {
+                if (id < 0 || id >= (int)drivers.size())
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+
+                if (drivers[id] == nullptr)
+                {
+                    error = EINVAL;
+                    return nullptr;
+                }
+
+                return drivers[id];
+            }
+
+        private:
+            Vector<BaseSpecialDriver *> drivers;
         };
     } // namespace
 
@@ -480,6 +609,7 @@ namespace Hamster
 
         Mounts mounts;
         FDManager fd_manager;
+        SpecialDriverManager special_driver_manager;
     };
 
     VFS::VFS()
@@ -575,11 +705,121 @@ namespace Hamster
 
     int VFS::rename(const char *old_path, const char *new_path)
     {
-        // TODO: Implement this. Note that this must move the file, not just rename it
-        // This is a bit tricky as it must also handle moving between different filesystems
-        // and mountpoints
-        error = ENOTSUP;
-        return -1;
+        if (!old_path || !new_path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        BaseFile *old_file = data->mounts.lopen(old_path, O_RDONLY, 0);
+        if (!old_file)
+            return -1;
+
+        // Ensure that the new path does not exist
+        BaseFile *new_file = data->mounts.lopen(new_path, O_WRONLY | O_CREAT | O_EXCL, 0);
+        if (!new_file)
+        {
+            dealloc(old_file);
+            return -1;
+        }
+        new_file->remove();
+        dealloc(new_file);
+        new_file = nullptr;
+
+        switch (old_file->type())
+        {
+        case FileType::Regular:
+        {
+            BaseRegularFile *old_reg_file = (BaseRegularFile *)old_file;
+            BaseRegularFile *new_reg_file =
+                (BaseRegularFile *)data->mounts.lopen(
+                    new_path, O_WRONLY | O_CREAT | O_EXCL,
+                    old_file->get_mode());
+            if (!new_reg_file)
+            {
+                dealloc(old_file);
+                return -1;
+            }
+
+            // Copy contents
+            static constexpr size_t BUF_SIZE = 512;
+            static uint8_t buf[BUF_SIZE];
+            ssize_t bytes_read;
+            while ((bytes_read = old_reg_file->read(buf, BUF_SIZE)) > 0)
+            {
+                new_reg_file->write(buf, bytes_read);
+            }
+
+            if (bytes_read >= 0)
+                old_file->remove();
+            dealloc(old_reg_file);
+            dealloc(new_reg_file);
+            return bytes_read >= 0 ? 0 : -1;
+        }
+        case FileType::Symlink:
+        {
+            BaseSymlink *old_symlink = (BaseSymlink *)old_file;
+            char *target = old_symlink->get_target();
+
+            if (!target)
+            {
+                dealloc(old_symlink);
+                return -1;
+            }
+
+            int ret = symlink(new_path, target);
+            dealloc(target);
+            if (ret == 0)
+                old_symlink->remove();
+            dealloc(old_symlink);
+            return ret;
+        }
+        case FileType::Special:
+        {
+            BaseSpecialFile *old_special_file = (BaseSpecialFile *)old_file;
+            int dev_id = old_special_file->get_device_id();
+
+            const char *last_slash = strrchr(new_path, '/');
+            if (!last_slash)
+            {
+                dealloc(old_special_file);
+
+                error = ENOENT;
+                return -1;
+            }
+            String new_parent(last_slash, last_slash - new_path);
+            BaseDirectory *new_parent_file = (BaseDirectory *)data->mounts.lopen(new_parent.c_str(), O_RDWR | O_DIRECTORY, 0);
+            if (!new_parent_file)
+            {
+                dealloc(old_special_file);
+
+                error = ENOENT;
+                return -1;
+            }
+
+            BaseSpecialFile *new_special_file = new_parent_file->mksfile(
+                last_slash + 1, O_RDWR, dev_id, old_special_file->get_mode());
+            if (new_special_file)
+            {
+                old_special_file->remove();
+                dealloc(old_special_file);
+                dealloc(new_special_file);
+            }
+            dealloc(new_parent_file);
+            return new_special_file ? 0 : -1;
+        }
+        case FileType::Directory:
+        {
+            // TODO: Recursive move
+            error = ENOTSUP;
+            dealloc(old_file);
+            return -1;
+        }
+        default:
+            dealloc(old_file);
+            error = EINVAL;
+            return -1;
+        }
     }
 
     int VFS::remove(int fd)
@@ -588,7 +828,21 @@ namespace Hamster
         if (!file)
             return -1;
 
+        int devid = -1;
+
+        if (file->type() == FileType::Special)
+        {
+            devid = ((BaseSpecialFile *)file)->get_device_id();
+            if (devid < 0)
+                return -1;
+        }
+
         int ret = file->remove();
+        if (ret < 0)
+            return ret;
+
+        if (file->type() == FileType::Special)
+            return data->special_driver_manager.remove_driver(devid);
         return ret;
     }
 
@@ -689,13 +943,24 @@ namespace Hamster
         if (!file)
             return -1;
 
-        if (file->type() != FileType::Regular)
+        switch (file->type())
         {
+        case FileType::Regular:
+            return ((BaseRegularFile *)file)->read(buf, size);
+        case FileType::Special:
+        {
+            int devid = ((BaseSpecialFile *)file)->get_device_id();
+            if (devid < 0)
+                return -1;
+            BaseSpecialDriver *driver = data->special_driver_manager.get_driver(devid);
+            if (!driver)
+                return -1;
+            return driver->read(buf, size);
+        }
+        default:
             error = EISDIR;
             return -1;
         }
-        ssize_t ret = ((BaseRegularFile *)file)->read(buf, size);
-        return ret;
     }
 
     ssize_t VFS::write(int fd, const uint8_t *buf, size_t size)
@@ -704,13 +969,24 @@ namespace Hamster
         if (!file)
             return -1;
 
-        if (file->type() != FileType::Regular)
+        switch (file->type())
         {
+        case FileType::Regular:
+            return ((BaseRegularFile *)file)->write(buf, size);
+        case FileType::Special:
+        {
+            int devid = ((BaseSpecialFile *)file)->get_device_id();
+            if (devid < 0)
+                return -1;
+            BaseSpecialDriver *driver = data->special_driver_manager.get_driver(devid);
+            if (!driver)
+                return -1;
+            return driver->write(buf, size);
+        }
+        default:
             error = EISDIR;
             return -1;
         }
-        ssize_t ret = ((BaseRegularFile *)file)->write(buf, size);
-        return ret;
     }
 
     int VFS::seek(int fd, int64_t offset, int whence)
@@ -719,13 +995,29 @@ namespace Hamster
         if (!file)
             return -1;
 
-        if (file->type() != FileType::Regular)
+        switch (file->type())
         {
+        case FileType::Regular:
+            return ((BaseRegularFile *)file)->seek(offset, whence);
+        case FileType::Special:
+        {
+            int devid = ((BaseSpecialFile *)file)->get_device_id();
+            if (devid < 0)
+                return -1;
+            BaseSpecialDriver *driver = data->special_driver_manager.get_driver(devid);
+            if (!driver)
+                return -1;
+            if (driver->special_type() != SpecialFileType::BlockDevice)
+            {
+                error = EISDIR;
+                return -1;
+            }
+            return ((BaseBlockDevice *)driver)->seek(offset, whence);
+        }
+        default:
             error = EISDIR;
             return -1;
         }
-        int ret = ((BaseRegularFile *)file)->seek(offset, whence);
-        return ret;
     }
 
     int64_t VFS::tell(int fd)
@@ -734,13 +1026,29 @@ namespace Hamster
         if (!file)
             return -1;
 
-        if (file->type() != FileType::Regular)
+        switch (file->type())
         {
+        case FileType::Regular:
+            return ((BaseRegularFile *)file)->tell();
+        case FileType::Special:
+        {
+            int devid = ((BaseSpecialFile *)file)->get_device_id();
+            if (devid < 0)
+                return -1;
+            BaseSpecialDriver *driver = data->special_driver_manager.get_driver(devid);
+            if (!driver)
+                return -1;
+            if (driver->special_type() != SpecialFileType::BlockDevice)
+            {
+                error = EISDIR;
+                return -1;
+            }
+            return ((BaseBlockDevice *)driver)->tell();
+        }
+        default:
             error = EISDIR;
             return -1;
         }
-        int64_t ret = ((BaseRegularFile *)file)->tell();
-        return ret;
     }
 
     int VFS::truncate(int fd, int64_t size)
@@ -764,13 +1072,29 @@ namespace Hamster
         if (!file)
             return -1;
 
-        if (file->type() != FileType::Regular)
+        switch (file->type())
         {
+        case FileType::Regular:
+            return ((BaseRegularFile *)file)->size();
+        case FileType::Special:
+        {
+            int devid = ((BaseSpecialFile *)file)->get_device_id();
+            if (devid < 0)
+                return -1;
+            BaseSpecialDriver *driver = data->special_driver_manager.get_driver(devid);
+            if (!driver)
+                return -1;
+            if (driver->special_type() != SpecialFileType::BlockDevice)
+            {
+                error = EISDIR;
+                return -1;
+            }
+            return ((BaseBlockDevice *)driver)->size();
+        }
+        default:
             error = EISDIR;
             return -1;
         }
-        int64_t ret = ((BaseRegularFile *)file)->size();
-        return ret;
     }
 
     char *VFS::get_target(const char *path)
@@ -971,5 +1295,130 @@ namespace Hamster
         dealloc(parent);
         dealloc(sym);
         return sym == nullptr ? -1 : 0;
+    }
+
+    int VFS::mksfile(const char *path, int flags, BaseSpecialDriver *driver, int mode)
+    {
+        if (!path || !driver)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        const char *last = strrchr(path, '/');
+        if (!last)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        String parent_path(path, last - path);
+
+        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0);
+        if (!parent)
+        {
+            return -1;
+        }
+
+        assert(parent->type() == FileType::Directory);
+
+        // Register the driver
+        int driver_id = data->special_driver_manager.add_driver(driver);
+        if (driver_id < 0)
+        {
+            dealloc(parent);
+            return -1;
+        }
+
+        // Create the special file
+        BaseSpecialFile *sfile = ((BaseDirectory *)parent)->mksfile(last + 1, flags, driver_id, mode);
+        dealloc(parent);
+        if (!sfile)
+        {
+            data->special_driver_manager.remove_driver(driver_id);
+            return -1;
+        }
+
+        // Create the handle
+        int fd = data->fd_manager.add_fd(sfile);
+        if (fd < 0)
+        {
+            dealloc(sfile);
+            data->special_driver_manager.remove_driver(driver_id);
+            return -1;
+        }
+
+        return fd;
+    }
+
+    int VFS::mksfileat(int dir_fd, const char *path, int flags, BaseSpecialDriver *driver, int mode)
+    {
+        if (!path || !driver)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        BaseFile *dir = data->fd_manager.get_fd(dir_fd);
+        if (!dir)
+            return -1;
+        if (dir->type() != FileType::Directory)
+        {
+            error = ENOTDIR;
+            return -1;
+        }
+
+        BaseFile *cloned_file = dir->clone();
+        if (!cloned_file)
+            return -1;
+        assert(cloned_file->type() == FileType::Directory);
+
+        // Register the driver
+        int driver_id = data->special_driver_manager.add_driver(driver);
+        if (driver_id < 0)
+        {
+            dealloc(cloned_file);
+            return -1;
+        }
+
+        // Create the special file
+        const char *last = strrchr(path, '/');
+        if (!last)
+        {
+            error = EINVAL;
+            dealloc(cloned_file);
+            return -1;
+        }
+
+        String parent_path(path, last - path);
+
+        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0, (BaseDirectory *)cloned_file);
+        if (!parent)
+            return -1;
+
+        assert(parent->type() == FileType::Directory);
+        auto sfile = ((BaseDirectory *)parent)->mksfile(last + 1, flags, driver_id, mode);
+        dealloc(parent);
+
+        if (!sfile)
+        {
+            data->special_driver_manager.remove_driver(driver_id);
+            dealloc(cloned_file);
+            return -1;
+        }
+
+        // Create the handle
+        int fd = data->fd_manager.add_fd(sfile);
+
+        dealloc(cloned_file);
+
+        if (fd < 0)
+        {
+            dealloc(sfile);
+            data->special_driver_manager.remove_driver(driver_id);
+            return -1;
+        }
+
+        return fd;
     }
 } // namespace Hamster
