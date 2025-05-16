@@ -143,7 +143,7 @@ namespace Hamster
          * @param size The size of the buffer
          * @return The number of bytes read, or on error return -1 and set `error`
          */
-        ssize_t read(int fd, uint8_t *buf, size_t size);
+        ssize_t read(int fd, void *buf, size_t size);
 
         /**
          * @brief Write to a file
@@ -152,7 +152,7 @@ namespace Hamster
          * @param size The size of the buffer
          * @return The number of bytes written, or on error return -1 and set `error`
          */
-        ssize_t write(int fd, const uint8_t *buf, size_t size);
+        ssize_t write(int fd, const void *buf, size_t size);
 
         /**
          * @brief Seek to a position in a file

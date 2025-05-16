@@ -937,7 +937,7 @@ namespace Hamster
         return ret;
     }
 
-    ssize_t VFS::read(int fd, uint8_t *buf, size_t size)
+    ssize_t VFS::read(int fd, void *buf, size_t size)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
         if (!file)
@@ -946,7 +946,7 @@ namespace Hamster
         switch (file->type())
         {
         case FileType::Regular:
-            return ((BaseRegularFile *)file)->read(buf, size);
+            return ((BaseRegularFile *)file)->read((uint8_t*)buf, size);
         case FileType::Special:
         {
             int devid = ((BaseSpecialFile *)file)->get_device_id();
@@ -955,7 +955,7 @@ namespace Hamster
             BaseSpecialDriver *driver = data->special_driver_manager.get_driver(devid);
             if (!driver)
                 return -1;
-            return driver->read(buf, size);
+            return driver->read((uint8_t*)buf, size);
         }
         default:
             error = EISDIR;
@@ -963,7 +963,7 @@ namespace Hamster
         }
     }
 
-    ssize_t VFS::write(int fd, const uint8_t *buf, size_t size)
+    ssize_t VFS::write(int fd, const void *buf, size_t size)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
         if (!file)
@@ -972,7 +972,7 @@ namespace Hamster
         switch (file->type())
         {
         case FileType::Regular:
-            return ((BaseRegularFile *)file)->write(buf, size);
+            return ((BaseRegularFile *)file)->write((const uint8_t*)buf, size);
         case FileType::Special:
         {
             int devid = ((BaseSpecialFile *)file)->get_device_id();
@@ -981,7 +981,7 @@ namespace Hamster
             BaseSpecialDriver *driver = data->special_driver_manager.get_driver(devid);
             if (!driver)
                 return -1;
-            return driver->write(buf, size);
+            return driver->write((const uint8_t*)buf, size);
         }
         default:
             error = EISDIR;
