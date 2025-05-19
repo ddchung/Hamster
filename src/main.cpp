@@ -51,7 +51,6 @@ int main()
   Hamster::vfs.write(f, riscv_prog_elf_ptr, riscv_prog_elf_size);
   Hamster::vfs.close(f);
 
-  uint64_t entry_point = 0;
   uint64_t iterations = 0;
   f = Hamster::vfs.open("/test.elf", O_RDONLY);
   if (f < 0)
