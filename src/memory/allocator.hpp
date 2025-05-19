@@ -25,7 +25,7 @@
 namespace Hamster
 {
 #ifndef NDEBUG
-    inline std::unordered_set<void *> allocated_pointers;
+    extern std::unordered_set<void *> allocated_pointers;
 #endif // NDEBUG
 
     template <typename T, typename... Args>

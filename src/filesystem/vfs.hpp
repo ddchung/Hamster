@@ -312,6 +312,6 @@ namespace Hamster
         VFSData *data;
     };
 
-    inline VFS vfs;
+    extern VFS vfs;
 } // namespace Hamster
 
