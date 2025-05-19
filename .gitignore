@@ -3,3 +3,6 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+src/riscv_prog_elf.c
+riscv_prog.elf
