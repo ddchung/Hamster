@@ -6,6 +6,7 @@
 void test_platform();
 void test_memory();
 void test_filesystem();
+void test_process();
 
 int main()
 {
@@ -21,6 +22,10 @@ int main()
 
   Hamster::_log("Testing Filesystem...\n");
   test_filesystem();
+  Hamster::_log("Done\n");
+
+  Hamster::_log("Testing Process...\n");
+  test_process();
   Hamster::_log("Done\n");
 
   // Test RISC-V RV32I Thread
