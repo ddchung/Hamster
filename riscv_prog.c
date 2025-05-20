@@ -1,4 +1,6 @@
 
+#include <stdlib.h>
+
 int syscall0(int syscall)
 {
     int ret;
@@ -28,15 +30,11 @@ int syscall1(int syscall, int arg1)
     return ret;
 }
 
-int main(void);
-
-void _start()
+void _exit(int status)
 {
-    // Startup code
-    
-    int i = main();
-    syscall1(0, i); // Exit syscall
+    syscall1(0, status);
 }
+
 
 int main(void)
 {

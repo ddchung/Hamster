@@ -5,7 +5,11 @@ import os
 os.remove("src/riscv_prog_elf.c") if os.path.exists("src/riscv_prog_elf.c") else None
 
 # Compile `riscv_prog.c` to an ELF file
-os.system("riscv32-unknown-elf-gcc -ffreestanding -nostdlib -O3 riscv_prog.c -o riscv_prog.elf")
+os.system("bash -ic \"riscv32-unknown-elf-gcc -ffreestanding -O3 -c riscv_prog.c -o riscv_prog.o\"")
+os.system("bash -ic \"riscv32-unknown-elf-gcc -ffreestanding -O3 -c riscv_start.c -o riscv_start.o\"")
+
+# Link
+os.system("bash -ic \"riscv32-unknown-elf-gcc -ffreestanding -nostdlib riscv_prog.o riscv_start.o -lc -o riscv_prog.elf\"")
 
 # Read the ELF file and convert it to a C array
 
