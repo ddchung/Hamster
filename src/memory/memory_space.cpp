@@ -1,250 +1,260 @@
-// implementation of memory_space.hpp
+// Hamster memory space
 
+#include <memory/page_manager.hpp>
 #include <memory/memory_space.hpp>
 #include <memory/allocator.hpp>
-#include <memory/page.hpp>
-#include <utility>
+#include <platform/config.hpp>
+#include <errno/errno.h>
+#include <cstdint>
+#include <cassert>
+
 
 namespace Hamster
 {
-    uint64_t MemorySpace::get_addr_offset(uint64_t addr)
+    namespace
     {
-        return addr & (HAMSTER_PAGE_SIZE - 1);
-    }
-
-    uint64_t MemorySpace::get_page_start(uint64_t addr)
-    {
-        return addr & ~(HAMSTER_PAGE_SIZE - 1);
-    }
-    MemorySpace::MemorySpace(MemorySpace &&other)
-    {
-        pages = std::move(other.pages);
-    }
-
-    MemorySpace &MemorySpace::operator=(MemorySpace &&other)
-    {
-        if (this != &other)
+        uint64_t get_page_start(uint64_t addr)
         {
-            pages = std::move(other.pages);
-        }
-        return *this;
-    }
-
-    int MemorySpace::allocate_page(uint64_t addr)
-    {
-        if (pages.size() >= HAMSTER_MAX_PAGES)
-        {
-            return -1; // out of memory
+            return addr & ~(HAMSTER_PAGE_SIZE - 1);
         }
 
-        addr = get_page_start(addr);
-
-        if (pages.find(addr) != pages.end())
+        uint64_t get_page_offset(uint64_t addr)
         {
-            return -2; // page already allocated
+            return addr & (HAMSTER_PAGE_SIZE - 1);
         }
-
-        if (queue(addr) < 0)
-            return -3; // queue failed
+    } // namespace
+    
+    uint8_t &MemorySpace::operator[](uint64_t addr)
+    {
+        if (ensure_page(addr) < 0)
+            return Page::get_dummy_byte();
         
-        return pages[addr].get_page_id();
+        return pages[get_page_start(addr)][get_page_offset(addr)];
+    }
+
+    int MemorySpace::memcpy(uint64_t addr, const void *buffer, size_t size)
+    {
+        if (!check_permissions(addr, 02, size)) // 02 = write
+        {
+            error = EACCES;
+            return -1;
+        }
+
+        // TODO: More efficient implementation
+        for (size_t i = 0; i < size; i++)
+        {
+            uint8_t &byte = (*this)[addr + i];
+            if (&byte == &Page::get_dummy_byte())
+                return -1;
+            byte = ((uint8_t *)buffer)[i];
+        }
+        return 0;
+    }
+
+    int MemorySpace::memcpy(void *buffer, uint64_t addr, size_t size)
+    {
+        if (!check_permissions(addr, 04, size)) // 04 = read
+        {
+            error = EACCES;
+            return -1;
+        }
+        
+        // TODO: More efficient implementation
+        for (size_t i = 0; i < size; i++)
+        {
+            uint8_t &byte = (*this)[addr + i];
+            if (&byte == &Page::get_dummy_byte())
+                return -1;
+            ((uint8_t *)buffer)[i] = byte;
+        }
+        return 0;
+    }
+
+    int MemorySpace::memcpy(uint64_t src, uint64_t dst, size_t size)
+    {
+        if (!check_permissions(src, 04, size)) // 04 = read
+        {
+            error = EACCES;
+            return -1;
+        }
+        if (!check_permissions(dst, 02, size)) // 02 = write
+        {
+            error = EACCES;
+            return -1;
+        }
+        
+        // TODO: More efficient implementation
+        for (size_t i = 0; i < size; i++)
+        {
+            uint8_t &src_byte = (*this)[src + i];
+            uint8_t &dst_byte = (*this)[dst + i];
+            if (&src_byte == &Page::get_dummy_byte() || &dst_byte == &Page::get_dummy_byte())
+                return -1;
+            dst_byte = src_byte;
+        }
+        return 0;
+    }
+
+    int MemorySpace::memset(uint64_t addr, uint8_t value, size_t size)
+    {
+        if (!check_permissions(addr, 02, size)) // 02 = write
+        {
+            error = EACCES;
+            return -1;
+        }
+        
+        for (size_t i = 0; i < size; i++)
+        {
+            uint8_t &byte = (*this)[addr + i];
+            if (&byte == &Page::get_dummy_byte())
+                return -1;
+            byte = value;
+        }
+        return 0;
+    }
+
+    char *MemorySpace::get_string(uint64_t addr)
+    {
+        if (!check_permissions(addr, 04, 1)) // 04 = read
+        {
+            error = EACCES;
+            return nullptr;
+        }
+
+        // Get the string size
+        size_t size = 0;
+        uint64_t tmp_addr = addr;
+        for (; (*this)[tmp_addr] != '\0'; tmp_addr++)
+        {
+            if (&(*this)[tmp_addr] == &Page::get_dummy_byte())
+                return nullptr;
+            size++;
+        }
+
+        // Copy the string
+        char *str = alloc<char>(size + 1);
+        
+        if (this->memcpy(str, addr, size) < 0)
+        {
+            dealloc(str);
+            return nullptr;
+        }
+
+        str[size] = '\0';
+        return str;
+    }
+
+    bool MemorySpace::is_allocated(uint64_t addr)
+    {
+        return pages.find(get_page_start(addr)) != pages.end();
     }
 
     int MemorySpace::deallocate_page(uint64_t addr)
     {
-        addr = get_page_start(addr);
-        auto it = pages.find(addr);
+        auto it = pages.find(get_page_start(addr));
         if (it == pages.end())
+        {
+            error = EINVAL;
             return -1;
-        
+        }
+
         pages.erase(it);
-        swapped_on_pages.remove(addr);
+
+        // also remove from swapped on pages, if any
+        swapped_on_pages.remove(get_page_start(addr));
         return 0;
     }
 
-    uint8_t &MemorySpace::operator[](uint64_t addr)
+    int MemorySpace::set_permissions(uint64_t addr, uint8_t mode, size_t size)
     {
-        uint64_t offset = get_addr_offset(addr);
-        uint64_t page_start = get_page_start(addr);
-        auto it = pages.find(page_start);
-        if (it == pages.end())
-            return Page::get_dummy(); 
-        Page &page = it->second;
-
-        if (page.is_swapped())
+        if (mode > 07)
         {
-            if (page.swap_in() < 0 || queue(page_start) < 0)
-                return Page::get_dummy();
+            error = EINVAL;
+            return -1;
         }
 
-        return page[offset];
-    }
-
-    uint8_t *MemorySpace::get_page_data(uint64_t addr)
-    {
-        uint64_t page_start = get_page_start(addr);
-        auto it = pages.find(page_start);
-        if (it == pages.end())
-            return nullptr;
-        
-        Page &page = it->second;
-
-        if (page.is_swapped())
+        for (uint64_t it = get_page_start(addr); it <= get_page_start(addr + size); it += HAMSTER_PAGE_SIZE)
         {
-            if (page.swap_in() < 0 || queue(page_start) < 0)
-                return nullptr;
+            if (ensure_page(it) < 0)
+                return -1;
+            auto page_it = pages.find(it);
+            assert(page_it != pages.end());
+            page_it->second.get_flags() = mode;
         }
-
-        return page.get_data();
+        return 0;
     }
 
-    bool MemorySpace::is_page_allocated(uint64_t addr)
+    bool MemorySpace::check_permissions(uint64_t addr, uint8_t req_perms, size_t size)
     {
-        addr = get_page_start(addr);
-        return pages.find(addr) != pages.end();
-    }
-
-    bool MemorySpace::is_page_range_allocated(uint64_t addr, size_t size)
-    {
-        uint64_t page_start = get_page_start(addr);
-        uint64_t page_end = get_page_start(addr + size - 1);
-
-        for (uint64_t page = page_start; page <= page_end; page += HAMSTER_PAGE_SIZE)
+        for (uint64_t it = get_page_start(addr); it <= get_page_start(addr + size); it += HAMSTER_PAGE_SIZE)
         {
-            if (pages.find(page) == pages.end())
+            auto page_it = pages.find(it);
+            if (page_it == pages.end())
+                continue; //< Default permissions when new page is created is 07 (rwx)
+            if ((page_it->second.get_flags() & req_perms) != req_perms)
                 return false;
         }
         return true;
     }
 
-    int MemorySpace::memcpy(uint64_t dest, uint64_t src, size_t size)
+    int MemorySpace::swap_out_all()
     {
-        if (!is_page_range_allocated(dest, size) || !is_page_range_allocated(src, size))
-            return -1;
-
-        for (size_t i = 0; i < size; i++)
+        for (auto it = pages.begin(); it != pages.end();)
         {
-            uint64_t dest_addr = dest + i;
-            uint64_t src_addr = src + i;
-            (*this)[dest_addr] = (*this)[src_addr];
+            if (it->second.is_swapped())
+            {
+                it++;
+                continue;
+            }
+            if (it->second.swap_out() < 0)
+            {
+                error = EIO;
+                return -1;
+            }
         }
+        swapped_on_pages.clear();
         return 0;
     }
 
-    int MemorySpace::memcpy(uint64_t dest, uint8_t *src, size_t size)
+    int MemorySpace::ensure_page(uint64_t addr)
     {
-        if (!is_page_range_allocated(dest, size))
-            return -1;
-
-        for (size_t i = 0; i < size; i++)
-        {
-            uint64_t dest_addr = dest + i;
-            (*this)[dest_addr] = src[i];
-        }
-        return 0;
-    }
-
-    int MemorySpace::memcpy(uint8_t *dest, uint64_t src, size_t size)
-    {
-        if (!is_page_range_allocated(src, size))
-            return -1;
-
-        for (size_t i = 0; i < size; i++)
-        {
-            uint64_t src_addr = src + i;
-            dest[i] = (*this)[src_addr];
-        }
-        return 0;
-    }
-
-    int MemorySpace::memset(uint64_t dest, uint8_t value, size_t size)
-    {
-        if (!is_page_range_allocated(dest, size))
-            return -1;
-
-        for (size_t i = 0; i < size; i++)
-        {
-            uint64_t dest_addr = dest + i;
-            (*this)[dest_addr] = value;
-        }
-        return 0;
-    }
-
-    uint16_t &MemorySpace::get_page_flags(uint64_t addr)
-    {
-        uint64_t page_start = get_page_start(addr);
-        auto it = pages.find(page_start);
+        auto it = pages.find(get_page_start(addr));
         if (it == pages.end())
-            return PageManager::get_flag_dummy();
-        return it->second.get_flags();
-    }
-
-    int MemorySpace::queue(uint64_t page_start)
-    {
-        // ensure it is page start
-        page_start = get_page_start(page_start);
-
-        // remove all existing occurences
-        swapped_on_pages.remove(page_start);
-
-        // add
-        swapped_on_pages.push_front(page_start);
-
-        // clean
-        return clean();
-    }
-
-    int MemorySpace::swap_out_pages()
-    {
-        for (auto &page : swapped_on_pages)
         {
-            auto it = pages.find(page);
+            // create a new page
+
+            // default construct
+            pages[get_page_start(addr)].get_flags() = 07;
+
+            it = pages.find(get_page_start(addr));
+
+            assert(it != pages.end());
+        }
+
+        if (it->second.is_swapped() && it->second.swap_in() < 0)
+        {
+            error = EIO;
+            return -1;
+        }
+
+        swapped_on_pages.remove(get_page_start(addr));
+        swapped_on_pages.push_back(get_page_start(addr));
+
+        while (swapped_on_pages.size() > HAMSTER_CONCUR_PAGES)
+        {
+            // Need to swap out pages
+            uint64_t page_addr = swapped_on_pages.front();
+            it = pages.find(page_addr);
+
+            swapped_on_pages.pop_front();
+
             if (it == pages.end())
                 continue;
+            
             it->second.swap_out();
         }
+
         return 0;
-    }
-
-    int MemorySpace::swap_in_pages()
-    {
-        for (auto &page : swapped_on_pages)
-        {
-            auto it = pages.find(page);
-            if (it == pages.end())
-                continue;
-            it->second.swap_in();
-        }
-        return 0;
-    }
-
-    int MemorySpace::clean()
-    {
-        if (swapped_on_pages.size() <= HAMSTER_CONCUR_PAGES)
-            return 0; // no need to clean
-        
-        uint64_t page_start = swapped_on_pages.back();
-        page_start = get_page_start(page_start);
-        
-        auto it = pages.find(page_start);
-        if (it == pages.end())
-        {
-            // not found
-            swapped_on_pages.pop_back();
-            return -1;
-        }
-
-        Page &page = it->second;
-
-        // swap out
-        int res = page.swap_out();
-        swapped_on_pages.pop_back();
-
-        // continue cleaning
-        if (clean() < 0)
-            res = -2;
-
-        return res;
     }
 } // namespace Hamster
 
