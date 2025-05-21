@@ -9,7 +9,7 @@ os.system("bash -ic \"riscv32-unknown-elf-gcc -ffreestanding -O3 -c riscv_prog.c
 os.system("bash -ic \"riscv32-unknown-elf-gcc -ffreestanding -O3 -c riscv_start.c -o riscv_start.o\"")
 
 # Link
-os.system("bash -ic \"riscv32-unknown-elf-gcc -ffreestanding -nostdlib riscv_prog.o riscv_start.o -lc -o riscv_prog.elf\"")
+os.system("bash -ic \"riscv32-unknown-elf-gcc -ffreestanding riscv_prog.o -nostartfiles riscv_start.o -lc -o riscv_prog.elf\"")
 
 # Read the ELF file and convert it to a C array
 
