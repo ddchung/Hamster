@@ -149,10 +149,10 @@ void test_filesystem()
 
     Deque<int> deque;
 
-    class TestSpecialDriver : public BaseCharacterDevice
+    class TestSpecialDriverHandle : public BaseCharacterDeviceHandle
     {
     public:
-        TestSpecialDriver(Deque<int> &deque) : deque(deque) {}
+        TestSpecialDriverHandle(Deque<int> &deque, int flags) : deque(deque), flags(flags) {}
 
         ssize_t read(uint8_t *buf, size_t count) override
         {
@@ -177,6 +177,32 @@ void test_filesystem()
                 deque.push_back(buf[i]);
             return count;
         }
+
+        int get_flags() override
+        {
+            return flags;
+        }
+
+        int set_flags(int flags) override
+        {
+            this->flags = flags;
+            return 0;
+        }
+    private:
+        Deque<int> &deque;
+        int flags;
+    };
+
+    class TestSpecialDriver : public BaseSpecialDriver
+    {
+    public:
+        TestSpecialDriver(Deque<int> &deque) : deque(deque) {}
+
+        BaseSpecialDriverHandle *create_handle(int flags) override
+        {
+            return alloc<TestSpecialDriverHandle>(1, deque, flags);
+        }
+
     private:
         Deque<int> &deque;
     };

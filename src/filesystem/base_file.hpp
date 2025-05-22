@@ -184,6 +184,8 @@ namespace Hamster
         virtual int64_t size() = 0;
     };
 
+    class BaseSpecialDriverHandle;
+
     class BaseSpecialFile : public BaseFile
     {
     public:
@@ -194,6 +196,24 @@ namespace Hamster
          * @return The Device ID of the special file, or on error return -1 and set `error`
          */
         virtual int get_device_id() = 0;
+
+        // Don't declare `get_handle` and `set_handle` as virtual, so that base classes cannot override them
+
+        /**
+         * @brief A VFS hook to get the special file driver
+         * @note Don't use this directly, as it is used by the VFS
+         */
+        inline BaseSpecialDriverHandle *get_handle() { return handle; }
+
+        /**
+         * @brief A VFS hook to set the special file driver
+         * @note Don't use this directly, as it is used by the VFS
+         */
+        inline void set_handle(BaseSpecialDriverHandle *handle) { this->handle = handle; }
+    
+    private:
+        // VFS hook
+        BaseSpecialDriverHandle *handle = nullptr;
     };
 
     class BaseSymlink : public BaseFile
@@ -324,21 +344,22 @@ namespace Hamster
     // This is only used by the VFS to create special files, so that they can do stuff
     // Note that for now, it remains incomplete
     // Please note that there is exactly one special file driver for each special file, so
-    // * it is perfectly OK to keep state in the driver
+    // * it is perfectly OK to keep state in the driver, as it is not shared between multiple files
+    // Also note that if you want to keep independent state between different file descriptors of the same file,
+    // * you can put the state in the handle
     // TODO: complete
 
     enum class SpecialFileType : uint8_t
     {
         BlockDevice,
         CharacterDevice,
-        FIFO,
         Socket,
     };
 
-    class BaseSpecialDriver
+    class BaseSpecialDriverHandle
     {
     public:
-        virtual ~BaseSpecialDriver() = default;
+        virtual ~BaseSpecialDriverHandle() = default;
 
         /**
          * @brief Get the type of the special file.
@@ -362,10 +383,23 @@ namespace Hamster
          * @return The number of bytes read, or on error return -1 and set `error`
          * @note Equivelant to POSIX `read`
          */
-        virtual ssize_t read(uint8_t *buf, size_t size) = 0;        
+        virtual ssize_t read(uint8_t *buf, size_t size) = 0;
+
+        /**
+         * @brief Get the flags that were used to create this handle.
+         * @return The flags that were used to create this handle, or on error return -1 and set `error`
+         */
+        virtual int get_flags() = 0;
+
+        /**
+         * @brief Set this handle's flags.
+         * @param flags The new flags
+         * @return 0 on success, or on error return -1 and set `error`
+         */
+        virtual int set_flags(int flags) = 0;
     };
 
-    class BaseCharacterDevice : public BaseSpecialDriver
+    class BaseCharacterDeviceHandle : public BaseSpecialDriverHandle
     {
     public:
         virtual SpecialFileType special_type() override { return SpecialFileType::CharacterDevice; }
@@ -373,7 +407,7 @@ namespace Hamster
         // Nothing needed here, character devices only support read/write
     };
 
-    class BaseSocketDevice : public BaseSpecialDriver
+    class BaseSocketDeviceHandle : public BaseSpecialDriverHandle
     {
     public:
         virtual SpecialFileType special_type() override { return SpecialFileType::Socket; }
@@ -381,7 +415,7 @@ namespace Hamster
         // TODO: Implement special socket operations
     };
 
-    class BaseBlockDevice : public BaseSpecialDriver
+    class BaseBlockDeviceHandle : public BaseSpecialDriverHandle
     {
     public:
         virtual SpecialFileType special_type() override { return SpecialFileType::BlockDevice; }
@@ -406,6 +440,20 @@ namespace Hamster
          * @return The size of the block device in bytes
          */
         virtual int64_t size() = 0;
+    };
+
+    class BaseSpecialDriver
+    {
+    public:
+        virtual ~BaseSpecialDriver() = default;
+
+        /**
+         * @brief Create a new handle for the special file.
+         * @param flags The flags to open the file with
+         * @return A newly allocated `BaseSpecialDriverHandle` that operates on the special file, or on error, it returns nullptr and sets `error`
+         * @note Be sure to free the handle
+         */
+        virtual BaseSpecialDriverHandle *create_handle(int flags) = 0;
     };
 } // namespace Hamster
 
