@@ -10,7 +10,7 @@ namespace Hamster
 {
     namespace
     {
-        int load_elf32(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint16_t& machine_type)
+        int load_elf32(int fd, MemorySpace& mem_space, uint64_t& entry_point)
         {
             if (vfs.seek(fd, 0, SEEK_SET) < 0)
             {
@@ -53,8 +53,13 @@ namespace Hamster
                 return -1;
             }
 
+            if (ehdr.e_machine != EM_RISCV)
+            {
+                error = ENOEXEC;
+                return -1;
+            }
+
             entry_point = ehdr.e_entry;
-            machine_type = ehdr.e_machine;
 
             // Load program headers
             if (vfs.seek(fd, ehdr.e_phoff, SEEK_SET) < 0)
@@ -95,12 +100,6 @@ namespace Hamster
                             return -1;
                         }
 
-                        // Allocate pages
-                        for (uint32_t addr = MemorySpace::get_page_start(phdr.p_vaddr + bytes_read); addr <= phdr.p_vaddr + bytes_read + ret; addr += HAMSTER_PAGE_SIZE)
-                        {
-                            mem_space.allocate_page(addr);
-                        }
-
                         mem_space.memcpy(phdr.p_vaddr + bytes_read, buf, ret);
                         bytes_read += ret;
                         bytes_to_read -= ret;
@@ -109,12 +108,6 @@ namespace Hamster
                     // Zero out the rest of the segment
                     if (phdr.p_memsz > phdr.p_filesz)
                     {
-                        // allocate pages
-                        for (uint32_t addr = MemorySpace::get_page_start(phdr.p_vaddr + bytes_read); addr <= phdr.p_vaddr + phdr.p_memsz; addr += HAMSTER_PAGE_SIZE)
-                        {
-                            mem_space.allocate_page(addr);
-                        }
-
                         size_t zero_size = phdr.p_memsz - phdr.p_filesz;
                         mem_space.memset(phdr.p_vaddr + bytes_read, 0, zero_size);
                     }
@@ -124,17 +117,10 @@ namespace Hamster
             // done loading
             return 0;
         }
-
-        int load_elf64(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint16_t& machine_type)
-        {
-            // TODO: not implemented yet
-            error = ENOSYS;
-            return -1;
-        }
     } // namespace
     
 
-    int load_elf(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint16_t& machine_type)
+    int load_elf(int fd, MemorySpace& mem_space, uint64_t& entry_point)
     {
         // Prepare file
         if (vfs.seek(fd, 0, SEEK_SET) < 0)
@@ -161,11 +147,7 @@ namespace Hamster
 
         if (e_ident[EI_CLASS] == ELFCLASS32)
         {
-            return load_elf32(fd, mem_space, entry_point, machine_type);
-        }
-        else if (e_ident[EI_CLASS] == ELFCLASS64)
-        {
-            return load_elf64(fd, mem_space, entry_point, machine_type);
+            return load_elf32(fd, mem_space, entry_point);
         }
         else
         {

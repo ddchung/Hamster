@@ -31,6 +31,10 @@ namespace Hamster
         ThreadState get_state() const { return state; }
         Process *get_process() const { return process; }
         size_t get_id() const { return id; }
+        void set_pc(uint32_t pc) { this->pc = pc; }
+
+        uint32_t *get_regs() { return x; }
+        double *get_fregs() { return f; }
 
         /**
          * @brief Tick the thread once
@@ -54,6 +58,12 @@ namespace Hamster
          * @note This will not remove the callback, just return it
          */
         const std::function<void(Thread &)> &get_current_pause_callback() const;
+
+        /**
+         * @brief Check if the thread is paused
+         * @return True if there is at least one pause callback
+         */
+        bool is_paused() const { return !pause_callbacks.empty(); }
 
         /**
          * @brief Resume the thread

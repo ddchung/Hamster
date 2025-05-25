@@ -11,18 +11,13 @@
 #include <math.h>
 #include <cfenv>
 
+// for debugging
+#include <cstdio>
+
 namespace Hamster
 {
     namespace
     {
-        struct RV32IProcData
-        {
-            // Per-process data
-
-            // `lr` and `sc` reserved memory
-            UnorderedMap<uint32_t, size_t> reserved_mem;
-        };
-
         enum Opcodes
         {
             OP_REG = 0b0110011,
@@ -67,7 +62,7 @@ namespace Hamster
 
             FUNCT3_SB = 0b000,
             FUNCT3_SH = 0b001,
-            FUNCT3_SW = 0b100,
+            FUNCT3_SW = 0b010,
 
             FUNCT3_ADD_SUB = 0b000,
             FUNCT3_SLL = 0b001,
@@ -321,6 +316,8 @@ namespace Hamster
           x{0}, f{0.0}, fcsr(0), pc(0),
           pending_signal(0), signal_mask(0)
     {
+        // Set stack pointer to top of memory
+        x[2] = 0xFFFFFFFF;
     }
 
     Thread::Thread(Thread &&other)
@@ -535,13 +532,7 @@ namespace Hamster
                     else
                     {
                         // SRA
-                        int32_t shamt = sign_extend(x[extract_rs2(inst)], 5);
-                        if (shamt < 0)
-                            x[extract_rd(inst)] =
-                                (int32_t)x[extract_rs1(inst)] >> (-shamt & 0x1F);
-                        else
-                            x[extract_rd(inst)] =
-                                (int32_t)x[extract_rs1(inst)] << (shamt & 0x1F);
+                        x[extract_rd(inst)] = (int32_t)x[extract_rs1(inst)] >> (x[extract_rs2(inst)] & 0x1F);
                     }
                     break;
                 case FUNCT3_SLT:
@@ -620,14 +611,9 @@ namespace Hamster
             {
                 // Base integer instructions
             case FUNCT3_ADD_SUB:
-                if ((extract_funct7(inst) & 0x20) == 0)
-                    // ADDI
-                    x[extract_rd(inst)] =
-                        x[extract_rs1(inst)] + extract_imm_i(inst);
-                else
-                    // SUBI
-                    x[extract_rd(inst)] =
-                        x[extract_rs1(inst)] - extract_imm_i(inst);
+                // ADDI, there is no SUBI
+                x[extract_rd(inst)] =
+                    x[extract_rs1(inst)] + extract_imm_i(inst);
                 break;
             case FUNCT3_XOR:
                 x[extract_rd(inst)] =
@@ -653,13 +639,8 @@ namespace Hamster
                 else
                 {
                     // SRAI
-                    int32_t shamt = sign_extend(extract_imm_i(inst), 5);
-                    if (shamt < 0)
-                        x[extract_rd(inst)] =
-                            (int32_t)x[extract_rs1(inst)] >> (-shamt & 0x1F);
-                    else
-                        x[extract_rd(inst)] =
-                            (int32_t)x[extract_rs1(inst)] << (shamt & 0x1F);
+                    x[extract_rd(inst)] =
+                        (int32_t)x[extract_rs1(inst)] >> (extract_imm_i(inst) & 0x1F);
                 }
                 break;
             case FUNCT3_SLT:
@@ -703,7 +684,7 @@ namespace Hamster
                 uint32_t value;
                 if (read32(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
                     return;
-                x[extract_rd(inst)] = sign_extend(value, 32);
+                x[extract_rd(inst)] = value;
             }
             break;
             case FUNCT3_LBU:
@@ -841,33 +822,154 @@ namespace Hamster
                 // CSR Read and Write
                 {
                     uint32_t csr = extract_imm_i(inst);
-                    uint32_t old_value;
-                    if (read32(csr, old_value) != 0)
+                    switch (csr)
+                    {
+                    case 0x1: // FP Flags
+                        x[extract_rd(inst)] = (fcsr & 0x1F);
+                        fcsr &= ~0x1F;
+                        fcsr |= (x[extract_rs1(inst)] & 0x1F);
+                        break;
+                    case 0x2: // FP default round mode
+                        x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
+                        fcsr &= ~(0b111 << 5);
+                        fcsr |= ((x[extract_rs1(inst)] & 0b111) << 5);
+                        break;
+                    case 0x3: // whole FCSR
+                        x[extract_rd(inst)] = fcsr;
+                        fcsr = x[extract_rs1(inst)] & 0xFFFFFFFF;
+                        break;
+                    default:
+                        // Unknown CSR
+                        signal(SIGILL);
                         return;
-                    write32(csr, x[extract_rs1(inst)]);
-                    x[extract_rd(inst)] = old_value;
+                    }
                 }
                 break;
             case FUNCT3_CSRRS:
                 // CSR Read and Set
                 {
                     uint32_t csr = extract_imm_i(inst);
-                    uint32_t old_value;
-                    if (read32(csr, old_value) != 0)
+                    switch (csr)
+                    {
+                    case 0x1: // FP Flags
+                        x[extract_rd(inst)] = (fcsr & 0x1F);
+                        fcsr |= (x[extract_rs1(inst)] & 0x1F);
+                        break;
+                    case 0x2: // FP default round mode
+                        x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
+                        fcsr |= ((x[extract_rs1(inst)] & 0b111) << 5);
+                        break;
+                    case 0x3: // whole FCSR
+                        x[extract_rd(inst)] = fcsr;
+                        fcsr |= (x[extract_rs1(inst)] & 0xFFFFFFFF);
+                        break;
+                    default:
+                        // Unknown CSR
+                        signal(SIGILL);
                         return;
-                    write32(csr, old_value | x[extract_rs1(inst)]);
-                    x[extract_rd(inst)] = old_value;
+                    }
                 }
                 break;
             case FUNCT3_CSRRC:
                 // CSR Read and Clear
                 {
                     uint32_t csr = extract_imm_i(inst);
-                    uint32_t old_value;
-                    if (read32(csr, old_value) != 0)
+                    switch (csr)
+                    {
+                    case 0x1: // FP Flags
+                        x[extract_rd(inst)] = (fcsr & 0x1F);
+                        fcsr &= ~(x[extract_rs1(inst)] & 0x1F);
+                        break;
+                    case 0x2: // FP default round mode
+                        x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
+                        fcsr &= ~((x[extract_rs1(inst)] & 0b111) << 5);
+                        break;
+                    case 0x3: // whole FCSR
+                        x[extract_rd(inst)] = fcsr;
+                        fcsr &= ~(x[extract_rs1(inst)] & 0xFFFFFFFF);
+                        break;
+                    default:
+                        // Unknown CSR
+                        signal(SIGILL);
                         return;
-                    write32(csr, old_value & ~x[extract_rs1(inst)]);
-                    x[extract_rd(inst)] = old_value;
+                    }
+                }
+                break;
+            case FUNCT3_CSRRWI:
+                // CSR Read and Write Immediate
+                {
+                    uint32_t csr = extract_imm_i(inst);
+                    switch (csr)
+                    {
+                    case 0x1: // FP Flags
+                        x[extract_rd(inst)] = (fcsr & 0x1F);
+                        fcsr &= ~0x1F;
+                        fcsr |= (extract_rs1(inst) & 0x1F);
+                        break;
+                    case 0x2: // FP default round mode
+                        x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
+                        fcsr &= ~(0b111 << 5);
+                        fcsr |= ((extract_rs1(inst) & 0b111) << 5);
+                        break;
+                    case 0x3: // whole FCSR
+                        x[extract_rd(inst)] = fcsr;
+                        fcsr = extract_rs1(inst) & 0xFFFFFFFF;
+                        break;
+                    default:
+                        // Unknown CSR
+                        signal(SIGILL);
+                        return;
+                    }
+                }
+                break;
+            case FUNCT3_CSRRSI:
+                // CSR Read and Set Immediate
+                {
+                    uint32_t csr = extract_imm_i(inst);
+                    switch (csr)
+                    {
+                    case 0x1: // FP Flags
+                        x[extract_rd(inst)] = (fcsr & 0x1F);
+                        fcsr |= (extract_rs1(inst) & 0x1F);
+                        break;
+                    case 0x2: // FP default round mode
+                        x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
+                        fcsr |= ((extract_rs1(inst) & 0b111) << 5);
+                        break;
+                    case 0x3: // whole FCSR
+                        x[extract_rd(inst)] = fcsr;
+                        fcsr |= (extract_rs1(inst) & 0xFFFFFFFF);
+                        break;
+                    default:
+                        // Unknown CSR
+                        signal(SIGILL);
+                        return;
+                    }
+                }
+                break;
+            case FUNCT3_CSRRCI:
+                // CSR Read and Clear Immediate
+                {
+                    uint32_t csr = extract_imm_i(inst);
+                    switch (csr)
+                    {
+                    case 0x1: // FP Flags
+                        x[extract_rd(inst)] = (fcsr & 0x1F);
+                        fcsr &= ~(extract_rs1(inst) & 0x1F);
+                        break;
+                    case 0x2: // FP default round mode
+                        x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
+                        fcsr &= ~((extract_rs1(inst) & 0b111) << 5);
+                        break;
+                    case 0x3: // whole FCSR
+                        x[extract_rd(inst)] = fcsr;
+                        fcsr &= ~(extract_rs1(inst) & 0xFFFFFFFF);
+                        break;
+                    default:
+                        // Unknown CSR
+                        signal(SIGILL);
+                        return;
+                    }
                 }
                 break;
             default:
@@ -1540,5 +1642,33 @@ namespace Hamster
             signal(SIGILL);
             return;
         }
+    }
+
+    void Thread::handle_ecall()
+    {
+        uint32_t syscall_num = x[17];
+        switch (syscall_num)
+        {
+        case 0: // exit
+            state = ThreadState::ENDED;
+            printf("Thread %zu exited with code %d\n", id, x[10]);
+            break;
+        case 1: // test
+            printf("Thread %zu test syscall\n", id);
+            x[10] = 1234; // Return value
+            break;
+        default:
+            // Unknown syscall
+            printf("Unknown syscall: %d\n", syscall_num);
+            signal(SIGSYS);
+            break;
+        }
+    }
+    void Thread::handle_signal()
+    {
+        // TODO: Implement signal handling
+        // For now, just stop
+        state = ThreadState::ENDED;
+        printf("Signal %d received\n", pending_signal);
     }
 } // namespace Hamster

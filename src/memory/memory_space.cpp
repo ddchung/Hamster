@@ -199,11 +199,10 @@ namespace Hamster
 
     int MemorySpace::swap_out_all()
     {
-        for (auto it = pages.begin(); it != pages.end();)
+        for (auto it = pages.begin(); it != pages.end(); ++it)
         {
             if (it->second.is_swapped())
             {
-                it++;
                 continue;
             }
             if (it->second.swap_out() < 0)

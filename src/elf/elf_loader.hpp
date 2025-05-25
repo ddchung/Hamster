@@ -12,9 +12,9 @@ namespace Hamster
      * @param fd File descriptor of the ELF file.
      * @param mem_space Memory space to load the ELF file into.
      * @param entry_point Entry point of the loaded ELF file.
-     * @param machine_type Machine type of the ELF file.
      * @return 0 on success, -1 on failure.
+     * @note The machine type must be RISC-V 
      */
-    int load_elf(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint16_t& machine_type);
+    int load_elf(int fd, MemorySpace& mem_space, uint64_t& entry_point);
 } // namespace Hamster
 
