@@ -19,16 +19,30 @@ namespace Hamster
 
     namespace SyscallID
     {
+        // Newlib C system calls
         enum ID : uint16_t
         {
-            EXIT,
-
-            // Minimal filesystem
-            OPEN,
-            READ,
-            WRITE,
-            SEEK,
-            CLOSE,
+            EXIT = 0,
+            CLOSE = 1,
+            // environ not supported yet, but skip 2 for
+            // future compatibility
+            EXECVE = 3,
+            FORK = 4,
+            FSTAT = 5,
+            GETPID = 6,
+            ISATTY = 7,
+            KILL = 8,
+            LINK = 9,
+            LSEEK = 10,
+            OPEN = 11,
+            READ = 12,
+            // sbrk is not needed, as processes are free
+            // to write to any memory they want, for now
+            // but we skip 13 for future compatibility
+            TIMES = 14,
+            UNLINK = 15,
+            WAIT = 16,
+            WRITE = 17,
         };
     } // namespace SyscallID
     
