@@ -904,6 +904,17 @@ namespace Hamster
         return ret;
     }
 
+    int VFS::unlink(const char *path)
+    {
+        BaseFile *file = data->mounts.lopen(path, O_WRONLY, 0);
+        if (!file)
+            return -1;
+
+        int ret = file->remove();
+        dealloc(file);
+        return ret;
+    }
+
     int VFS::stat(int fd, struct ::stat *buf)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);

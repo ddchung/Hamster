@@ -83,6 +83,15 @@ namespace Hamster
         int remove(int fd);
 
         /**
+         * @brief Remove a file at a given path
+         * @param path The path to the file to remove
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This does not close any file descriptors that point to the file
+         * @note This will remove symlinks, not follow them
+         */
+        int unlink(const char *path);
+
+        /**
          * @brief Stat a file described by a file descriptor
          * @param fd The file descriptor to stat
          * @return 0 on success, or on error return -1 and set `error`
