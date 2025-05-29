@@ -3,6 +3,7 @@
 #include <process/thread.hpp>
 #include <process/process.hpp>
 #include <memory/stl_map.hpp>
+#include <syscall/syscall.hpp>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
@@ -362,14 +363,15 @@ namespace Hamster
 
         if (pending_signal & signal_mask)
             handle_signal();
+        
+        ++tick_count;
+        
+        pc += 4;
 
-        uint32_t old_pc = pc;
+        int ret = execute(inst);
 
-        execute(inst);
-
-        // no jump or branch
-        if (pc == old_pc)
-            pc += 4;
+        if (ret < 0)
+            return;
 
         // done
     }
@@ -487,8 +489,9 @@ namespace Hamster
         return process->memory_space.memcpy(addr, &value, sizeof(value));
     }
 
-    void Thread::execute(uint32_t inst)
+    int Thread::execute(uint32_t inst)
     {
+        printf("Executing instruction %08x at PC %08x\n", inst, pc - 4);
         x[0] = 0;
         switch (extract_opcode(inst))
         {
@@ -546,7 +549,7 @@ namespace Hamster
                 default:
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
             else
                 switch (extract_funct3(inst))
@@ -601,7 +604,7 @@ namespace Hamster
                 default:
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
             break;
         }
@@ -654,7 +657,7 @@ namespace Hamster
             default:
                 // Unknown funct3
                 signal(SIGILL);
-                return;
+                return -1;
             }
             break;
         }
@@ -667,7 +670,7 @@ namespace Hamster
             {
                 uint8_t value;
                 if (read8(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = sign_extend(value, 8);
             }
             break;
@@ -675,7 +678,7 @@ namespace Hamster
             {
                 uint16_t value;
                 if (read16(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = sign_extend(value, 16);
             }
             break;
@@ -683,7 +686,7 @@ namespace Hamster
             {
                 uint32_t value;
                 if (read32(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = value;
             }
             break;
@@ -691,7 +694,7 @@ namespace Hamster
             {
                 uint8_t value;
                 if (read8(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = value;
             }
             break;
@@ -699,14 +702,14 @@ namespace Hamster
             {
                 uint16_t value;
                 if (read16(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = value;
             }
             break;
             default:
                 // Unknown funct3
                 signal(SIGILL);
-                return;
+                return -1;
             }
             break;
         }
@@ -719,27 +722,27 @@ namespace Hamster
             {
                 uint8_t value = x[extract_rs2(inst)] & 0xFF;
                 if (write8(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
-                    return;
+                    return -1;
             }
             break;
             case FUNCT3_SH:
             {
                 uint16_t value = x[extract_rs2(inst)] & 0xFFFF;
                 if (write16(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
-                    return;
+                    return -1;
             }
             break;
             case FUNCT3_SW:
             {
                 uint32_t value = x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
-                    return;
+                    return -1;
             }
             break;
             default:
                 // Unknown funct3
                 signal(SIGILL);
-                return;
+                return -1;
             }
             break;
         }
@@ -750,32 +753,32 @@ namespace Hamster
                 // Base branch instructions
             case FUNCT3_BEQ:
                 if (x[extract_rs1(inst)] == x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst);
+                    pc += extract_imm_b(inst) - 4;
                 break;
             case FUNCT3_BNE:
                 if (x[extract_rs1(inst)] != x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst);
+                    pc += extract_imm_b(inst) - 4;
                 break;
             case FUNCT3_BLT:
                 if ((int32_t)x[extract_rs1(inst)] < (int32_t)x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst);
+                    pc += extract_imm_b(inst) - 4;
                 break;
             case FUNCT3_BGE:
                 if ((int32_t)x[extract_rs1(inst)] >= (int32_t)x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst);
+                    pc += extract_imm_b(inst) - 4;
                 break;
             case FUNCT3_BLTU:
                 if (x[extract_rs1(inst)] < x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst);
+                    pc += extract_imm_b(inst) - 4;
                 break;
             case FUNCT3_BGEU:
                 if (x[extract_rs1(inst)] >= x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst);
+                    pc += extract_imm_b(inst) - 4;
                 break;
             default:
                 // Unknown funct3
                 signal(SIGILL);
-                return;
+                return -1;
             }
             break;
         }
@@ -783,7 +786,7 @@ namespace Hamster
         {
             // JAL
             x[extract_rd(inst)] = pc + 4;
-            pc += extract_imm_j(inst);
+            pc += extract_imm_j(inst) - 4;
             break;
         }
         case OP_JALR:
@@ -791,6 +794,7 @@ namespace Hamster
             // JALR
             x[extract_rd(inst)] = pc + 4;
             pc = (x[extract_rs1(inst)] + extract_imm_i(inst)) & ~0x1;
+            pc -= 4;
             break;
         }
         case OP_LUI:
@@ -802,7 +806,7 @@ namespace Hamster
         case OP_AUIPC:
         {
             // AUIPC
-            x[extract_rd(inst)] = pc + extract_imm_u(inst);
+            x[extract_rd(inst)] = pc + extract_imm_u(inst) - 4;
             break;
         }
         case OP_SYSTEM:
@@ -813,7 +817,7 @@ namespace Hamster
             case FUNCT3_ECALL_EBREAK:
                 if ((extract_funct7(inst) & 0x1) == 0)
                     // ECALL
-                    handle_ecall();
+                    return do_syscall(*this);
                 else
                     // EBREAK
                     signal(SIGTRAP);
@@ -841,7 +845,7 @@ namespace Hamster
                     default:
                         // Unknown CSR
                         signal(SIGILL);
-                        return;
+                        return -1;
                     }
                 }
                 break;
@@ -866,7 +870,7 @@ namespace Hamster
                     default:
                         // Unknown CSR
                         signal(SIGILL);
-                        return;
+                        return -1;
                     }
                 }
                 break;
@@ -891,7 +895,7 @@ namespace Hamster
                     default:
                         // Unknown CSR
                         signal(SIGILL);
-                        return;
+                        return -1;
                     }
                 }
                 break;
@@ -918,7 +922,7 @@ namespace Hamster
                     default:
                         // Unknown CSR
                         signal(SIGILL);
-                        return;
+                        return -1;
                     }
                 }
                 break;
@@ -943,7 +947,7 @@ namespace Hamster
                     default:
                         // Unknown CSR
                         signal(SIGILL);
-                        return;
+                        return -1;
                     }
                 }
                 break;
@@ -968,14 +972,14 @@ namespace Hamster
                     default:
                         // Unknown CSR
                         signal(SIGILL);
-                        return;
+                        return -1;
                     }
                 }
                 break;
             default:
                 // Unknown funct3
                 signal(SIGILL);
-                return;
+                return -1;
             }
             break;
         }
@@ -995,7 +999,7 @@ namespace Hamster
             {
                 // Unknown funct3
                 signal(SIGILL);
-                return;
+                return -1;
             }
             break;
         }
@@ -1005,7 +1009,7 @@ namespace Hamster
             {
                 // Unknown funct3
                 signal(SIGILL);
-                return;
+                return -1;
             }
             switch (extract_funct5(inst))
             {
@@ -1014,7 +1018,7 @@ namespace Hamster
                 // Load Reserved
                 uint32_t val;
                 if (read32(x[extract_rs1(inst)], val) != 0)
-                    return;
+                    return -1;
                 process->reserved_mem[x[extract_rs1(inst)]] = id;
                 x[extract_rd(inst)] = val;
                 break;
@@ -1031,7 +1035,7 @@ namespace Hamster
                 }
                 uint32_t val = x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], val) != 0)
-                    return;
+                    return -1;
                 process->reserved_mem.erase(it);
                 x[extract_rd(inst)] = 0;
                 break;
@@ -1041,10 +1045,10 @@ namespace Hamster
                 // Atomic Swap
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return;
+                    return -1;
                 uint32_t new_val = x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1053,10 +1057,10 @@ namespace Hamster
                 // Atomic Add
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return;
+                    return -1;
                 uint32_t new_val = old_val + x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1065,10 +1069,10 @@ namespace Hamster
                 // Atomic AND
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return;
+                    return -1;
                 uint32_t new_val = old_val & x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1077,10 +1081,10 @@ namespace Hamster
                 // Atomic OR
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return;
+                    return -1;
                 uint32_t new_val = old_val | x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1089,10 +1093,10 @@ namespace Hamster
                 // Atomic XOR
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return;
+                    return -1;
                 uint32_t new_val = old_val ^ x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1101,10 +1105,10 @@ namespace Hamster
                 // Atomic Max
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return;
+                    return -1;
                 uint32_t new_val = std::max((int32_t)old_val, (int32_t)x[extract_rs2(inst)]);
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1113,10 +1117,10 @@ namespace Hamster
                 // Atomic Min
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return;
+                    return -1;
                 uint32_t new_val = std::min((int32_t)old_val, (int32_t)x[extract_rs2(inst)]);
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1125,10 +1129,10 @@ namespace Hamster
                 // Atomic Max Unsigned
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return;
+                    return -1;
                 uint32_t new_val = std::max(old_val, x[extract_rs2(inst)]);
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1137,17 +1141,17 @@ namespace Hamster
                 // Atomic Min Unsigned
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return;
+                    return -1;
                 uint32_t new_val = std::min(old_val, x[extract_rs2(inst)]);
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return;
+                    return -1;
                 x[extract_rd(inst)] = old_val;
                 break;
             }
             default:
                 // Unknown funct5
                 signal(SIGILL);
-                return;
+                return -1;
             }
             break;
         }
@@ -1159,7 +1163,7 @@ namespace Hamster
                 // FLD
                 double value;
                 if (readf64(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return;
+                    return -1;
                 f[extract_rd(inst)] = value;
             }
             else
@@ -1167,7 +1171,7 @@ namespace Hamster
                 // FLW
                 float value;
                 if (readf32(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return;
+                    return -1;
                 write_float_to_double(value, f[extract_rd(inst)]);
             }
             break;
@@ -1179,14 +1183,14 @@ namespace Hamster
             {
                 // FSD
                 if (writef64(x[extract_rs1(inst)] + extract_imm_s(inst), f[extract_rs2(inst)]) != 0)
-                    return;
+                    return -1;
             }
             else
             {
                 // FSW
                 float value = read_float_from_double(f[extract_rs2(inst)]);
                 if (writef32(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
-                    return;
+                    return -1;
             }
             break;
         }
@@ -1335,7 +1339,7 @@ namespace Hamster
                 default:
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
                 break;
             case 0b0010100:
@@ -1353,7 +1357,7 @@ namespace Hamster
                 {
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
                 break;
             case 0b1100000:
@@ -1368,7 +1372,7 @@ namespace Hamster
                     {
                         // Overflow
                         signal(SIGFPE);
-                        return;
+                        return -1;
                     }
                     x[extract_rd(inst)] = (int32_t)a;
                     break;
@@ -1379,14 +1383,14 @@ namespace Hamster
                     {
                         // Overflow
                         signal(SIGFPE);
-                        return;
+                        return -1;
                     }
                     x[extract_rd(inst)] = (uint32_t)a;
                     break;
                 default:
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
                 break;
             case 0b1110000:
@@ -1407,7 +1411,7 @@ namespace Hamster
                 default:
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
                 break;
             case 0b1010000:
@@ -1432,7 +1436,7 @@ namespace Hamster
                 default:
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
                 break;
             case 0b1101000:
@@ -1453,7 +1457,7 @@ namespace Hamster
                 default:
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
                 break;
             case 0b1111000:
@@ -1518,7 +1522,7 @@ namespace Hamster
                 default:
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
                 break;
             case 0b0010101:
@@ -1536,7 +1540,7 @@ namespace Hamster
                 {
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
                 break;
             case 0b0100000:
@@ -1573,7 +1577,7 @@ namespace Hamster
                 default:
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
                 break;
             case 0b1110001:
@@ -1594,7 +1598,7 @@ namespace Hamster
                     {
                         // Overflow
                         signal(SIGFPE);
-                        return;
+                        return -1;
                     }
                     x[extract_rd(inst)] = (int32_t)std::nearbyint(ad);
                     break;
@@ -1604,14 +1608,14 @@ namespace Hamster
                     {
                         // Overflow
                         signal(SIGFPE);
-                        return;
+                        return -1;
                     }
                     x[extract_rd(inst)] = (uint32_t)std::nearbyint(ad);
                     break;
                 default:
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
                 break;
             case 0b1101001:
@@ -1632,7 +1636,7 @@ namespace Hamster
                 default:
                     // Unknown funct3
                     signal(SIGILL);
-                    return;
+                    return -1;
                 }
             }
             break;
@@ -1640,30 +1644,12 @@ namespace Hamster
         default:
             // Unknown opcode
             signal(SIGILL);
-            return;
+            return -1;
         }
+
+        return 0;
     }
 
-    void Thread::handle_ecall()
-    {
-        uint32_t syscall_num = x[17];
-        switch (syscall_num)
-        {
-        case 0: // exit
-            state = ThreadState::ENDED;
-            printf("Thread %zu exited with code %d\n", id, x[10]);
-            break;
-        case 1: // test
-            printf("Thread %zu test syscall\n", id);
-            x[10] = 1234; // Return value
-            break;
-        default:
-            // Unknown syscall
-            printf("Unknown syscall: %d\n", syscall_num);
-            signal(SIGSYS);
-            break;
-        }
-    }
     void Thread::handle_signal()
     {
         // TODO: Implement signal handling

@@ -12055,20 +12055,16 @@ int main()
   // Write program to afile
   int fd = Hamster::vfs.open("/test", O_RDWR | O_CREAT | O_TRUNC, 0777);
   Hamster::vfs.write(fd, prog, sizeof(prog));
-  Hamster::vfs.seek(fd, 0, SEEK_SET);
-
-  uint64_t entry_point;
-  Hamster::load_elf(fd, process.memory_space, entry_point);
   Hamster::vfs.close(fd);
 
   // Create a thread
-  process.threads.emplace_back(&process, 0);
-  Hamster::Thread &thread = process.threads.back();
-
-  thread.set_pc(entry_point);
+  process.load_elf("/test");
 
   while (true)
   {
+	if (process.threads.empty())
+	  break;
+	Hamster::Thread &thread = process.threads.front();
     if (thread.get_state() == Hamster::ThreadState::ENDED)
       break;
     if (thread.is_paused())

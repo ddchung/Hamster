@@ -32,9 +32,16 @@ namespace Hamster
         Process *get_process() const { return process; }
         size_t get_id() const { return id; }
         void set_pc(uint32_t pc) { this->pc = pc; }
+        uint64_t get_tick_count() const { return tick_count; }
 
         uint32_t *get_regs() { return x; }
         double *get_fregs() { return f; }
+
+        int get_error_code() const { return error_code; }
+        void set_error_code(int code) { error_code = code; }
+
+        int get_signal_mask() const { return signal_mask; }
+        void set_signal_mask(int mask) { signal_mask = mask; }
 
         /**
          * @brief Tick the thread once
@@ -92,6 +99,11 @@ namespace Hamster
         int pending_signal;
         int signal_mask;
 
+        int error_code;
+
+        // Minimum timing implementation
+        uint64_t tick_count;
+
         int read32(uint32_t addr, uint32_t &out);
         int read16(uint32_t addr, uint16_t &out);
         int read8(uint32_t addr, uint8_t &out);
@@ -104,11 +116,9 @@ namespace Hamster
         int writef32(uint32_t addr, float value);
         int writef64(uint32_t addr, double value);
 
-        void execute(uint32_t inst);
+        int execute(uint32_t inst);
 
         void handle_signal();
-
-        void handle_ecall();
     };
 } // namespace Hamster
 
