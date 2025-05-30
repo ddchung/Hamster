@@ -315,7 +315,7 @@ namespace Hamster
     Thread::Thread(Process *process, size_t id)
         : state(ThreadState::RUNNING), process(process), id(id),
           x{0}, f{0.0}, fcsr(0), pc(0),
-          pending_signal(0), signal_mask(0)
+          pending_signal(0), signal_mask(0xFFFFFFFF)
     {
         // Set stack pointer to top of memory
         x[2] = 0xFFFFFFFF;
@@ -356,24 +356,23 @@ namespace Hamster
     {
         assert(state == ThreadState::RUNNING);
 
+        if (pending_signal & signal_mask)
+        {
+            handle_signal();
+            return;
+        }
+
         // Fetch the instruction
         uint32_t inst;
         if (read32(pc, inst) != 0)
             return;
 
-        if (pending_signal & signal_mask)
-            handle_signal();
         
         ++tick_count;
         
         pc += 4;
 
-        int ret = execute(inst);
-
-        if (ret < 0)
-            return;
-
-        // done
+        execute(inst);
     }
 
     void Thread::pause(const std::function<void(Thread &)> &callback)
@@ -492,6 +491,12 @@ namespace Hamster
     int Thread::execute(uint32_t inst)
     {
         printf("Executing instruction %08x at PC %08x\n", inst, pc - 4);
+
+        // debug
+        if (pc == 0x10a5c)
+        {
+            raise(SIGINT);
+        }
         x[0] = 0;
         switch (extract_opcode(inst))
         {
