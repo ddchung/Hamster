@@ -490,13 +490,6 @@ namespace Hamster
 
     int Thread::execute(uint32_t inst)
     {
-        printf("Executing instruction %08x at PC %08x\n", inst, pc - 4);
-
-        // debug
-        if (pc == 0x10a5c)
-        {
-            raise(SIGINT);
-        }
         x[0] = 0;
         switch (extract_opcode(inst))
         {
