@@ -374,6 +374,7 @@ namespace Hamster
         }
         default:
             // Unknown syscall
+            printf("Process %u Thread %zu: Unknown syscall %u\n", process->pid, thread.get_id(), get_syscall_num(thread));
             thread.set_error_code(ENOSYS);
             set_return_code(thread, -1);
             return -1; // Not implemented

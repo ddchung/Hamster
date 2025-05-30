@@ -3,9 +3,11 @@
 #include <memory/page_manager.hpp>
 #include <memory/allocator.hpp>
 #include <filesystem/vfs.hpp>
-#include <errno/errno.h>
-#include <elf.h>
-#include <utility>
+#include <process/scheduler.hpp>
+
+#ifndef NDEBUG
+#include <unordered_set>
+#endif // NDEBUG
 
 namespace Hamster
 {
@@ -20,5 +22,6 @@ namespace Hamster
     int error{0};
     PageManager page_manager;
     VFS vfs;
+    Scheduler scheduler;
 } // namespace Hamster
 

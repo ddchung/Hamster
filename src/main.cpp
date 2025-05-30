@@ -6,6 +6,7 @@
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
 #include <memory/allocator.hpp>
+#include <process/scheduler.hpp>
 
 void test_platform();
 void test_memory();
@@ -28,9 +29,6 @@ int main()
   Hamster::_log("Done\n");
 
   // Test thread
-
-  Hamster::Process process;
-
  unsigned char a[96428] =
 {
 	0x7f, 0x45, 0x4c, 0x46, 0x01, 0x01, 0x01, 0x00, 
@@ -12099,33 +12097,15 @@ int main()
   Hamster::vfs.write(fd, a, sizeof(a));
   Hamster::vfs.close(fd);
 
-  // The test program above is a simple ELF binary
-  // that will, in short terms, `exit(getpid())`
-  // so therefore, the process will end
-  // with code `1234 & UINT8_MAX`, which is 210
-  process.pid = 1234;
+  Hamster::scheduler.make_process_elf("/test");
 
-  // Create a thread
-  process.load_elf("/test");
-
+  // Run the program
   while (true)
   {
-	if (process.threads.empty())
+	if (Hamster::scheduler.tick() == 0)
 	{
-		printf("No threads in process, exiting...\n");
+		// All processes have finished
 		break;
 	}
-	Hamster::Thread &thread = process.threads.front();
-    if (thread.get_state() == Hamster::ThreadState::ENDED)
-	{
-		printf("Thread ended, exiting...\n");
-		break;
-	}
-    if (thread.is_paused())
-    {
-      thread.get_current_pause_callback()(thread);
-      continue;
-    }
-    thread.tick();
   }
 }
