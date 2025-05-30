@@ -384,19 +384,14 @@ namespace Hamster
                     seek(0, SEEK_END);
                 
                 // See: the comment on the seek function
-                if (offset > reg_node->size)
-                    for (uint64_t addr = MemorySpace::get_page_start(offset); 
-                         addr <= MemorySpace::get_page_start(offset + size);
-                         addr += HAMSTER_PAGE_SIZE)
-                    {
-                        if (reg_node->data.allocate_page(addr) < 0)
-                            return -1;
-                        memset(reg_node->data.get_page_data(addr), 0, HAMSTER_PAGE_SIZE);
-                    }
+                if (reg_node->data.memset(reg_node->size, 0, offset - reg_node->size) < 0)
+                {
+                    error = EIO;
+                    return -1;
+                }
                 
                 for (uint64_t addr = offset; addr < offset + size; ++addr)
                 {
-                    reg_node->data.allocate_page(addr);
                     reg_node->data[addr] = buf[addr - offset];
                 }
                 offset += size;
@@ -472,19 +467,14 @@ namespace Hamster
 
                 if (size > reg_node->size)
                 {
-                    for (uint64_t addr = MemorySpace::get_page_start(reg_node->size);
-                         addr <= MemorySpace::get_page_start(size);
-                         addr += HAMSTER_PAGE_SIZE)
-                    {
-                        if (reg_node->data.allocate_page(addr) < 0)
-                            return -1;
-                        memset(reg_node->data.get_page_data(addr), 0, HAMSTER_PAGE_SIZE);
-                    }
+                    // Extend with zeros
+                    reg_node->data.memset(reg_node->size, 0, size - reg_node->size);
                 }
                 else
                 {
-                    for (uint64_t addr = MemorySpace::get_page_start(size);
-                         addr <= MemorySpace::get_page_start(reg_node->size);
+                    // Deallocate all unused pages starting from `size`
+                    for (uint64_t addr = ((size & ~HAMSTER_PAGE_SIZE) + HAMSTER_PAGE_SIZE) & ~HAMSTER_PAGE_SIZE;
+                         addr <= ((uint64_t)reg_node->size & ~HAMSTER_PAGE_SIZE);
                          addr += HAMSTER_PAGE_SIZE)
                     {
                         if (reg_node->data.deallocate_page(addr))

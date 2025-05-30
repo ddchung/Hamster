@@ -83,6 +83,15 @@ namespace Hamster
         int remove(int fd);
 
         /**
+         * @brief Remove a file at a given path
+         * @param path The path to the file to remove
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This does not close any file descriptors that point to the file
+         * @note This will remove symlinks, not follow them
+         */
+        int unlink(const char *path);
+
+        /**
          * @brief Stat a file described by a file descriptor
          * @param fd The file descriptor to stat
          * @return 0 on success, or on error return -1 and set `error`
@@ -143,7 +152,7 @@ namespace Hamster
          * @param size The size of the buffer
          * @return The number of bytes read, or on error return -1 and set `error`
          */
-        ssize_t read(int fd, uint8_t *buf, size_t size);
+        ssize_t read(int fd, void *buf, size_t size);
 
         /**
          * @brief Write to a file
@@ -152,7 +161,7 @@ namespace Hamster
          * @param size The size of the buffer
          * @return The number of bytes written, or on error return -1 and set `error`
          */
-        ssize_t write(int fd, const uint8_t *buf, size_t size);
+        ssize_t write(int fd, const void *buf, size_t size);
 
         /**
          * @brief Seek to a position in a file
@@ -311,5 +320,7 @@ namespace Hamster
     private:
         VFSData *data;
     };
+
+    extern VFS vfs;
 } // namespace Hamster
 

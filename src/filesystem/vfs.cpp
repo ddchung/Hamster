@@ -450,8 +450,17 @@ namespace Hamster
                     return -1;
                 }
 
-                dealloc(fds[fd].file);
-                fds[fd].file = nullptr;
+                auto &file = fds[fd].file;
+                if (file->type() == FileType::Special)
+                {
+                    BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
+                    BaseSpecialDriverHandle *handle = sp_file->get_handle();
+                    dealloc(handle);
+                    sp_file->set_handle(nullptr);
+                }
+
+                dealloc(file);
+                file = nullptr;
 
                 return 0;
             }
@@ -596,6 +605,55 @@ namespace Hamster
             Vector<BaseSpecialDriver *> drivers;
         };
     } // namespace
+
+    /* Special File Helpers */
+    namespace
+    {
+        int open_special_handle(BaseSpecialFile *file, SpecialDriverManager &sp_mgr) 
+        {
+            if (!file)
+            {
+                error = EINVAL;
+                return -1;
+            }
+
+            dealloc(file->get_handle());
+            BaseSpecialDriver *driver = sp_mgr.get_driver(file->get_device_id());
+
+            if (!driver)
+                return -1;
+
+            BaseSpecialDriverHandle *handle = driver->create_handle(file->get_flags());
+            if (!handle)
+            {
+                error = EIO;
+                return -1;
+            }
+
+            file->set_handle(handle);
+            return 0;
+        }
+
+        BaseSpecialDriverHandle *get_special_handle(BaseSpecialFile *file, SpecialDriverManager &sp_mgr)
+        {
+            if (!file)
+            {
+                error = EINVAL;
+                return nullptr;
+            }
+
+            BaseSpecialDriverHandle *handle = file->get_handle();
+            if (!handle)
+            {
+                if (open_special_handle(file, sp_mgr) < 0)
+                    return nullptr;
+                handle = file->get_handle();
+            }
+
+            return handle;
+        }
+    } // namespace
+    
 
     class VFSData
     {
@@ -846,6 +904,17 @@ namespace Hamster
         return ret;
     }
 
+    int VFS::unlink(const char *path)
+    {
+        BaseFile *file = data->mounts.lopen(path, O_WRONLY, 0);
+        if (!file)
+            return -1;
+
+        int ret = file->remove();
+        dealloc(file);
+        return ret;
+    }
+
     int VFS::stat(int fd, struct ::stat *buf)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
@@ -937,7 +1006,7 @@ namespace Hamster
         return ret;
     }
 
-    ssize_t VFS::read(int fd, uint8_t *buf, size_t size)
+    ssize_t VFS::read(int fd, void *buf, size_t size)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
         if (!file)
@@ -946,16 +1015,13 @@ namespace Hamster
         switch (file->type())
         {
         case FileType::Regular:
-            return ((BaseRegularFile *)file)->read(buf, size);
+            return ((BaseRegularFile *)file)->read((uint8_t*)buf, size);
         case FileType::Special:
         {
-            int devid = ((BaseSpecialFile *)file)->get_device_id();
-            if (devid < 0)
+            auto handle = get_special_handle((BaseSpecialFile *)file, data->special_driver_manager);
+            if (!handle)
                 return -1;
-            BaseSpecialDriver *driver = data->special_driver_manager.get_driver(devid);
-            if (!driver)
-                return -1;
-            return driver->read(buf, size);
+            return handle->read((uint8_t*)buf, size);
         }
         default:
             error = EISDIR;
@@ -963,7 +1029,7 @@ namespace Hamster
         }
     }
 
-    ssize_t VFS::write(int fd, const uint8_t *buf, size_t size)
+    ssize_t VFS::write(int fd, const void *buf, size_t size)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
         if (!file)
@@ -972,16 +1038,13 @@ namespace Hamster
         switch (file->type())
         {
         case FileType::Regular:
-            return ((BaseRegularFile *)file)->write(buf, size);
+            return ((BaseRegularFile *)file)->write((const uint8_t*)buf, size);
         case FileType::Special:
         {
-            int devid = ((BaseSpecialFile *)file)->get_device_id();
-            if (devid < 0)
+            auto handle = get_special_handle((BaseSpecialFile *)file, data->special_driver_manager);
+            if (!handle)
                 return -1;
-            BaseSpecialDriver *driver = data->special_driver_manager.get_driver(devid);
-            if (!driver)
-                return -1;
-            return driver->write(buf, size);
+            return handle->write((const uint8_t*)buf, size);
         }
         default:
             error = EISDIR;
@@ -1001,18 +1064,15 @@ namespace Hamster
             return ((BaseRegularFile *)file)->seek(offset, whence);
         case FileType::Special:
         {
-            int devid = ((BaseSpecialFile *)file)->get_device_id();
-            if (devid < 0)
+            auto handle = get_special_handle((BaseSpecialFile *)file, data->special_driver_manager);
+            if (!handle)
                 return -1;
-            BaseSpecialDriver *driver = data->special_driver_manager.get_driver(devid);
-            if (!driver)
-                return -1;
-            if (driver->special_type() != SpecialFileType::BlockDevice)
+            if (handle->special_type() != SpecialFileType::BlockDevice)
             {
                 error = EISDIR;
                 return -1;
             }
-            return ((BaseBlockDevice *)driver)->seek(offset, whence);
+            return ((BaseBlockDeviceHandle *)handle)->seek(offset, whence);
         }
         default:
             error = EISDIR;
@@ -1032,18 +1092,15 @@ namespace Hamster
             return ((BaseRegularFile *)file)->tell();
         case FileType::Special:
         {
-            int devid = ((BaseSpecialFile *)file)->get_device_id();
-            if (devid < 0)
+            auto handle = get_special_handle((BaseSpecialFile *)file, data->special_driver_manager);
+            if (!handle)
                 return -1;
-            BaseSpecialDriver *driver = data->special_driver_manager.get_driver(devid);
-            if (!driver)
-                return -1;
-            if (driver->special_type() != SpecialFileType::BlockDevice)
+            if (handle->special_type() != SpecialFileType::BlockDevice)
             {
                 error = EISDIR;
                 return -1;
             }
-            return ((BaseBlockDevice *)driver)->tell();
+            return ((BaseBlockDeviceHandle *)handle)->tell();
         }
         default:
             error = EISDIR;
@@ -1078,18 +1135,15 @@ namespace Hamster
             return ((BaseRegularFile *)file)->size();
         case FileType::Special:
         {
-            int devid = ((BaseSpecialFile *)file)->get_device_id();
-            if (devid < 0)
+            auto handle = get_special_handle((BaseSpecialFile *)file, data->special_driver_manager);
+            if (!handle)
                 return -1;
-            BaseSpecialDriver *driver = data->special_driver_manager.get_driver(devid);
-            if (!driver)
-                return -1;
-            if (driver->special_type() != SpecialFileType::BlockDevice)
+            if (handle->special_type() != SpecialFileType::BlockDevice)
             {
                 error = EISDIR;
                 return -1;
             }
-            return ((BaseBlockDevice *)driver)->size();
+            return ((BaseBlockDeviceHandle *)handle)->size();
         }
         default:
             error = EISDIR;

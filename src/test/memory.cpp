@@ -143,11 +143,6 @@ void test_memory()
 
     // Memory Space
     Hamster::MemorySpace mem_space;
-    i = mem_space.allocate_page(HAMSTER_PAGE_SIZE);
-    assert(i >= 0);
-    assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE) != nullptr);
-    assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE + HAMSTER_PAGE_SIZE - 1) != nullptr);
-    assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE + HAMSTER_PAGE_SIZE + 0x10) == nullptr);
 
     // fill with data
     for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
@@ -159,12 +154,6 @@ void test_memory()
     for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
     {
         assert(mem_space[HAMSTER_PAGE_SIZE + j] == (uint8_t)j);
-    }
-
-    for (int j = 1; j < 16; ++j)
-    {
-        i = mem_space.allocate_page(HAMSTER_PAGE_SIZE + j * HAMSTER_PAGE_SIZE);
-        assert(i >= 0);
     }
 
     // fill with random data
@@ -179,9 +168,7 @@ void test_memory()
         assert(mem_space[HAMSTER_PAGE_SIZE + j] == (uint8_t)hash_int(j));
     }
 
-    // swap in and out
-    mem_space.swap_out_pages();
-    mem_space.swap_in_pages();
+    mem_space.swap_out_all();
 
     // check data
     for (int j = 0; j < 16 * HAMSTER_PAGE_SIZE; ++j)
@@ -199,8 +186,30 @@ void test_memory()
     // check that all pages are deallocated
     for (int j = 0; j < 16; ++j)
     {
-        assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE + j * HAMSTER_PAGE_SIZE) == nullptr);
+        assert(!mem_space.is_allocated(HAMSTER_PAGE_SIZE + j * HAMSTER_PAGE_SIZE));
     }
+
+    // memcpy
+    uint8_t *src = Hamster::alloc<uint8_t>(0x1234);
+    uint8_t *dest = Hamster::alloc<uint8_t>(0x1234);
+
+    for (int j = 0; j < 0x1234; ++j)
+    {
+        src[j] = (uint8_t)hash_int(j);
+    }
+
+    assert(mem_space.memcpy(0x1234, src, 0x1234) == 0);
+    assert(mem_space.memcpy(dest, 0x1234, 0x1234) == 0);
+
+    for (uint64_t j = 0; j < 0x1234; ++j)
+    {
+        assert(dest[j] == src[j]);
+        assert(mem_space[0x1234 + j] == src[j]);
+
+    }
+
+    Hamster::dealloc(src);
+    Hamster::dealloc(dest);
 
     // big data
     // might be slow, so disable
@@ -208,7 +217,6 @@ void test_memory()
 
     for (int j = 0; j < 256; ++j)
     {
-        i = mem_space.allocate_page(j * HAMSTER_PAGE_SIZE);
         assert(i >= 0);
         for (int k = 0; k < HAMSTER_PAGE_SIZE; ++k)
         {
@@ -218,8 +226,7 @@ void test_memory()
         }
     }
 
-    mem_space.swap_out_pages();
-    mem_space.swap_in_pages();
+    mem_space.swap_out_all();
 
     for (uint64_t j = 0; j < 256 * HAMSTER_PAGE_SIZE; ++j)
     {
