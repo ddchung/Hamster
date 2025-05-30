@@ -37,11 +37,17 @@ namespace Hamster
             return process->fds[fd].fd;
         }
 
+        void set_return_code(Thread &thread, uint32_t ret)
+        {
+            // Set the return code in a0 register
+            thread.get_regs()[10] = ret; // a0 is x10
+        }
+
         // Buffer for I/O operations
         uint8_t io_buf[64]{0};
     } // namespace
 
-    uint32_t do_syscall(Thread &thread)
+    int do_syscall(Thread &thread)
     {
         Process *process = thread.get_process();
         uint32_t *args = get_syscall_args(thread);
@@ -53,21 +59,25 @@ namespace Hamster
             process->exit_code = args[0];
             process->threads.clear();
             printf("Process %u exited with code %u\n", process->pid, process->exit_code);
+            // don't set return code, as the thread is destroyed
             return 0;
         case SyscallID::CLOSE:
             fd = deref_fildes(args[0], process);
             if (fd < 0)
             {
                 thread.set_error_code(EBADF);
-                return -1;
+                set_return_code(thread, -1);
+                return -1; // Invalid file descriptor
             }
             if (vfs.close(fd) != 0)
             {
                 thread.set_error_code(error);
                 error = 0;
+                set_return_code(thread, -1);
                 return -1;
             }
             process->fds[args[0]].fd = -1; // Mark the fd as closed
+            set_return_code(thread, 0); // Return 0 on success
             return 0;
         case SyscallID::EXECVE:
         {
@@ -76,6 +86,7 @@ namespace Hamster
             {
                 thread.set_error_code(EIO);
                 error = 0;
+                set_return_code(thread, -1);
                 return -1;
             }
             if (process->load_elf(path) < 0)
@@ -83,6 +94,7 @@ namespace Hamster
                 dealloc(path);
                 thread.set_error_code(error);
                 error = 0;
+                set_return_code(thread, -1);
                 return -1;
             }
             dealloc(path);
@@ -95,49 +107,61 @@ namespace Hamster
                     {
                         thread.set_error_code(error);
                         error = 0;
+                        set_return_code(thread, -1);
                         return -1;
                     }
                     fd = -1;
                 }
             }
+            set_return_code(thread, 0); // Return 0 on success
             return 0;
         }
         case SyscallID::FORK:
             // TODO: Implement this when we have a scheduler
             thread.set_error_code(ENOSYS);
+            set_return_code(thread, -1);
             return -1;
         case SyscallID::FSTAT:
             fd = deref_fildes(args[0], process);
             if (fd < 0)
             {
                 thread.set_error_code(EBADF);
+                set_return_code(thread, -1);
                 return -1;
             }
             if (vfs.stat(fd, reinterpret_cast<struct stat *>(io_buf)) != 0)
             {
                 thread.set_error_code(error);
                 error = 0;
+                set_return_code(thread, -1);
                 return -1;
             }
             // Copy the stat structure to the user space
             if (process->memory_space.memcpy(args[1], io_buf, sizeof(struct stat)) != 0)
             {
                 thread.set_error_code(EIO);
+                error = 0;
+                set_return_code(thread, -1);
                 return -1;
             }
+            set_return_code(thread, 0); // Return 0 on success
             return 0;
         case SyscallID::GETPID:
-            return process->pid; // Return the process ID
+            // Return the process ID
+            set_return_code(thread, process->pid);
+            return 0;
         case SyscallID::ISATTY:
             fd = deref_fildes(args[0], process);
             if (fd < 0)
             {
                 thread.set_error_code(EBADF);
+                set_return_code(thread, -1);
                 return -1;
             }
             // For now, we assume all file descriptors are TTYs
             // TODO: TTY detection in special files
-            return 1;
+            set_return_code(thread, 1); // Return 1 for TTY
+            return 0;
         case SyscallID::KILL:
         {
             uint32_t pid = args[0];
@@ -151,19 +175,23 @@ namespace Hamster
                     if (!(thread.get_signal_mask() & (1 << signal)))
                         continue; // This thread masks the signal
                     thread.signal(signal);
+                    set_return_code(thread, 0); // Signal sent
                     return 0; // Signal sent
                 }
                 // No thread found that doesn't mask the signal
                 thread.set_error_code(ESRCH);
+                set_return_code(thread, -1); // No such process
                 return -1;
             }
             thread.set_error_code(ENOSYS);
+            set_return_code(thread, -1); // Not implemented yet
             return -1; // Not implemented yet
         }
         case SyscallID::LINK:
         {
             // TODO: Filesystem hard links
             thread.set_error_code(ENOSYS);
+            set_return_code(thread, -1);
             return -1; // Not implemented yet
         }
         case SyscallID::READ:
@@ -172,6 +200,7 @@ namespace Hamster
             if (fd < 0)
             {
                 thread.set_error_code(EBADF);
+                set_return_code(thread, -1);
                 return -1;
             }
             uint32_t buf_addr = args[1];
@@ -187,6 +216,7 @@ namespace Hamster
                 {
                     thread.set_error_code(error);
                     error = 0;
+                    set_return_code(thread, -1); // Error reading
                     return -1;
                 }
                 if (read_bytes == 0)
@@ -199,10 +229,13 @@ namespace Hamster
 
                     // Set to EINTR instead of signaling SIGSEGV
                     thread.set_error_code(EINTR);
+                    error = 0;
+                    set_return_code(thread, -1);
                     return -1;
                 }
                 total_read += read_bytes;
             }
+            set_return_code(thread, total_read); // Return the number of bytes read
             return total_read; // Return the number of bytes read
         }
         case SyscallID::LSEEK:
@@ -211,6 +244,8 @@ namespace Hamster
             if (fd < 0)
             {
                 thread.set_error_code(EBADF);
+                error = 0;
+                set_return_code(thread, -1);
                 return -1;
             }
             int32_t offset = args[1];
@@ -220,10 +255,12 @@ namespace Hamster
             {
                 thread.set_error_code(error);
                 error = 0;
+                set_return_code(thread, -1);
                 return -1;
             }
             // Return the new file offset
-            return vfs.tell(fd);
+            set_return_code(thread, vfs.tell(fd));
+            return 0;
         }
         case SyscallID::OPEN:
         {
@@ -232,6 +269,7 @@ namespace Hamster
             {
                 error = 0;
                 thread.set_error_code(EINTR);
+                dealloc(path);
                 return -1;
             }
             int flags = args[1];
@@ -242,6 +280,7 @@ namespace Hamster
             {
                 thread.set_error_code(error);
                 error = 0;
+                set_return_code(thread, -1);
                 return -1;
             }
             // Place in first available slot in fds
@@ -251,17 +290,20 @@ namespace Hamster
                 {
                     process->fds[i].fd = fd;
                     process->fds[i].fd_flags = 0;
-                    return i; // Return the file descriptor index
+                    set_return_code(thread, i); // Return the file descriptor index
+                    return 0;
                 }
             }
             // no unused fd's, make new
             process->fds.push_back({fd, 0});
-            return process->fds.size() - 1; // Return the new file descriptor index
+            set_return_code(thread, process->fds.size() - 1); // Return the new file descriptor index
+            return 0; // Success
         }
         case SyscallID::TIMES:
         {
             // TODO: Time
             thread.set_error_code(ENOSYS);
+            set_return_code(thread, -1);
             return -1; // Not implemented yet
         }
         case SyscallID::UNLINK:
@@ -271,6 +313,7 @@ namespace Hamster
             {
                 thread.set_error_code(EIO);
                 error = 0;
+                set_return_code(thread, -1);
                 return -1;
             }
             int ret = vfs.unlink(path);
@@ -279,14 +322,17 @@ namespace Hamster
             {
                 thread.set_error_code(error);
                 error = 0;
+                set_return_code(thread, -1);
                 return -1;
             }
+            set_return_code(thread, 0); // Return 0 on success
             return 0; // Success
         }
         case SyscallID::WAIT:
         {
             // TODO: Implement wait
             thread.set_error_code(ENOSYS);
+            set_return_code(thread, -1);
             return -1; // Not implemented yet
         }
         case SyscallID::WRITE:
@@ -295,6 +341,7 @@ namespace Hamster
             if (fd < 0)
             {
                 thread.set_error_code(EBADF);
+                set_return_code(thread, -1);
                 return -1;
             }
             uint32_t buf_addr = args[1];
@@ -308,6 +355,8 @@ namespace Hamster
                 if (process->memory_space.memcpy(io_buf, buf_addr + total_written, to_write) != 0)
                 {
                     thread.set_error_code(EIO);
+                    error = 0;
+                    set_return_code(thread, -1);
                     return -1; // Error copying from user space
                 }
                 ssize_t written_bytes = vfs.write(fd, io_buf, to_write);
@@ -315,15 +364,18 @@ namespace Hamster
                 {
                     thread.set_error_code(error);
                     error = 0;
+                    set_return_code(thread, -1); // Error writing
                     return -1;
                 }
                 total_written += written_bytes;
             }
-            return total_written; // Return the number of bytes written
+            set_return_code(thread, total_written); // Return the number of bytes written
+            return 0;
         }
         default:
             // Unknown syscall
             thread.set_error_code(ENOSYS);
+            set_return_code(thread, -1);
             return -1; // Not implemented
         }
     }
