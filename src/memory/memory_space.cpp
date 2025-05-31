@@ -23,6 +23,39 @@ namespace Hamster
             return addr & (HAMSTER_PAGE_SIZE - 1);
         }
     } // namespace
+
+    MemorySpace::MemorySpace(const MemorySpace &other)
+        : MemorySpace()
+    {
+        // Deep-copy all pages
+        for (const auto &page_pair : other.pages)
+        {
+            const uint64_t page_start = page_pair.first;
+            const Page &page = page_pair.second;
+            pages[page_start] = Page(page); // Copy the page
+        }
+        swapped_on_pages = other.swapped_on_pages; // Copy the list of swapped pages
+    }
+
+    MemorySpace &MemorySpace::operator=(const MemorySpace &other)
+    {
+        if (this != &other)
+        {
+            // Clear current pages
+            pages.clear();
+            swapped_on_pages.clear();
+
+            // Deep-copy all pages
+            for (const auto &page_pair : other.pages)
+            {
+                const uint64_t page_start = page_pair.first;
+                const Page &page = page_pair.second;
+                pages[page_start] = Page(page); // Copy the page
+            }
+            swapped_on_pages = other.swapped_on_pages; // Copy the list of swapped pages
+        }
+        return *this;
+    }
     
     uint8_t &MemorySpace::operator[](uint64_t addr)
     {

@@ -13,6 +13,12 @@ namespace Hamster
     class MemorySpace
     {
     public:
+        MemorySpace() = default;
+        ~MemorySpace() = default;
+        MemorySpace(const MemorySpace &);
+        MemorySpace &operator=(const MemorySpace &);
+        MemorySpace(MemorySpace &&);
+        MemorySpace &operator=(MemorySpace &&);
         /**
          * @brief Get a reference to a byte at the given address.
          * @return A reference to the byte at the given address, or a reference to a dummy on error
