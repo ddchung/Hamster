@@ -1475,4 +1475,30 @@ namespace Hamster
 
         return fd;
     }
+
+    int VFS::isatty(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        if (file->type() != FileType::Special)
+            return 0;
+        
+        BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
+        BaseSpecialDriverHandle *handle = sp_file->get_handle();
+        if (!handle)
+        {
+            // Try to open the handle
+            if (open_special_handle(sp_file, data->special_driver_manager) < 0)
+                return -1;
+            handle = sp_file->get_handle();
+        }
+        if (!handle)
+            return -1;
+        if (handle->special_type() != SpecialFileType::CharacterDevice)
+            return 0; // Not a character device
+        BaseCharacterDeviceHandle *char_handle = (BaseCharacterDeviceHandle *)handle;
+        return char_handle->isatty();
+    }
 } // namespace Hamster
