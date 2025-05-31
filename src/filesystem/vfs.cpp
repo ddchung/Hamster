@@ -196,16 +196,16 @@ namespace Hamster
                 {
                     String next_name(path, next - path);
 
-                    BaseFile *next = dir->get(next_name.c_str(), (flags & ~O_CREAT & ~O_EXCL));
+                    BaseFile *next_file = dir->get(next_name.c_str(), (flags & ~O_CREAT & ~O_EXCL));
                     dealloc(dir);
-                    if (!next)
+                    if (!next_file)
                         return nullptr;
 
-                    switch (next->type())
+                    switch (next_file->type())
                     {
                     case FileType::Symlink:
                     {
-                        BaseSymlink *link = (BaseSymlink *)next;
+                        BaseSymlink *link = (BaseSymlink *)next_file;
                         char *target = link->get_target();
                         dealloc(link);
                         if (!target)
@@ -220,26 +220,26 @@ namespace Hamster
                     }
                     case FileType::Directory:
                     {
-                        BaseDirectory *next_dir = (BaseDirectory *)next;
+                        BaseDirectory *next_dir = (BaseDirectory *)next_file;
 
                         if (next_dir->get_vfs_flags() & FLAG_MOUNTPOINT)
                         {
                             next_dir = resolve_mount(next_dir);
                         }
 
-                        BaseFile *file = lopen(next_name.c_str(), flags, mode, next_dir);
+                        BaseFile *file = lopen(next, flags, mode, next_dir);
                         return file;
                     }
                     default:
                     {
-                        dealloc(next);
+                        dealloc(next_file);
                         error = ENOTDIR;
                         return nullptr;
                     }
                     }
 
                     // unreachable
-                    dealloc(next);
+                    dealloc(next_file);
                     return nullptr;
                 }
             }

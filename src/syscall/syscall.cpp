@@ -7,6 +7,7 @@
 #include <errno/errno.h>
 #include <filesystem/vfs.hpp>
 #include <memory/allocator.hpp>
+#include <memory/stl_sequential.hpp>
 #include <csignal>
 
 // debugging
@@ -41,6 +42,22 @@ namespace Hamster
         {
             // Set the return code in a0 register
             thread.get_regs()[10] = ret; // a0 is x10
+        }
+
+        // Resolves a path relative to the current working directory, if it
+        // is relative. Otherwise, it is untouched
+        String resolve_path(const String &cwd, const char *path)
+        {
+            if (path[0] == '/')
+            {
+                // Absolute path, return as is
+                return String(path);
+            }
+            else
+            {
+                // Relative path, prepend the current working directory
+                return cwd + '/' + String(path);
+            }
         }
 
         // Buffer for I/O operations
@@ -89,15 +106,15 @@ namespace Hamster
                 set_return_code(thread, -1);
                 return -1;
             }
-            if (process->load_elf(path) < 0)
+            String resolved_path = resolve_path(process->cwd, path);
+            dealloc(path);
+            if (process->load_elf(resolved_path.c_str()) < 0)
             {
-                dealloc(path);
                 thread.set_error_code(error);
                 error = 0;
                 set_return_code(thread, -1);
                 return -1;
             }
-            dealloc(path);
             // Close all FD's marked CLOEXEC
             for (auto &[fd, flags] : process->fds)
             {
@@ -269,13 +286,13 @@ namespace Hamster
             {
                 error = 0;
                 thread.set_error_code(EINTR);
-                dealloc(path);
                 return -1;
             }
+            String resolved_path = resolve_path(process->cwd, path);
+            dealloc(path);
             int flags = args[1];
             int mode = args[2];
-            int fd = vfs.open(path, flags, mode);
-            dealloc(path);
+            int fd = vfs.open(resolved_path.c_str(), flags, mode);
             if (fd < 0)
             {
                 thread.set_error_code(error);
@@ -316,8 +333,9 @@ namespace Hamster
                 set_return_code(thread, -1);
                 return -1;
             }
-            int ret = vfs.unlink(path);
+            String resolved_path = resolve_path(process->cwd, path);
             dealloc(path);
+            int ret = vfs.unlink(resolved_path.c_str());
             if (ret < 0)
             {
                 thread.set_error_code(error);
