@@ -404,7 +404,11 @@ namespace Hamster
     public:
         virtual SpecialFileType special_type() override { return SpecialFileType::CharacterDevice; }
 
-        // Nothing needed here, character devices only support read/write
+        /**
+         * @brief Check if the device is a TTY device
+         * @return 1 if it is, 0 if it's not, or on error return -1 and set `error`
+         */
+        virtual int isatty() { return 0; }
     };
 
     class BaseSocketDeviceHandle : public BaseSpecialDriverHandle

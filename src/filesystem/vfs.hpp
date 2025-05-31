@@ -317,6 +317,14 @@ namespace Hamster
          */
         int mksfileat(int dir, const char *path, int flags, BaseSpecialDriver *driver, int mode);
 
+        /**
+         * @brief Check whether a given file is a TTY device
+         * @param fd The file descriptor to check
+         * @return 1 if it is a TTY device, 0 if it is not, or on error return -1 and set `error`
+         * @note For non-character devices, this returns 0
+         */
+        int isatty(int fd);
+
     private:
         VFSData *data;
     };
