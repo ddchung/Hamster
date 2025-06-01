@@ -87,6 +87,43 @@ void test_memory()
         assert(!page.is_swapped());
     }
 
+    // Test copy constructor
+    {
+        Hamster::Page page1;
+
+        // fill with sequential data
+        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
+        {
+            page1[i] = (uint8_t)i;
+        }
+        Hamster::Page page2(page1);
+        assert(!page2.is_swapped());
+        // Check if data is copied correctly
+        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
+        {
+            assert(page2[i] == (uint8_t)i);
+        }
+    }
+
+    // Test copy assignment
+    {
+        Hamster::Page page1;
+
+        // fill with sequential data
+        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
+        {
+            page1[i] = (uint8_t)i;
+        }
+        Hamster::Page page2;
+        page2 = page1;
+        assert(!page2.is_swapped());
+        // Check if data is copied correctly
+        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
+        {
+            assert(page2[i] == (uint8_t)i);
+        }
+    }
+
     // Test move constructor
     {
         Hamster::Page page1;
@@ -233,6 +270,34 @@ void test_memory()
         assert(mem_space[j] == (uint8_t)hash_int(j));
     }
 #   endif
+
+    // Test memory space copy constructor
+
+    // fill with some data
+    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
+    {
+        mem_space[HAMSTER_PAGE_SIZE + j] = (uint8_t)j;
+    }
+    // check data
+    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
+    {
+        assert(mem_space[HAMSTER_PAGE_SIZE + j] == (uint8_t)j);
+    }
+    // create a copy
+    Hamster::MemorySpace mem_space_copy(mem_space);
+    // check data in the copy
+    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
+    {
+        assert(mem_space_copy[HAMSTER_PAGE_SIZE + j] == (uint8_t)j);
+    }
+    // Another copy
+    Hamster::MemorySpace mem_space_copy2;
+    mem_space_copy2 = mem_space;
+    // check data in the second copy
+    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
+    {
+        assert(mem_space_copy2[HAMSTER_PAGE_SIZE + j] == (uint8_t)j);
+    }
 
     // Tree
     Hamster::Tree<int> tree;

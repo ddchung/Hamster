@@ -25,11 +25,12 @@ namespace Hamster
         Thread(Thread &&);
         Thread &operator=(Thread &&);
 
-        Thread(const Thread &) = delete;
-        Thread &operator=(const Thread &) = delete;
+        Thread(const Thread &) = default;
+        Thread &operator=(const Thread &) = default;
 
         ThreadState get_state() const { return state; }
         Process *get_process() const { return process; }
+        void set_process(Process *process) { this->process = process; }
         size_t get_id() const { return id; }
         void set_pc(uint32_t pc) { this->pc = pc; }
         uint64_t get_tick_count() const { return tick_count; }
@@ -42,6 +43,8 @@ namespace Hamster
 
         int get_signal_mask() const { return signal_mask; }
         void set_signal_mask(int mask) { signal_mask = mask; }
+
+        int get_pending_signal() const { return pending_signal; }
 
         /**
          * @brief Tick the thread once

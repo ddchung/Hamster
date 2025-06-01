@@ -318,7 +318,7 @@ namespace Hamster
           pending_signal(0), signal_mask(0xFFFFFFFF)
     {
         // Set stack pointer to top of memory
-        x[2] = 0xFFFFFFFF;
+        x[2] = 0xFFFFFFF0;
     }
 
     Thread::Thread(Thread &&other)
@@ -356,7 +356,7 @@ namespace Hamster
     {
         assert(state == ThreadState::RUNNING);
 
-        if (pending_signal & signal_mask)
+        if (pending_signal && (1 << (pending_signal - 1)) & signal_mask)
         {
             handle_signal();
             return;
@@ -397,7 +397,7 @@ namespace Hamster
 
     void Thread::signal(int signal)
     {
-        pending_signal |= signal;
+        pending_signal = signal;
     }
 
     int Thread::read32(uint32_t addr, uint32_t &out)
@@ -490,6 +490,7 @@ namespace Hamster
 
     int Thread::execute(uint32_t inst)
     {
+        printf("Executing instruction: 0x%08X at PC: 0x%08X\n", inst, pc - 4);
         x[0] = 0;
         switch (extract_opcode(inst))
         {

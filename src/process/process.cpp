@@ -31,7 +31,57 @@ namespace Hamster
         Thread &t = threads.emplace_back(this, 0);
         t.set_pc(entry_point);
 
+        if (fds.empty())
+        {
+            for (int i = 0; i < 3; ++i)
+            {
+                int console_fd = vfs.open("/dev/console", O_RDWR);
+                fds.push_back({console_fd, 0}); // Add stdin, stdout, stderr
+            }
+        }
+
         return 0;
+    }
+
+    Process::Process(const Process &other)
+        : memory_space(other.memory_space), reserved_mem(other.reserved_mem), threads(other.threads),
+          fds(other.fds), cwd(other.cwd), pid(other.pid), ppid(other.ppid), pgid(other.pgid), sid(other.sid),
+          uid(other.uid), gid(other.gid), euid(other.euid), egid(other.egid), exit_code(other.exit_code)
+    {
+        // Set all the thread's process to this
+        for (Thread &thread : threads)
+        {
+            thread.set_process(this);
+        }
+    }
+
+    Process &Process::operator=(const Process &other)
+    {
+        if (this == &other)
+            return *this;
+
+        memory_space = other.memory_space;
+        reserved_mem = other.reserved_mem;
+        threads = other.threads;
+        fds = other.fds;
+        cwd = other.cwd;
+        pid = other.pid;
+        ppid = other.ppid;
+        pgid = other.pgid;
+        sid = other.sid;
+        uid = other.uid;
+        gid = other.gid;
+        euid = other.euid;
+        egid = other.egid;
+        exit_code = other.exit_code;
+
+        // Set all the thread's process to this
+        for (Thread &thread : threads)
+        {
+            thread.set_process(this);
+        }
+
+        return *this;
     }
 
     Process::~Process()

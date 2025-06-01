@@ -20,22 +20,21 @@ namespace Hamster
     {
     public:
         Process() = default;
-        Process(const Process &) = delete;
-        Process &operator=(const Process &) = delete;
+        Process(const Process &);
+        Process &operator=(const Process &);
         ~Process();
         /**
          * @brief Load an ELF file into the process
          * @param path The path to the ELF file
          * @warning This will kill all threads and overwrite the memory space, and create
          *        * a single new thread with the entry point of the ELF file
+         * @note If `fds` is empty, it will open `/dev/console` 3 times for stdin, stdout, and stderr
          */
         int load_elf(const char *path);
         
         MemorySpace memory_space;
         UnorderedMap<uint32_t, size_t> reserved_mem; // For `lr` and `sc` instructions
         List<Thread> threads;
-
-        // The process is considered to be exited when `fds.size() == 0`
         Vector<ProcessFd> fds;
 
         String cwd;
