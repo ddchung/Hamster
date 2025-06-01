@@ -14,7 +14,7 @@ using namespace Hamster;
 int Hamster::_init_platform()
 {
     // Mount a RAM filesystem at the root
-    int ret = vfs.mount("/", alloc<RamFs>());
+    vfs.mount("/", alloc<RamFs>());
 
     // Make a /dev/console
     int fd = vfs.mkdir("/dev", O_RDONLY, 0777);
