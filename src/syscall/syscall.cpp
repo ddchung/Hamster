@@ -4,6 +4,7 @@
 #include <syscall/syscall_id.hpp>
 #include <process/thread.hpp>
 #include <process/process.hpp>
+#include <process/scheduler.hpp>
 #include <errno/errno.h>
 #include <filesystem/vfs.hpp>
 #include <memory/allocator.hpp>
@@ -94,7 +95,7 @@ namespace Hamster
                 return -1;
             }
             process->fds[args[0]].fd = -1; // Mark the fd as closed
-            set_return_code(thread, 0); // Return 0 on success
+            set_return_code(thread, 0);    // Return 0 on success
             return 0;
         case SyscallID::EXECVE:
         {
@@ -134,10 +135,39 @@ namespace Hamster
             return 0;
         }
         case SyscallID::FORK:
-            // TODO: Implement this when we have a scheduler
-            thread.set_error_code(ENOSYS);
-            set_return_code(thread, -1);
-            return -1;
+        {
+            printf("Process %u Thread %zu: Forking process\n", process->pid, thread.get_id());
+            Process *new_process = alloc<Process>(1, *process);
+            new_process->ppid = process->pid;  // Set the parent PID
+            new_process->pgid = process->pgid; // Set the process group ID
+            new_process->sid = process->sid;   // Set the session ID
+            new_process->uid = process->uid;   // Set the user ID
+            new_process->gid = process->gid;   // Set the group ID
+            new_process->euid = process->euid; // Set the effective user ID
+            new_process->egid = process->egid; // Set the effective group ID
+            new_process->cwd = process->cwd;   // Copy the current working directory
+            if (scheduler.add_process(new_process) < 0)
+            {
+                printf("Process %u Thread %zu: Failed to add process\n", process->pid, thread.get_id());
+                thread.set_error_code(ENOMEM);
+                dealloc(new_process);
+                set_return_code(thread, -1);
+                return -1; // Failed to add process
+            }
+
+            // Set the return code of the old process to the PID, and the new process to 0
+            set_return_code(thread, new_process->pid); // Return the new process ID
+            // Return 0 for the new process
+            auto it = new_process->threads.begin();
+            assert(it != new_process->threads.end());
+            std::advance(it, thread.get_id());
+            set_return_code(*it, 0); // Return 0 for the new process thread
+
+            printf("Process %u Thread %zu: Forked process %u\n", process->pid, thread.get_id(), new_process->pid);
+
+            // done
+            return 0;
+        }
         case SyscallID::FSTAT:
             fd = deref_fildes(args[0], process);
             if (fd < 0)
@@ -168,6 +198,7 @@ namespace Hamster
             set_return_code(thread, process->pid);
             return 0;
         case SyscallID::ISATTY:
+        {
             fd = deref_fildes(args[0], process);
             if (fd < 0)
             {
@@ -175,34 +206,56 @@ namespace Hamster
                 set_return_code(thread, -1);
                 return -1;
             }
-            // For now, we assume all file descriptors are TTYs
-            // TODO: TTY detection in special files
-            set_return_code(thread, 1); // Return 1 for TTY
+            int is_tty = vfs.isatty(fd);
+            if (is_tty < 0)
+            {
+                thread.set_error_code(error);
+                error = 0;
+
+                // Error checking if it's a TTY, but
+                // POSIX mandates that we return 0 and set `errno`,
+                // rather than returning -1 and setting `errno`
+                set_return_code(thread, 0);
+                return -1;
+            }
+            set_return_code(thread, is_tty);
             return 0;
+        }
         case SyscallID::KILL:
         {
             uint32_t pid = args[0];
             int signal = args[1];
-            // TODO: Search for the right process when we have a scheduler
-            if (pid == process->pid)
+
+            Process *target = scheduler.get_process(pid);
+            if (!target)
             {
-                // Signal to the first thread that doesn't mask it
-                for (auto &thread : process->threads)
-                {
-                    if (!(thread.get_signal_mask() & (1 << signal)))
-                        continue; // This thread masks the signal
-                    thread.signal(signal);
-                    set_return_code(thread, 0); // Signal sent
-                    return 0; // Signal sent
-                }
-                // No thread found that doesn't mask the signal
-                thread.set_error_code(ESRCH);
-                set_return_code(thread, -1); // No such process
+                thread.set_error_code(ESRCH); // No such process
+                set_return_code(thread, -1);
                 return -1;
             }
-            thread.set_error_code(ENOSYS);
-            set_return_code(thread, -1); // Not implemented yet
-            return -1; // Not implemented yet
+
+            // Signal to the first listening thread
+            for (auto &t : target->threads)
+            {
+                if (t.get_state() != ThreadState::ENDED && (t.get_signal_mask() & (1 << signal)) == 0)
+                {
+                    t.signal(signal);
+                    set_return_code(thread, 0); // Success
+                    return 0;
+                }
+            }
+
+            // No threads listening, signal to thread 0
+            if (!target->threads.empty())
+            {
+                target->threads.begin()->signal(signal);
+                set_return_code(thread, 0); // Success
+                return 0;
+            }
+            // No threads at all, return ESRCH
+            thread.set_error_code(ESRCH);
+            set_return_code(thread, -1);
+            return -1; // No threads to signal
         }
         case SyscallID::LINK:
         {
@@ -227,7 +280,7 @@ namespace Hamster
             size_t total_read = 0;
             while (total_read < count)
             {
-                size_t to_read = std::min(count - total_read, sizeof(io_buf));
+                size_t to_read = std::min(count - (uint32_t)total_read, (uint32_t)sizeof(io_buf));
                 ssize_t read_bytes = vfs.read(fd, io_buf, to_read);
                 if (read_bytes < 0)
                 {
@@ -253,7 +306,7 @@ namespace Hamster
                 total_read += read_bytes;
             }
             set_return_code(thread, total_read); // Return the number of bytes read
-            return total_read; // Return the number of bytes read
+            return total_read;                   // Return the number of bytes read
         }
         case SyscallID::LSEEK:
         {
@@ -314,7 +367,7 @@ namespace Hamster
             // no unused fd's, make new
             process->fds.push_back({fd, 0});
             set_return_code(thread, process->fds.size() - 1); // Return the new file descriptor index
-            return 0; // Success
+            return 0;                                         // Success
         }
         case SyscallID::TIMES:
         {
@@ -344,14 +397,49 @@ namespace Hamster
                 return -1;
             }
             set_return_code(thread, 0); // Return 0 on success
-            return 0; // Success
+            return 0;                   // Success
         }
         case SyscallID::WAIT:
         {
-            // TODO: Implement wait
-            thread.set_error_code(ENOSYS);
-            set_return_code(thread, -1);
-            return -1; // Not implemented yet
+            uint32_t pid = process->pid;
+            uint32_t stat_loc = args[0];
+            // Block until a child process exits
+            thread.pause([pid, stat_loc](Thread &t)
+                         {
+                // Check if a child process has exited
+                for (Process *child : scheduler.get_processes())
+                {
+                    if (child->ppid != pid)
+                        continue; // Not a child process
+                    int status = 0;
+                    bool running = false;
+                    for (Thread &child_thread : child->threads)
+                    {
+                        // Check for signals
+                        if (child_thread.get_pending_signal() &&
+                            (1 <<( (child_thread.get_pending_signal() - 1))) &
+                            (child_thread.get_signal_mask() & ~SIGKILL & ~SIGSTOP))
+                        {
+                            status |= child_thread.get_pending_signal() & 0xFF;
+                        }
+                        if (child_thread.get_state() != ThreadState::ENDED)
+                        {
+                            running = true; // Child process is still running
+                        }
+                    }
+                    if (!running)
+                    {
+                        status |= child->exit_code << 8; // Set exit code
+                    }
+
+                    if (status != 0)
+                    {
+                        set_return_code(t, child->pid);
+                        t.get_process()->memory_space.memcpy(stat_loc, &status, sizeof(status));
+                        t.resume();
+                    }
+                } });
+            return 0;
         }
         case SyscallID::WRITE:
         {
@@ -369,7 +457,7 @@ namespace Hamster
             size_t total_written = 0;
             while (total_written < count)
             {
-                size_t to_write = std::min(count - total_written, sizeof(io_buf));
+                size_t to_write = std::min(count - (uint32_t)total_written, (uint32_t)sizeof(io_buf));
                 if (process->memory_space.memcpy(io_buf, buf_addr + total_written, to_write) != 0)
                 {
                     thread.set_error_code(EIO);
