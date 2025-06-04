@@ -129,6 +129,8 @@ namespace Hamster
                     MountPoint *root_mnt = nullptr;
                     for (MountPoint *mp : mounts)
                     {
+                        if (!mp)
+                            continue;
                         if (strcmp(mp->path, "/") == 0 || strcmp(mp->path, "") == 0)
                         {
                             root_mnt = mp;
@@ -308,10 +310,13 @@ namespace Hamster
                     return -1;
                 }
 
-                if (mounts.size() > 0)
+                for (auto &mp : mounts)
                 {
-                    error = EIO;
-                    return -1;
+                    if (mp)
+                    {
+                        error = EBUSY;
+                        return -1;
+                    }
                 }
 
                 mounts.push_back(alloc<MountPoint>(1, "/", fs));
