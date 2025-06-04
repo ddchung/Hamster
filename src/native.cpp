@@ -237,6 +237,7 @@ namespace
                 errno = 0;
             }
             ::close(fd);
+            offset += ret;
             return ret;
         }
 
@@ -263,6 +264,7 @@ namespace
                 errno = 0;
             }
             ::close(fd);
+            offset += ret;
             return ret;
         }
 
