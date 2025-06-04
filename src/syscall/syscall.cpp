@@ -74,9 +74,12 @@ namespace Hamster
         switch (get_syscall_num(thread))
         {
         case SyscallID::EXIT:
+            printf("Process %u exiting with code %d\n", process->pid, args[0]);
             process->exit_code = args[0];
-            process->threads.clear();
-            // don't set return code, as the thread is destroyed
+            for (auto &t : process->threads)
+            {
+                t.set_state(ThreadState::ENDED);
+            }
             return 0;
         case SyscallID::CLOSE:
             fd = deref_fildes(args[0], process);
@@ -164,6 +167,7 @@ namespace Hamster
             return 0;
         }
         case SyscallID::FSTAT:
+        {
             fd = deref_fildes(args[0], process);
             if (fd < 0)
             {
@@ -178,8 +182,24 @@ namespace Hamster
                 set_return_code(thread, -1);
                 return -1;
             }
-            // Copy the stat structure to the user space
-            if (process->memory_space.memcpy(args[1], io_buf, sizeof(struct stat)) != 0)
+            // Reformat the stat structure to match the Sys_stat ABI
+            struct stat *stat_buf = reinterpret_cast<struct stat *>(io_buf);
+            Sys_stat sys_stat_buf;
+            sys_stat_buf.dev = stat_buf->st_dev;
+            sys_stat_buf.ino = stat_buf->st_ino;
+            sys_stat_buf.mode = stat_buf->st_mode;
+            sys_stat_buf.nlink = stat_buf->st_nlink;
+            sys_stat_buf.uid = stat_buf->st_uid;
+            sys_stat_buf.gid = stat_buf->st_gid;
+            sys_stat_buf.rdev = stat_buf->st_rdev;
+            sys_stat_buf.size = stat_buf->st_size;
+            sys_stat_buf.atime = stat_buf->st_atime;
+            sys_stat_buf.mtime = stat_buf->st_mtime;
+            sys_stat_buf.ctime = stat_buf->st_ctime;
+            sys_stat_buf.blksize = stat_buf->st_blksize;
+            sys_stat_buf.blocks = stat_buf->st_blocks;
+            // Copy the Sys_stat structure to user space
+            if (process->memory_space.memcpy(args[1], &sys_stat_buf, sizeof(Sys_stat)) != 0)
             {
                 thread.set_error_code(EIO);
                 error = 0;
@@ -188,6 +208,7 @@ namespace Hamster
             }
             set_return_code(thread, 0); // Return 0 on success
             return 0;
+        }
         case SyscallID::GETPID:
             // Return the process ID
             set_return_code(thread, process->pid);

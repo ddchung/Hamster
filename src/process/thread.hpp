@@ -28,6 +28,7 @@ namespace Hamster
         Thread(const Thread &) = default;
         Thread &operator=(const Thread &) = default;
 
+        void set_state(ThreadState state) { this->state = state; }
         ThreadState get_state() const { return state; }
         Process *get_process() const { return process; }
         void set_process(Process *process) { this->process = process; }

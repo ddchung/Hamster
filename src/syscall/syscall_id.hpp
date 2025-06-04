@@ -51,6 +51,24 @@ namespace Hamster
             WRITE = 64,
         };
     } // namespace SyscallID
-    
+
+    // Syscall datastructure ABI
+
+    struct Sys_stat
+    {
+        uint32_t dev;
+        uint32_t ino;
+        uint32_t mode;
+        uint32_t nlink;
+        uint32_t uid;
+        uint32_t gid;
+        uint32_t rdev;
+        int64_t  size;
+        uint64_t atime;
+        uint64_t mtime;
+        uint64_t ctime;
+        uint64_t blksize;
+        uint64_t blocks;
+    };
 } // namespace Hamster
 

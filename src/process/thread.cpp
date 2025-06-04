@@ -122,11 +122,46 @@ namespace Hamster
             ROUND_DYN = 0b111,
         };
 
+        const char *reg_names[] = {
+            "zero",
+            "ra",    // return address
+            "sp",    // stack pointer
+            "gp",    // global pointer
+            "tp",    // thread pointer
+            "t0",    // temporary
+            "t1",    // temporary
+            "t2",    // temporary
+            "s0",    // saved register
+            "s1",    // saved register
+            "a0",    // argument/return value
+            "a1",    // argument/return value
+            "a2",    // argument
+            "a3",    // argument
+            "a4",    // argument
+            "a5",    // argument
+            "a6",    // argument
+            "a7",    // argument
+            "s2",    // saved register
+            "s3",    // saved register
+            "s4",    // saved register
+            "s5",    // saved register
+            "s6",    // saved register
+            "s7",    // saved register
+            "s8",    // saved register
+            "s9",    // saved register
+            "s10",   // saved register
+            "s11",   // saved register
+            "t3",    // temporary
+            "t4",    // temporary
+            "t5",    // temporary
+            "t6",    // temporary
+        };
+
         uint32_t sign_extend(uint32_t value, uint32_t bits)
         {
-            if (value & (1 << (bits - 1)))
+            if (value & (1U << (bits - 1)))  // Use 1U to avoid signed shift
             {
-                value |= ~((1 << bits) - 1);
+                value |= ~((1U << bits) - 1);
             }
             return value;
         }
@@ -396,6 +431,7 @@ namespace Hamster
 
     void Thread::signal(int signal)
     {
+        printf("Process %u Thread %zu recieved signal %d at PC 0x%08x\n", process->pid, id, signal, pc);
         pending_signal = signal;
     }
 
