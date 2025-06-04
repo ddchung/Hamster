@@ -4,6 +4,7 @@
 #include <process/process.hpp>
 #include <memory/stl_map.hpp>
 #include <syscall/syscall.hpp>
+#include <platform/config.hpp>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
@@ -317,8 +318,6 @@ namespace Hamster
           x{0}, f{0.0}, fcsr(0), pc(0),
           pending_signal(0), signal_mask(0xFFFFFFFF)
     {
-        // Set stack pointer to top of memory
-        x[2] = 0xFFFFFFF0;
     }
 
     Thread::Thread(Thread &&other)
@@ -490,7 +489,6 @@ namespace Hamster
 
     int Thread::execute(uint32_t inst)
     {
-        printf("Executing instruction: 0x%08X at PC: 0x%08X\n", inst, pc - 4);
         x[0] = 0;
         switch (extract_opcode(inst))
         {
@@ -784,16 +782,15 @@ namespace Hamster
         case OP_JAL:
         {
             // JAL
-            x[extract_rd(inst)] = pc + 4;
+            x[extract_rd(inst)] = pc; // + 4 - 4
             pc += extract_imm_j(inst) - 4;
             break;
         }
         case OP_JALR:
         {
             // JALR
-            x[extract_rd(inst)] = pc + 4;
+            x[extract_rd(inst)] = pc;
             pc = (x[extract_rs1(inst)] + extract_imm_i(inst)) & ~0x1;
-            pc -= 4;
             break;
         }
         case OP_LUI:
@@ -814,7 +811,7 @@ namespace Hamster
             switch (extract_funct3(inst))
             {
             case FUNCT3_ECALL_EBREAK:
-                if ((extract_funct7(inst) & 0x1) == 0)
+                if ((extract_imm_i(inst) & 0x1) == 0)
                     // ECALL
                     return do_syscall(*this);
                 else
@@ -1462,8 +1459,8 @@ namespace Hamster
             case 0b1111000:
                 // FMV.W.X
                 set_round_mode(ROUND_DYN, fcsr);
-                a = read_float_from_double(f[extract_rs1(inst)]);
-                memcpy(&x[extract_rd(inst)], &a, sizeof(float));
+                memcpy(&a, &x[extract_rs1(inst)], sizeof(float));
+                write_float_to_double(a, f[extract_rd(inst)]);
                 break;
             case 0b0000001:
                 // FADD.D
@@ -1546,7 +1543,7 @@ namespace Hamster
                 // FCVT.S.D
                 set_round_mode(extract_funct3(inst), fcsr);
                 ad = f[extract_rs1(inst)];
-                write_float_to_double(ad, f[extract_rd(inst)]);
+                write_float_to_double((float)ad, f[extract_rd(inst)]);
                 break;
             case 0b0100001:
                 // FCVT.D.S
@@ -1654,6 +1651,5 @@ namespace Hamster
         // TODO: Implement signal handling
         // For now, just stop
         state = ThreadState::ENDED;
-        printf("Signal %d received\n", pending_signal);
     }
 } // namespace Hamster

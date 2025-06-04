@@ -62,7 +62,7 @@ namespace Hamster
         }
 
         // Buffer for I/O operations
-        uint8_t io_buf[64]{0};
+        uint8_t io_buf[512]{0};
     } // namespace
 
     int do_syscall(Thread &thread)
@@ -76,7 +76,6 @@ namespace Hamster
         case SyscallID::EXIT:
             process->exit_code = args[0];
             process->threads.clear();
-            printf("Process %u exited with code %u\n", process->pid, process->exit_code);
             // don't set return code, as the thread is destroyed
             return 0;
         case SyscallID::CLOSE:
@@ -136,7 +135,6 @@ namespace Hamster
         }
         case SyscallID::FORK:
         {
-            printf("Process %u Thread %zu: Forking process\n", process->pid, thread.get_id());
             Process *new_process = alloc<Process>(1, *process);
             new_process->ppid = process->pid;  // Set the parent PID
             new_process->pgid = process->pgid; // Set the process group ID
@@ -148,7 +146,6 @@ namespace Hamster
             new_process->cwd = process->cwd;   // Copy the current working directory
             if (scheduler.add_process(new_process) < 0)
             {
-                printf("Process %u Thread %zu: Failed to add process\n", process->pid, thread.get_id());
                 thread.set_error_code(ENOMEM);
                 dealloc(new_process);
                 set_return_code(thread, -1);
@@ -162,8 +159,6 @@ namespace Hamster
             assert(it != new_process->threads.end());
             std::advance(it, thread.get_id());
             set_return_code(*it, 0); // Return 0 for the new process thread
-
-            printf("Process %u Thread %zu: Forked process %u\n", process->pid, thread.get_id(), new_process->pid);
 
             // done
             return 0;
@@ -480,7 +475,6 @@ namespace Hamster
         }
         default:
             // Unknown syscall
-            printf("Process %u Thread %zu: Unknown syscall %u\n", process->pid, thread.get_id(), get_syscall_num(thread));
             thread.set_error_code(ENOSYS);
             set_return_code(thread, -1);
             return -1; // Not implemented
