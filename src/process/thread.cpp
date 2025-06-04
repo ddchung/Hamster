@@ -122,6 +122,7 @@ namespace Hamster
             ROUND_DYN = 0b111,
         };
 
+        [[maybe_unused]]
         const char *reg_names[] = {
             "zero",
             "ra",    // return address
