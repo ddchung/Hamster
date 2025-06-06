@@ -94,7 +94,8 @@
         "__config": "cpp",
         "set": "cpp",
         "source_location": "cpp",
-        "unistd.h": "c"
+        "unistd.h": "c",
+        "fcntl.h": "c"
     },
     "C_Cpp.default.compilerPath": "/opt/homebrew/bin/g++-14"
 }

@@ -133,7 +133,6 @@ namespace Hamster
                     fd = -1;
                 }
             }
-            set_return_code(thread, 0); // Return 0 on success
             return 0;
         }
         case SyscallID::FORK:
@@ -359,7 +358,7 @@ namespace Hamster
             }
             String resolved_path = resolve_path(process->cwd, path);
             dealloc(path);
-            int flags = args[1];
+            int flags = map_sys_to_posix_flags(args[1]);
             int mode = args[2];
             int fd = vfs.open(resolved_path.c_str(), flags, mode);
             if (fd < 0)
