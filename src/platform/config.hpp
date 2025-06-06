@@ -16,3 +16,6 @@ static_assert((HAMSTER_PAGE_SIZE & (HAMSTER_PAGE_SIZE - 1)) == 0, "Page size mus
 
 // The length of each process' name
 #define HAMSTER_PROCESS_NAME_LENGTH 32
+
+// The stack top, leave some space above for reserved data
+#define HAMSTER_STACK_TOP 0xFFFF0000

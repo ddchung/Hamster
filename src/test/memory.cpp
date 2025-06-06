@@ -87,6 +87,43 @@ void test_memory()
         assert(!page.is_swapped());
     }
 
+    // Test copy constructor
+    {
+        Hamster::Page page1;
+
+        // fill with sequential data
+        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
+        {
+            page1[i] = (uint8_t)i;
+        }
+        Hamster::Page page2(page1);
+        assert(!page2.is_swapped());
+        // Check if data is copied correctly
+        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
+        {
+            assert(page2[i] == (uint8_t)i);
+        }
+    }
+
+    // Test copy assignment
+    {
+        Hamster::Page page1;
+
+        // fill with sequential data
+        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
+        {
+            page1[i] = (uint8_t)i;
+        }
+        Hamster::Page page2;
+        page2 = page1;
+        assert(!page2.is_swapped());
+        // Check if data is copied correctly
+        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
+        {
+            assert(page2[i] == (uint8_t)i);
+        }
+    }
+
     // Test move constructor
     {
         Hamster::Page page1;
@@ -143,11 +180,6 @@ void test_memory()
 
     // Memory Space
     Hamster::MemorySpace mem_space;
-    i = mem_space.allocate_page(HAMSTER_PAGE_SIZE);
-    assert(i >= 0);
-    assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE) != nullptr);
-    assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE + HAMSTER_PAGE_SIZE - 1) != nullptr);
-    assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE + HAMSTER_PAGE_SIZE + 0x10) == nullptr);
 
     // fill with data
     for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
@@ -159,12 +191,6 @@ void test_memory()
     for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
     {
         assert(mem_space[HAMSTER_PAGE_SIZE + j] == (uint8_t)j);
-    }
-
-    for (int j = 1; j < 16; ++j)
-    {
-        i = mem_space.allocate_page(HAMSTER_PAGE_SIZE + j * HAMSTER_PAGE_SIZE);
-        assert(i >= 0);
     }
 
     // fill with random data
@@ -179,9 +205,7 @@ void test_memory()
         assert(mem_space[HAMSTER_PAGE_SIZE + j] == (uint8_t)hash_int(j));
     }
 
-    // swap in and out
-    mem_space.swap_out_pages();
-    mem_space.swap_in_pages();
+    mem_space.swap_out_all();
 
     // check data
     for (int j = 0; j < 16 * HAMSTER_PAGE_SIZE; ++j)
@@ -199,7 +223,7 @@ void test_memory()
     // check that all pages are deallocated
     for (int j = 0; j < 16; ++j)
     {
-        assert(mem_space.get_page_data(HAMSTER_PAGE_SIZE + j * HAMSTER_PAGE_SIZE) == nullptr);
+        assert(!mem_space.is_allocated(HAMSTER_PAGE_SIZE + j * HAMSTER_PAGE_SIZE));
     }
 
     // memcpy
@@ -209,11 +233,6 @@ void test_memory()
     for (int j = 0; j < 0x1234; ++j)
     {
         src[j] = (uint8_t)hash_int(j);
-    }
-
-    for (uint64_t j = Hamster::MemorySpace::get_page_start(0x1234); j <= Hamster::MemorySpace::get_page_start(0x1234 * 2); j += HAMSTER_PAGE_SIZE)
-    {
-        assert(mem_space.allocate_page(j) >= 0);
     }
 
     assert(mem_space.memcpy(0x1234, src, 0x1234) == 0);
@@ -226,11 +245,6 @@ void test_memory()
 
     }
 
-    for (uint64_t j = Hamster::MemorySpace::get_page_start(0x1234); j <= Hamster::MemorySpace::get_page_start(0x1234 * 2); j += HAMSTER_PAGE_SIZE)
-    {
-        assert(mem_space.deallocate_page(j) == 0);
-    }
-
     Hamster::dealloc(src);
     Hamster::dealloc(dest);
 
@@ -240,7 +254,6 @@ void test_memory()
 
     for (int j = 0; j < 256; ++j)
     {
-        i = mem_space.allocate_page(j * HAMSTER_PAGE_SIZE);
         assert(i >= 0);
         for (int k = 0; k < HAMSTER_PAGE_SIZE; ++k)
         {
@@ -250,14 +263,41 @@ void test_memory()
         }
     }
 
-    mem_space.swap_out_pages();
-    mem_space.swap_in_pages();
+    mem_space.swap_out_all();
 
     for (uint64_t j = 0; j < 256 * HAMSTER_PAGE_SIZE; ++j)
     {
         assert(mem_space[j] == (uint8_t)hash_int(j));
     }
 #   endif
+
+    // Test memory space copy constructor
+
+    // fill with some data
+    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
+    {
+        mem_space[HAMSTER_PAGE_SIZE + j] = (uint8_t)j;
+    }
+    // check data
+    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
+    {
+        assert(mem_space[HAMSTER_PAGE_SIZE + j] == (uint8_t)j);
+    }
+    // create a copy
+    Hamster::MemorySpace mem_space_copy(mem_space);
+    // check data in the copy
+    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
+    {
+        assert(mem_space_copy[HAMSTER_PAGE_SIZE + j] == (uint8_t)j);
+    }
+    // Another copy
+    Hamster::MemorySpace mem_space_copy2;
+    mem_space_copy2 = mem_space;
+    // check data in the second copy
+    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
+    {
+        assert(mem_space_copy2[HAMSTER_PAGE_SIZE + j] == (uint8_t)j);
+    }
 
     // Tree
     Hamster::Tree<int> tree;

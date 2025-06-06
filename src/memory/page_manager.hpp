@@ -9,8 +9,6 @@ namespace Hamster
 {
     class PageManager
     {
-        PageManager() = default;
-        ~PageManager() = default;
         PageManager(const PageManager&) = delete;
         PageManager& operator=(const PageManager&) = delete;
         PageManager(PageManager&&) = delete;
@@ -52,12 +50,8 @@ namespace Hamster
         };
 
     public:
-        static PageManager &instance()
-        {
-            static PageManager instance;
-            return instance;
-        }
-
+        PageManager() = default;
+        ~PageManager() = default;
         // swap out a page
         // returns 0 on success, <0 on error
         int swap_out(int32_t page);
@@ -113,4 +107,6 @@ namespace Hamster
     private:
         Vector<PageImpl> pages;
     };
+
+    extern PageManager page_manager;
 } // namespace Hamster
