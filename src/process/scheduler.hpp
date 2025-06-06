@@ -53,10 +53,10 @@ namespace Hamster
         Process *get_process(uint32_t pid) const;
 
         // Warning: don't free the processes!
-        const Vector<Process *> &get_processes() const { return processes; }
+        const List<Process *> &get_processes() const { return processes; }
     private:
         // Indexed by PID
-        Vector<Process *> processes;
+        List<Process *> processes;
     };
 
     extern Scheduler scheduler;

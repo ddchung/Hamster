@@ -8,7 +8,7 @@
 namespace Hamster
 {
     Scheduler::Scheduler()
-        : processes(Vector<Process *>())
+        : processes()
     {
         // PID 0 doesn't exist
         processes.push_back(nullptr);
@@ -26,7 +26,7 @@ namespace Hamster
     Scheduler::Scheduler(Scheduler &&other)
         : processes(std::move(other.processes))
     {
-        other.processes = Vector<Process *>();
+        other.processes = List<Process *>();
     }
 
     Scheduler &Scheduler::operator=(Scheduler &&other)
@@ -47,13 +47,15 @@ namespace Hamster
         
         // Get a new PID
         int new_pid = -1;
-        for (size_t i = 1; i < processes.size(); ++i)
+        size_t counter = 0;
+        for (auto process : processes)
         {
-            if (processes[i] == nullptr)
+            if (!process)
             {
-                new_pid = i;
+                new_pid = counter;
                 break;
             }
+            ++counter;
         }
         if (new_pid == -1)
         {
@@ -63,7 +65,10 @@ namespace Hamster
         }
 
         process->pid = new_pid;
-        processes[new_pid] = process;
+
+        auto it = processes.begin();
+        std::advance(it, new_pid);
+        *it = process;
 
         // Assume that `process` has its members correctly set
 
@@ -116,11 +121,10 @@ namespace Hamster
         {
             if (!process)
                 continue; // Skip null processes
-            if (process->threads.empty())
+            else if (process->threads.empty())
             {
-                // Process finished
                 dealloc(process);
-                process = nullptr; // Remove from the scheduler
+                process = nullptr;
             }
             else
             {
@@ -146,6 +150,8 @@ namespace Hamster
     {
         if (pid >= processes.size())
             return nullptr; // Invalid PID
-        return processes[pid]; // Return the process or nullptr if not found
+        auto it = processes.begin();
+        std::advance(it, pid);
+        return *it;
     }
 } // namespace Hamster
