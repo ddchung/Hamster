@@ -1481,6 +1481,72 @@ namespace Hamster
         return fd;
     }
 
+    int VFS::mkfile(const char *path, int mode)
+    {
+        int fd = mkfile(path, O_RDONLY, mode);
+        if (fd < 0)
+        {
+            return -1;
+        }
+        close(fd);
+        return 0;
+    }
+    
+    int VFS::mkfileat(int dir_fd, const char *path, int mode)
+    {
+        int fd = mkfileat(dir_fd, path, O_RDONLY, mode);
+        if (fd < 0)
+        {
+            return -1;
+        }
+        close(fd);
+        return 0;
+    }
+
+    int VFS::mkdir(const char *path, int mode)
+    {
+        int fd = mkdir(path, O_RDONLY, mode);
+        if (fd < 0)
+        {
+            return -1;
+        }
+        close(fd);
+        return 0;
+    }
+
+    int VFS::mkdirat(int dir_fd, const char *path, int mode)
+    {
+        int fd = mkdirat(dir_fd, path, O_RDONLY, mode);
+        if (fd < 0)
+        {
+            return -1;
+        }
+        close(fd);
+        return 0;
+    }
+
+    int VFS::mksfile(const char *path, BaseSpecialDriver *driver, int mode)
+    {
+        int fd = mksfile(path, O_RDONLY, driver, mode);
+        if (fd < 0)
+        {
+            return -1;
+        }
+        close(fd);
+        return 0;
+    }
+
+    int VFS::mksfileat(int dir_fd, const char *path, BaseSpecialDriver *driver, int mode)
+    {
+        int fd = mksfileat(dir_fd, path, O_RDONLY, driver, mode);
+        if (fd < 0)
+        {
+            return -1;
+        }
+        close(fd);
+        return 0;
+    }
+
     int VFS::isatty(int fd)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
