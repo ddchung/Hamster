@@ -136,20 +136,20 @@ namespace Hamster
 
         Elf32_auxv_t auxv[]{
             {AT_NULL, 0},
-            {AT_PLATFORM, arch_loc},
+            {AT_PLATFORM, (uint32_t)arch_loc},
             {
                 AT_EXECFN,
-                exec_fn_loc,
+                (uint32_t)exec_fn_loc,
             },
-            {AT_RANDOM, random_data_loc},
+            {AT_RANDOM, (uint32_t)random_data_loc},
             {AT_SECURE, 0},
             {AT_EGID, egid},
             {AT_GID, gid},
             {AT_EUID, euid},
             {AT_UID, uid},
-            {AT_ENTRY, entry_point},
+            {AT_ENTRY, (uint32_t)entry_point},
             {AT_FLAGS, 0},
-            {AT_PHNUM, ph_num},
+            {AT_PHNUM, (uint32_t)ph_num},
             {AT_PHENT, sizeof(Elf32_Phdr)},
 
             // The ELF loader loads the program headers here
