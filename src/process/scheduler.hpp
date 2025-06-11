@@ -32,10 +32,12 @@ namespace Hamster
         /**
          * @brief Make a new process from an ELF file
          * @param path The path to the ELF file
+         * @param argv The arguments to the program. Note that by convention, the first argument is the program name
+         * @param envp The environment variables
          * @return The process ID of the new process on success, or on error return -1 and set `error`
          * @note The CWD will be "/", and the UID and GID will be 0
          */
-        int make_process_elf(const char *path);
+        int make_process_elf(const char *path, const char * const *argv = nullptr, const char * const *envp = nullptr);
 
         /**
          * @brief Tick the scheduler

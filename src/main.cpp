@@ -105,8 +105,8 @@ int main()
     auto console_device = Hamster::alloc<ConsoleCharDevice>();
     Hamster::vfs.mksfile("/dev/console", console_device, 0666) == 0 ? (void)0 : Hamster::dealloc(console_device);
     
-
-    Hamster::scheduler.make_process_elf("/a.out");
+    const char *progname[] {"program", nullptr};
+    Hamster::scheduler.make_process_elf("/a.out", progname);
 
     // Run the program
     while (true)
