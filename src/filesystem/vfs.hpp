@@ -244,6 +244,15 @@ namespace Hamster
         int mkfile(const char *path, int flags, int mode);
 
         /**
+         * @brief Create a file at a given path, without opening a file descriptor
+         * @param path The path to the file to be created
+         * @param mode The mode to create the file with
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note It is undefined what happens if the file already exists
+         */
+        int mkfile(const char *path, int mode);
+
+        /**
          * @brief Create a file at a given path relative to a directory
          * @param dir The file descriptor of the directory to create the file in
          * @param path The path to the file to be created, starting from the directory
@@ -253,6 +262,16 @@ namespace Hamster
          * @note It is undefined what happens if the file already exists
          */
         int mkfileat(int dir, const char *path, int flags, int mode);
+
+        /**
+         * @brief Create a file at a given path relative to a directory, without opening a file descriptor
+         * @param dir The file descriptor of the directory to create the file in
+         * @param path The path to the file to be created, starting from the directory
+         * @param mode The mode to create the file with
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note It is undefined what happens if the file already exists
+         */
+        int mkfileat(int dir, const char *path, int mode);
 
         /**
          * @brief Create a directory at a given path
@@ -265,6 +284,15 @@ namespace Hamster
         int mkdir(const char *path, int flags, int mode);
 
         /**
+         * @brief Create a directory at a given path, without opening a file descriptor
+         * @param path The path to the directory to be created
+         * @param mode The mode to create the directory with
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note It is undefined what happens if the directory already exists
+         */
+        int mkdir(const char *path, int mode);
+
+        /**
          * @brief Create a directory at a given path relative to a directory
          * @param dir The file descriptor of the directory to create the directory in
          * @param path The path to the directory to be created, starting from the directory
@@ -274,6 +302,16 @@ namespace Hamster
          * @note It is undefined what happens if the directory already exists
          */
         int mkdirat(int dir, const char *path, int flags, int mode);
+
+        /**
+         * @brief Create a directory at a given path relative to a directory, without opening a file descriptor
+         * @param dir The file descriptor of the directory to create the directory in
+         * @param path The path to the directory to be created, starting from the directory
+         * @param mode The mode to create the directory with
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note It is undefined what happens if the directory already exists
+         */
+        int mkdirat(int dir, const char *path, int mode);
 
         /**
          * @brief Create a symlink
@@ -297,13 +335,23 @@ namespace Hamster
         /**
          * @brief Create a special file at a given path
          * @param path The path to the special file to be created
-         * @param driver The thing that will handle operations on the special file\
+         * @param driver The thing that will handle operations on the special file
          * @param flags The flags to open the special file with
          * @param mode The mode to create the special file with
          * @return A file descriptor on success, or on error return -1 and set `error`
          * @warning This takes ownership of `driver`, and will deallocate it later
          */
         int mksfile(const char *path, int flags, BaseSpecialDriver *driver, int mode);
+
+        /**
+         * @brief Create a special file at a given path, without opening a file descriptor
+         * @param path The path to the special file to be created
+         * @param driver The thing that will handle operations on the special file
+         * @param mode The mode to create the special file with
+         * @return 0 on success, or on error return -1 and set `error`
+         * @warning This takes ownership of `driver`, and will deallocate it later
+         */
+        int mksfile(const char *path, BaseSpecialDriver *driver, int mode);
 
         /**
          * @brief Create a special file at a given path relative to a directory
@@ -316,6 +364,17 @@ namespace Hamster
          * @warning This takes ownership of `driver`, and will deallocate it later
          */
         int mksfileat(int dir, const char *path, int flags, BaseSpecialDriver *driver, int mode);
+
+        /**
+         * @brief Create a special file at a given path relative to a directory, without opening a file descriptor
+         * @param dir The file descriptor of the directory to create the special file in
+         * @param path The path to the special file to be created, starting from the directory
+         * @param driver The thing that will handle operations on the special file
+         * @param mode The mode to create the special file with
+         * @return 0 on success, or on error return -1 and set `error`
+         * @warning This takes ownership of `driver`, and will deallocate it later
+         */
+        int mksfileat(int dir, const char *path, BaseSpecialDriver *driver, int mode);
 
         /**
          * @brief Check whether a given file is a TTY device

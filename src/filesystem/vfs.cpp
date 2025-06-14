@@ -129,6 +129,8 @@ namespace Hamster
                     MountPoint *root_mnt = nullptr;
                     for (MountPoint *mp : mounts)
                     {
+                        if (!mp)
+                            continue;
                         if (strcmp(mp->path, "/") == 0 || strcmp(mp->path, "") == 0)
                         {
                             root_mnt = mp;
@@ -196,16 +198,16 @@ namespace Hamster
                 {
                     String next_name(path, next - path);
 
-                    BaseFile *next = dir->get(next_name.c_str(), (flags & ~O_CREAT & ~O_EXCL));
+                    BaseFile *next_file = dir->get(next_name.c_str(), (flags & ~O_CREAT & ~O_EXCL));
                     dealloc(dir);
-                    if (!next)
+                    if (!next_file)
                         return nullptr;
 
-                    switch (next->type())
+                    switch (next_file->type())
                     {
                     case FileType::Symlink:
                     {
-                        BaseSymlink *link = (BaseSymlink *)next;
+                        BaseSymlink *link = (BaseSymlink *)next_file;
                         char *target = link->get_target();
                         dealloc(link);
                         if (!target)
@@ -220,26 +222,26 @@ namespace Hamster
                     }
                     case FileType::Directory:
                     {
-                        BaseDirectory *next_dir = (BaseDirectory *)next;
+                        BaseDirectory *next_dir = (BaseDirectory *)next_file;
 
                         if (next_dir->get_vfs_flags() & FLAG_MOUNTPOINT)
                         {
                             next_dir = resolve_mount(next_dir);
                         }
 
-                        BaseFile *file = lopen(next_name.c_str(), flags, mode, next_dir);
+                        BaseFile *file = lopen(next, flags, mode, next_dir);
                         return file;
                     }
                     default:
                     {
-                        dealloc(next);
+                        dealloc(next_file);
                         error = ENOTDIR;
                         return nullptr;
                     }
                     }
 
                     // unreachable
-                    dealloc(next);
+                    dealloc(next_file);
                     return nullptr;
                 }
             }
@@ -308,10 +310,13 @@ namespace Hamster
                     return -1;
                 }
 
-                if (mounts.size() > 0)
+                for (auto &mp : mounts)
                 {
-                    error = EIO;
-                    return -1;
+                    if (mp)
+                    {
+                        error = EBUSY;
+                        return -1;
+                    }
                 }
 
                 mounts.push_back(alloc<MountPoint>(1, "/", fs));
@@ -1474,6 +1479,72 @@ namespace Hamster
         }
 
         return fd;
+    }
+
+    int VFS::mkfile(const char *path, int mode)
+    {
+        int fd = mkfile(path, O_RDONLY, mode);
+        if (fd < 0)
+        {
+            return -1;
+        }
+        close(fd);
+        return 0;
+    }
+    
+    int VFS::mkfileat(int dir_fd, const char *path, int mode)
+    {
+        int fd = mkfileat(dir_fd, path, O_RDONLY, mode);
+        if (fd < 0)
+        {
+            return -1;
+        }
+        close(fd);
+        return 0;
+    }
+
+    int VFS::mkdir(const char *path, int mode)
+    {
+        int fd = mkdir(path, O_RDONLY, mode);
+        if (fd < 0)
+        {
+            return -1;
+        }
+        close(fd);
+        return 0;
+    }
+
+    int VFS::mkdirat(int dir_fd, const char *path, int mode)
+    {
+        int fd = mkdirat(dir_fd, path, O_RDONLY, mode);
+        if (fd < 0)
+        {
+            return -1;
+        }
+        close(fd);
+        return 0;
+    }
+
+    int VFS::mksfile(const char *path, BaseSpecialDriver *driver, int mode)
+    {
+        int fd = mksfile(path, O_RDONLY, driver, mode);
+        if (fd < 0)
+        {
+            return -1;
+        }
+        close(fd);
+        return 0;
+    }
+
+    int VFS::mksfileat(int dir_fd, const char *path, BaseSpecialDriver *driver, int mode)
+    {
+        int fd = mksfileat(dir_fd, path, O_RDONLY, driver, mode);
+        if (fd < 0)
+        {
+            return -1;
+        }
+        close(fd);
+        return 0;
     }
 
     int VFS::isatty(int fd)

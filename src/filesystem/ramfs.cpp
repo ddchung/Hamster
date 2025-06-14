@@ -359,7 +359,7 @@ namespace Hamster
                 if (size == 0)
                     return 0;
                 
-                for (uint64_t addr = offset; addr < offset + size; ++addr)
+                for (uint64_t addr = offset; addr < (uint64_t)offset + size; ++addr)
                 {
                     buf[addr - offset] = reg_node->data[addr];
                 }
@@ -390,7 +390,7 @@ namespace Hamster
                     return -1;
                 }
                 
-                for (uint64_t addr = offset; addr < offset + size; ++addr)
+                for (uint64_t addr = offset; addr < (uint64_t)offset + size; ++addr)
                 {
                     reg_node->data[addr] = buf[addr - offset];
                 }

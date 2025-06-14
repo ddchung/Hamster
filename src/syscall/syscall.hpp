@@ -8,6 +8,6 @@
 
 namespace Hamster
 {
-    uint32_t do_syscall(Thread &thread);
+    int do_syscall(Thread &thread);
 } // namespace Hamster
 

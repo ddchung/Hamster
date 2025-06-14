@@ -4,6 +4,7 @@
 #include <process/process.hpp>
 #include <memory/stl_map.hpp>
 #include <syscall/syscall.hpp>
+#include <platform/config.hpp>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
@@ -121,11 +122,47 @@ namespace Hamster
             ROUND_DYN = 0b111,
         };
 
+        [[maybe_unused]]
+        const char *reg_names[] = {
+            "zero",
+            "ra",    // return address
+            "sp",    // stack pointer
+            "gp",    // global pointer
+            "tp",    // thread pointer
+            "t0",    // temporary
+            "t1",    // temporary
+            "t2",    // temporary
+            "s0",    // saved register
+            "s1",    // saved register
+            "a0",    // argument/return value
+            "a1",    // argument/return value
+            "a2",    // argument
+            "a3",    // argument
+            "a4",    // argument
+            "a5",    // argument
+            "a6",    // argument
+            "a7",    // argument
+            "s2",    // saved register
+            "s3",    // saved register
+            "s4",    // saved register
+            "s5",    // saved register
+            "s6",    // saved register
+            "s7",    // saved register
+            "s8",    // saved register
+            "s9",    // saved register
+            "s10",   // saved register
+            "s11",   // saved register
+            "t3",    // temporary
+            "t4",    // temporary
+            "t5",    // temporary
+            "t6",    // temporary
+        };
+
         uint32_t sign_extend(uint32_t value, uint32_t bits)
         {
-            if (value & (1 << (bits - 1)))
+            if (value & (1U << (bits - 1)))  // Use 1U to avoid signed shift
             {
-                value |= ~((1 << bits) - 1);
+                value |= ~((1U << bits) - 1);
             }
             return value;
         }
@@ -315,10 +352,8 @@ namespace Hamster
     Thread::Thread(Process *process, size_t id)
         : state(ThreadState::RUNNING), process(process), id(id),
           x{0}, f{0.0}, fcsr(0), pc(0),
-          pending_signal(0), signal_mask(0)
+          pending_signal(0), signal_mask(0xFFFFFFFF)
     {
-        // Set stack pointer to top of memory
-        x[2] = 0xFFFFFFFF;
     }
 
     Thread::Thread(Thread &&other)
@@ -356,24 +391,23 @@ namespace Hamster
     {
         assert(state == ThreadState::RUNNING);
 
+        if (pending_signal && (1 << (pending_signal - 1)) & signal_mask)
+        {
+            handle_signal();
+            return;
+        }
+
         // Fetch the instruction
         uint32_t inst;
         if (read32(pc, inst) != 0)
             return;
 
-        if (pending_signal & signal_mask)
-            handle_signal();
         
         ++tick_count;
         
         pc += 4;
 
-        int ret = execute(inst);
-
-        if (ret < 0)
-            return;
-
-        // done
+        execute(inst);
     }
 
     void Thread::pause(const std::function<void(Thread &)> &callback)
@@ -398,7 +432,8 @@ namespace Hamster
 
     void Thread::signal(int signal)
     {
-        pending_signal |= signal;
+        printf("Process %u Thread %zu recieved signal %d at PC 0x%08x\n", process->pid, id, signal, pc);
+        pending_signal = signal;
     }
 
     int Thread::read32(uint32_t addr, uint32_t &out)
@@ -491,7 +526,6 @@ namespace Hamster
 
     int Thread::execute(uint32_t inst)
     {
-        printf("Executing instruction %08x at PC %08x\n", inst, pc - 4);
         x[0] = 0;
         switch (extract_opcode(inst))
         {
@@ -785,16 +819,15 @@ namespace Hamster
         case OP_JAL:
         {
             // JAL
-            x[extract_rd(inst)] = pc + 4;
+            x[extract_rd(inst)] = pc; // + 4 - 4
             pc += extract_imm_j(inst) - 4;
             break;
         }
         case OP_JALR:
         {
             // JALR
-            x[extract_rd(inst)] = pc + 4;
+            x[extract_rd(inst)] = pc;
             pc = (x[extract_rs1(inst)] + extract_imm_i(inst)) & ~0x1;
-            pc -= 4;
             break;
         }
         case OP_LUI:
@@ -815,7 +848,7 @@ namespace Hamster
             switch (extract_funct3(inst))
             {
             case FUNCT3_ECALL_EBREAK:
-                if ((extract_funct7(inst) & 0x1) == 0)
+                if ((extract_imm_i(inst) & 0x1) == 0)
                     // ECALL
                     return do_syscall(*this);
                 else
@@ -1463,8 +1496,8 @@ namespace Hamster
             case 0b1111000:
                 // FMV.W.X
                 set_round_mode(ROUND_DYN, fcsr);
-                a = read_float_from_double(f[extract_rs1(inst)]);
-                memcpy(&x[extract_rd(inst)], &a, sizeof(float));
+                memcpy(&a, &x[extract_rs1(inst)], sizeof(float));
+                write_float_to_double(a, f[extract_rd(inst)]);
                 break;
             case 0b0000001:
                 // FADD.D
@@ -1547,7 +1580,7 @@ namespace Hamster
                 // FCVT.S.D
                 set_round_mode(extract_funct3(inst), fcsr);
                 ad = f[extract_rs1(inst)];
-                write_float_to_double(ad, f[extract_rd(inst)]);
+                write_float_to_double((float)ad, f[extract_rd(inst)]);
                 break;
             case 0b0100001:
                 // FCVT.D.S
@@ -1655,6 +1688,5 @@ namespace Hamster
         // TODO: Implement signal handling
         // For now, just stop
         state = ThreadState::ENDED;
-        printf("Signal %d received\n", pending_signal);
     }
 } // namespace Hamster

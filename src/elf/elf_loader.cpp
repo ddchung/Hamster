@@ -6,11 +6,14 @@
 #include <cstring>
 #include <elf.h>
 
+// debugging
+#include <cstdio>
+
 namespace Hamster
 {
     namespace
     {
-        int load_elf32(int fd, MemorySpace& mem_space, uint64_t& entry_point)
+        int load_elf32(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num)
         {
             if (vfs.seek(fd, 0, SEEK_SET) < 0)
             {
@@ -60,6 +63,7 @@ namespace Hamster
             }
 
             entry_point = ehdr.e_entry;
+            ph_num = ehdr.e_phnum;
 
             // Load program headers
             if (vfs.seek(fd, ehdr.e_phoff, SEEK_SET) < 0)
@@ -71,8 +75,21 @@ namespace Hamster
             for (int i = 0; i < ehdr.e_phnum; ++i)
             {
                 Elf32_Phdr phdr;
+                
+                if (vfs.seek(fd, ehdr.e_phoff + i * ehdr.e_phentsize, SEEK_SET) < 0)
+                {
+                    error = EIO;
+                    return -1;
+                }
 
                 if (vfs.read(fd, &phdr, sizeof(phdr)) != sizeof(phdr))
+                {
+                    error = EIO;
+                    return -1;
+                }
+
+                // Copy the program header to the memory space
+                if (mem_space.memcpy(HAMSTER_STACK_TOP + 1 + i * sizeof(phdr), &phdr, sizeof(phdr)) != 0)
                 {
                     error = EIO;
                     return -1;
@@ -120,7 +137,7 @@ namespace Hamster
     } // namespace
     
 
-    int load_elf(int fd, MemorySpace& mem_space, uint64_t& entry_point)
+    int load_elf(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num)
     {
         // Prepare file
         if (vfs.seek(fd, 0, SEEK_SET) < 0)
@@ -147,7 +164,7 @@ namespace Hamster
 
         if (e_ident[EI_CLASS] == ELFCLASS32)
         {
-            return load_elf32(fd, mem_space, entry_point);
+            return load_elf32(fd, mem_space, entry_point, ph_num);
         }
         else
         {

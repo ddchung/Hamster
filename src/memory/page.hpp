@@ -14,8 +14,8 @@ namespace Hamster
         // default zero-initialized page
         Page();
 
-        Page(const Page &) = delete;
-        Page &operator=(const Page &) = delete;
+        Page(const Page &);
+        Page &operator=(const Page &);
 
         Page(Page &&);
         Page &operator=(Page &&);
@@ -28,26 +28,26 @@ namespace Hamster
         [[deprecated]] inline int get_swap_index() const { return page_id; }
 
         // check if the page is swapped out
-        bool is_swapped();
+        bool is_swapped() const;
 
         // get the page data
         // returns null if the page is swapped out
-        uint8_t *get_data();
+        uint8_t *get_data() const;
 
         // swap in the page from the swap space
         // =0 ok <0 error
-        int swap_in();
+        int swap_in() const;
 
         // swap out the page to the swap space
         // =0 ok <0 error
-        int swap_out();
+        int swap_out() const;
 
         // returns a reference to a byte in the page
         // or a dummy byte if the page is swapped out
         //
         // Note: it is recommended to not keep the reference for long
         // as it is *very* easily invalidated
-        uint8_t &operator[](size_t index);
+        uint8_t &operator[](size_t index) const;
 
         // get the dummy byte
         // see operator[] for details
@@ -56,7 +56,7 @@ namespace Hamster
         inline static uint8_t &get_dummy()
         { return get_dummy_byte(); }
 
-        uint16_t &get_flags();
+        uint16_t &get_flags() const;
 
     private:
         int32_t page_id;
