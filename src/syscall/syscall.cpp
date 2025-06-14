@@ -57,7 +57,10 @@ namespace Hamster
             else
             {
                 // Relative path, prepend the current working directory
-                return cwd + '/' + String(path);
+                if (cwd[0] == '/')
+                    return cwd + path;
+                else
+                    return cwd + '/' + path;
             }
         }
 
@@ -251,6 +254,32 @@ namespace Hamster
                 return -1;
             }
             set_return_code(thread, 0); // Return 0 on success
+            return 0;
+        }
+        case SyscallID::RENAME:
+        {
+            char *oldpath = process->memory_space.get_string(args[0]);
+            char *newpath = process->memory_space.get_string(args[1]);
+            if (!oldpath || !newpath)
+            {
+                dealloc(oldpath);
+                dealloc(newpath);
+
+                // segfault because of bad memroy IO
+                thread.signal(SIGSEGV);
+                return -1;
+            }
+
+            String oldpath_res = resolve_path(process->cwd, oldpath);
+            String newpath_res = resolve_path(process->cwd, newpath);
+            dealloc(oldpath);
+            dealloc(newpath);
+            set_return_code(thread, vfs.rename(oldpath_res.c_str(), newpath_res.c_str()));
+            if (Hamster::error != 0)
+            {
+                thread.set_error_code(Hamster::error);
+                return -1;
+            }
             return 0;
         }
         case SyscallID::GETPID:

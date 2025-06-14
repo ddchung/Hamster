@@ -51,6 +51,7 @@ namespace Hamster
             UNLINK = 518,
             WAIT = 519,
             WRITE = 64,
+            RENAME = 520,
         };
     } // namespace SyscallID
 
