@@ -403,7 +403,7 @@ namespace Hamster
             }
             String resolved_path = resolve_path(process->cwd, path);
             dealloc(path);
-            int ret = vfs.unlink(resolved_path.c_str());
+            int ret = vfs.remove(resolved_path.c_str());
             if (ret < 0)
             {
                 thread.set_error_code(error);

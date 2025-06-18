@@ -25,6 +25,8 @@ namespace Hamster
         Special,
     };
 
+    class BaseFilesystem;
+
     class BaseFile
     {
     public:
@@ -43,20 +45,11 @@ namespace Hamster
         virtual BaseFile *clone() = 0;
 
         /**
-         * @brief Rename this file
-         * @param new_name The new name of the file
-         * @return 0 on success, or on error return -1 and set `error`
-         * @note `new_name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
-         * @warning NOT equivelant to POSIX `rename`, as this cannot change the location of the file
+         * @brief Get the owning filesystem
+         * @return A weak pointer to the owning filesystem, or nullptr on error
          */
-        virtual int rename(const char *new_name) = 0;
+        virtual BaseFilesystem *get_filesystem() = 0;
 
-        /**
-         * @brief Remove this file
-         * @return 0 on success, or on error return -1 and set `error`
-         * @note Equivelant to POSIX `unlink` on this file
-         */
-        virtual int remove() = 0;
 
         /**
          * @brief Stat the file.
@@ -115,13 +108,6 @@ namespace Hamster
          * @return 0 on success, or on error return -1 and set `error`
          */
         virtual int set_flags(int flags) = 0;
-
-        /**
-         * @brief Get the name of the file.
-         * @return A newly allocated string with the name of the file, or on error, it returns nullptr and sets `error`
-         * @note Be sure to free the string
-         */
-        virtual char *basename() = 0;
 
         /**
          * @brief Used by the VFS to store some flags
@@ -313,8 +299,15 @@ namespace Hamster
          */
         virtual BaseSpecialFile *mksfile(const char *name, int flags, int type, int mode) = 0;
 
-        using BaseFile::remove;
-        
+        /**
+         * @brief Create a hard-link to another file on this filesystem
+         * @param file The target file
+         * @param name The name of the hard link
+         * @return 0 on success, -1 on error and set `error`
+         * @note If the file is not part of this filesystem, set `errno` to `EXDEV`
+         */
+        virtual int link(BaseFile *file, const char *name) = 0;
+
         /**
          * @brief Remove a file in the directory.
          * @param name The name of the file

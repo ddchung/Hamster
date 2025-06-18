@@ -57,15 +57,6 @@ namespace Hamster
         int close(int fd);
 
         /**
-         * @brief Rename a file described by a file descriptor
-         * @param fd The file descriptor to rename
-         * @param new_name The new name of the file
-         * @return 0 on success, or on error return -1 and set `error`
-         * @warning This cannot move the file, but just change its name in-place
-         */
-        int rename(int fd, const char *new_name);
-
-        /**
          * @brief Move a file
          * @param old_path The path to the file to move
          * @param new_path The path to move the file to
@@ -74,22 +65,13 @@ namespace Hamster
         int rename(const char *old_path, const char *new_path);
 
         /**
-         * @brief Remove a file described by a file descriptor
-         * @param fd The file descriptor to remove
-         * @return 0 on success, or on error return -1 and set `error`
-         * @warning This invalidates all file descriptors that point to the file
-         * @warning This does not close the file descriptor, so you must do that yourself
-         */
-        int remove(int fd);
-
-        /**
          * @brief Remove a file at a given path
          * @param path The path to the file to remove
          * @return 0 on success, or on error return -1 and set `error`
          * @note This does not close any file descriptors that point to the file
          * @note This will remove symlinks, not follow them
          */
-        int unlink(const char *path);
+        int remove(const char *path);
 
         /**
          * @brief Stat a file described by a file descriptor
@@ -137,13 +119,6 @@ namespace Hamster
          * @return 0 on success, or on error return -1 and set `error`
          */
         int chown(int fd, int uid, int gid);
-
-        /**
-         * @brief Get the name (not path) of a file described by a file descriptor
-         * @param fd The file descriptor to get the name of
-         * @return The name of the file, or nullptr on error
-         */
-        char *basename(int fd);
 
         /**
          * @brief Read from a file

@@ -8,6 +8,7 @@
 #include <memory/stl_map.hpp>
 #include <errno/errno.h>
 #include <cstring>
+#include <cassert>
 
 namespace Hamster
 {
@@ -23,19 +24,19 @@ namespace Hamster
 
             virtual FileType type() const = 0;
 
-            RamFsNode(const String &name, int mode, int uid, int gid, RamFsDirectoryNode *parent)
-                : name(name), mode(mode), uid(uid), gid(gid), vfs_flags(0), parent(parent)
+            RamFsNode(int mode, int uid, int gid)
+                : mode(mode), uid(uid), gid(gid), vfs_flags(0), refcount(1)
             {
             }
 
             RamFsNode(const RamFsNode &) = delete;
             RamFsNode &operator=(const RamFsNode &) = delete;
 
-            String name;
             int mode;
             int uid, gid;
             uint32_t vfs_flags;
-            RamFsDirectoryNode *parent;
+            uint32_t refcount;
+            RamFs *filesystem;
         };
 
         class RamFsRegularNode : public RamFsNode
@@ -101,45 +102,15 @@ namespace Hamster
 
             ~RamFsNodeHandle() = default;
 
-            int rename(const char *new_name)
-            {
-                if (strchr(new_name, '/'))
-                {
-                    error = EINVAL;
-                    return -1;
-                }
-
-                if (!node)
-                {
-                    error = EBADF;
-                    return -1;
-                }
-
-                node->name = new_name;
-                return 0;
-            }
-
-            int remove()
+            BaseFilesystem *get_filesystem()
             {
                 if (!node)
                 {
                     error = EBADF;
-                    return -1;
+                    return nullptr;
                 }
 
-                if (node->parent)
-                {
-                    node->parent->children.erase(node->name);
-
-                    dealloc(node);
-                    node = nullptr;
-                    return 0;
-                }
-                else
-                {
-                    error = EINVAL;
-                    return -1;
-                }
+                return node->filesystem;
             }
 
             int stat(struct ::stat *buf)
@@ -156,6 +127,7 @@ namespace Hamster
                 buf->st_uid = node->uid;
                 buf->st_gid = node->gid;
                 buf->st_size = 0;
+                buf->st_nlink = node->refcount;
 
                 if (node->type() == FileType::Regular)
                 {
@@ -254,21 +226,6 @@ namespace Hamster
                 node->gid = gid;
                 return 0;
             }
-
-            char *basename()
-            {
-                if (!node)
-                {
-                    error = EBADF;
-                    return nullptr;
-                }
-
-                const char *name = node->name.c_str();
-                char *result = alloc<char>(strlen(name) + 1);
-                strcpy(result, name);
-                return result;
-            }
-
             int set_flags(int flags)
             {
                 if (!node)
@@ -304,12 +261,17 @@ namespace Hamster
                 return node->vfs_flags;
             }
 
+            RamFsNode *get_node()
+            {
+                return node;
+            }
+
         protected:
             RamFsNode *node;
             int flags;
         };
 
-        class RamFsRegularHandle : public BaseRegularFile, private RamFsNodeHandle
+        class RamFsRegularHandle : public BaseRegularFile, public RamFsNodeHandle
         {
         public:
             RamFsRegularHandle(RamFsRegularNode *node, int flags)
@@ -319,8 +281,7 @@ namespace Hamster
 
             ~RamFsRegularHandle() override = default;
 
-            int rename(const char *new_name) override { return RamFsNodeHandle::rename(new_name); }
-            int remove() override { return RamFsNodeHandle::remove(); }
+            BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
             int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
@@ -328,7 +289,6 @@ namespace Hamster
             int get_flags() override { return RamFsNodeHandle::get_flags(); }
             int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
-            char *basename() override { return RamFsNodeHandle::basename(); }
             int set_flags(int flags) override { return RamFsNodeHandle::set_flags(flags); }
             int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
             uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
@@ -514,7 +474,7 @@ namespace Hamster
             }
         };
 
-        class RamFsSpecialHandle : public BaseSpecialFile, private RamFsNodeHandle
+        class RamFsSpecialHandle : public BaseSpecialFile, public RamFsNodeHandle
         {
         public:
             RamFsSpecialHandle(RamFsSpecialNode *node, int flags)
@@ -524,8 +484,7 @@ namespace Hamster
 
             ~RamFsSpecialHandle() override = default;
 
-            int rename(const char *new_name) override { return RamFsNodeHandle::rename(new_name); }
-            int remove() override { return RamFsNodeHandle::remove(); }
+            BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
             int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
@@ -533,7 +492,6 @@ namespace Hamster
             int get_flags() override { return RamFsNodeHandle::get_flags(); }
             int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
-            char *basename() override { return RamFsNodeHandle::basename(); }
             int set_flags(int flags) override { return RamFsNodeHandle::set_flags(flags); }
             int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
             uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
@@ -573,7 +531,7 @@ namespace Hamster
             }
         };
 
-        class RamFsSymlinkHandle : public BaseSymlink, private RamFsNodeHandle
+        class RamFsSymlinkHandle : public BaseSymlink, public RamFsNodeHandle
         {
         public:
             RamFsSymlinkHandle(RamFsSymlinkNode *node, int flags)
@@ -583,8 +541,7 @@ namespace Hamster
 
             ~RamFsSymlinkHandle() override = default;
 
-            int rename(const char *new_name) override { return RamFsNodeHandle::rename(new_name); }
-            int remove() override { return RamFsNodeHandle::remove(); }
+            BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
             int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
@@ -592,7 +549,6 @@ namespace Hamster
             int get_flags() override { return RamFsNodeHandle::get_flags(); }
             int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
-            char *basename() override { return RamFsNodeHandle::basename(); }
             int set_flags(int flags) override { return RamFsNodeHandle::set_flags(flags); }
             int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
             uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
@@ -644,7 +600,7 @@ namespace Hamster
             }
         };
 
-        class RamFsDirectoryHandle : public BaseDirectory, private RamFsNodeHandle
+        class RamFsDirectoryHandle : public BaseDirectory, public RamFsNodeHandle
         {
         public:
             RamFsDirectoryHandle(RamFsDirectoryNode *node, int flags)
@@ -654,21 +610,7 @@ namespace Hamster
 
             ~RamFsDirectoryHandle() override = default;
 
-            int rename(const char *new_name) override { return RamFsNodeHandle::rename(new_name); }
-            int remove() override 
-            {
-                // Check if the directory is empty
-                auto *dir_node = get_node();
-                if (!dir_node)
-                    return -1;
-                if (dir_node->children.size() > 0)
-                {
-                    error = ENOTEMPTY;
-                    return -1;
-                }
-
-                return RamFsNodeHandle::remove();
-            }
+            BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
 
             int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
@@ -677,7 +619,6 @@ namespace Hamster
             int get_flags() override { return RamFsNodeHandle::get_flags(); }
             int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
-            char *basename() override { return RamFsNodeHandle::basename(); }
             int set_flags(int flags) override { return RamFsNodeHandle::set_flags(flags); }
             int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
             uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
@@ -792,7 +733,7 @@ namespace Hamster
                     return nullptr;
                 }
 
-                auto *new_node = alloc<RamFsRegularNode>(1, name, mode, 0, 0, dir_node);
+                auto *new_node = alloc<RamFsRegularNode>(1, mode, 0, 0);
                 dir_node->children[name] = new_node;
 
                 return alloc<RamFsRegularHandle>(1, new_node, flags);
@@ -817,8 +758,9 @@ namespace Hamster
                     return nullptr;
                 }
 
-                auto *new_node = alloc<RamFsDirectoryNode>(1, name, mode, 0, 0, dir_node);
+                auto *new_node = alloc<RamFsDirectoryNode>(1, mode, 0, 0);
                 dir_node->children[name] = new_node;
+                new_node->filesystem = dir_node->filesystem;
 
                 return alloc<RamFsDirectoryHandle>(1, new_node, flags);
             }
@@ -842,7 +784,7 @@ namespace Hamster
                     return nullptr;
                 }
 
-                auto *new_node = alloc<RamFsSymlinkNode>(1, name, 0777, 0, 0, dir_node);
+                auto *new_node = alloc<RamFsSymlinkNode>(1, 0777, 0, 0);
                 new_node->target = target;
                 dir_node->children[name] = new_node;
 
@@ -874,11 +816,66 @@ namespace Hamster
                     return nullptr;
                 }
 
-                auto *new_node = alloc<RamFsSpecialNode>(1, name, mode, 0, 0, dir_node);
+                auto *new_node = alloc<RamFsSpecialNode>(1, mode, 0, 0);
                 new_node->device_id = devid;
                 dir_node->children[name] = new_node;
 
                 return alloc<RamFsSpecialHandle>(1, new_node, flags);
+            }
+
+            int link(BaseFile *file, const char *name) override
+            {
+                if (!file)
+                {
+                    error = EINVAL;
+                    return -1;
+                }
+
+                if (!name || strchr(name, '/') != nullptr)
+                {
+                    error = EINVAL;
+                    return -1;
+                }
+
+                if (file->get_filesystem() != this->get_filesystem())
+                {
+                    error = EXDEV;
+                    return -1;
+                }
+
+                RamFsNodeHandle *handle = nullptr;
+                switch(file->type())
+                {
+                case FileType::Regular:
+                    handle = (RamFsRegularHandle*)file;
+                    break;
+                case FileType::Directory:
+                    handle = (RamFsDirectoryHandle*)file;
+                    break;
+                case FileType::Special:
+                    handle = (RamFsSpecialHandle*)file;
+                    break;
+                case FileType::Symlink:
+                    handle = (RamFsSymlinkHandle*)file;
+                    break;
+                default:
+                    // shouldn't get here
+                    error = EBADF;
+                    return -1;
+                }
+
+                assert(handle);
+
+                auto dir_node = get_node();
+                if (!dir_node)
+                    return -1;
+                
+                RamFsNode *target = handle->get_node();
+
+                dir_node->children[name] = target;
+                target->refcount += 1;
+
+                return 0;
             }
 
             int remove(const char *name) override
@@ -912,8 +909,11 @@ namespace Hamster
                 }
 
                 dir_node->children.erase(it);
-
-                dealloc(node);
+                node->refcount -= 1;
+                if (node->refcount == 0)
+                {
+                    dealloc(node);
+                }
                 return 0;
             }
         private:
@@ -937,9 +937,10 @@ namespace Hamster
     class RamFsData
     {
     public:
-        RamFsData()
-            : root(alloc<RamFsDirectoryNode>(1, "/", 0777, 0, 0, nullptr))
+        RamFsData(RamFs *fs)
+            : root(alloc<RamFsDirectoryNode>(1, 0777, 0, 0))
         {
+            root->filesystem = fs;
         }
 
         ~RamFsData()
@@ -951,7 +952,7 @@ namespace Hamster
     };
 
     RamFs::RamFs()
-        : data(alloc<RamFsData>(1))
+        : data(alloc<RamFsData>(1, this))
     {
     }
 

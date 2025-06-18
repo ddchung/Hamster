@@ -64,11 +64,6 @@ void test_filesystem()
     assert(vfs->get_uid(fd) == 1000);
     assert(vfs->get_gid(fd) == 1000);
 
-    // Basename
-    char *name = vfs->basename(fd);
-    assert(strcmp(name, "file.txt") == 0);
-    dealloc<char>(name);
-
     vfs->close(fd);
 
     // 4. Directories, openat, mkfileat, mkdir, mkdirat, list
@@ -122,16 +117,7 @@ void test_filesystem()
     vfs->close(dirfd2);
 
     // 6. Removal
-    fd = vfs->open(path, O_RDONLY);
-    assert(fd >= 0);
-    assert(vfs->remove(fd) == 0);
-    vfs->close(fd);
-
-    // 7. Rename by fd
-    fd = vfs->mkfile(path, O_RDWR | O_CREAT, 0644);
-    assert(fd >= 0);
-    assert(vfs->rename(fd, "renamed.txt") == 0);
-    vfs->close(fd);
+    assert((vfs->remove("/file.txt") == 0));
 
     // Unmount and cleanup
     assert(vfs->unmount("/") == 0);
