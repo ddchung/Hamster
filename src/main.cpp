@@ -83,7 +83,11 @@ public:
 
 int main()
 {
-    Hamster::_init_platform();
+    if (Hamster::_init_platform() != 0)
+    {
+        // Don't log here, as we don't know if log would work
+        return -1;
+    }
 
     Hamster::_log("Testing Platform...\n");
     test_platform();
@@ -96,6 +100,12 @@ int main()
     Hamster::_log("Testing Filesystem...\n");
     test_filesystem();
     Hamster::_log("Done\n");
+
+    if (Hamster::_mount_rootfs() != 0)
+    {
+        Hamster::_log("Failed to mount root filesystem\n");
+        return -1;
+    }
 
     // create /dev and /dev/console
 

@@ -756,168 +756,31 @@ namespace Hamster
         return data->fd_manager.remove_fd(fd);
     }
 
-    int VFS::rename(int fd, const char *new_name)
-    {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
-            return -1;
-
-        int ret = file->rename(new_name);
-        return ret;
-    }
-
     int VFS::rename(const char *old_path, const char *new_path)
     {
-        if (!old_path || !new_path)
+        error = ENOTSUP;
+        // TODO
+        return -1;
+    }
+
+    int VFS::remove(const char *path)
+    {
+        const char *last = strrchr(path, '/');
+        if (!last)
         {
             error = EINVAL;
             return -1;
         }
 
-        BaseFile *old_file = data->mounts.lopen(old_path, O_RDONLY, 0);
-        if (!old_file)
+        String dir_name{path, last - path};
+        BaseDirectory *dir = (BaseDirectory*)data->mounts.lopen(dir_name.c_str(), O_WRONLY, 0);
+
+        if (!dir)
             return -1;
 
-        // Ensure that the new path does not exist
-        BaseFile *new_file = data->mounts.lopen(new_path, O_WRONLY | O_CREAT | O_EXCL, 0);
-        if (!new_file)
-        {
-            dealloc(old_file);
-            return -1;
-        }
-        new_file->remove();
-        dealloc(new_file);
-        new_file = nullptr;
-
-        switch (old_file->type())
-        {
-        case FileType::Regular:
-        {
-            BaseRegularFile *old_reg_file = (BaseRegularFile *)old_file;
-            BaseRegularFile *new_reg_file =
-                (BaseRegularFile *)data->mounts.lopen(
-                    new_path, O_WRONLY | O_CREAT | O_EXCL,
-                    old_file->get_mode());
-            if (!new_reg_file)
-            {
-                dealloc(old_file);
-                return -1;
-            }
-
-            // Copy contents
-            static constexpr size_t BUF_SIZE = 512;
-            static uint8_t buf[BUF_SIZE];
-            ssize_t bytes_read;
-            while ((bytes_read = old_reg_file->read(buf, BUF_SIZE)) > 0)
-            {
-                new_reg_file->write(buf, bytes_read);
-            }
-
-            if (bytes_read >= 0)
-                old_file->remove();
-            dealloc(old_reg_file);
-            dealloc(new_reg_file);
-            return bytes_read >= 0 ? 0 : -1;
-        }
-        case FileType::Symlink:
-        {
-            BaseSymlink *old_symlink = (BaseSymlink *)old_file;
-            char *target = old_symlink->get_target();
-
-            if (!target)
-            {
-                dealloc(old_symlink);
-                return -1;
-            }
-
-            int ret = symlink(new_path, target);
-            dealloc(target);
-            if (ret == 0)
-                old_symlink->remove();
-            dealloc(old_symlink);
-            return ret;
-        }
-        case FileType::Special:
-        {
-            BaseSpecialFile *old_special_file = (BaseSpecialFile *)old_file;
-            int dev_id = old_special_file->get_device_id();
-
-            const char *last_slash = strrchr(new_path, '/');
-            if (!last_slash)
-            {
-                dealloc(old_special_file);
-
-                error = ENOENT;
-                return -1;
-            }
-            String new_parent(last_slash, last_slash - new_path);
-            BaseDirectory *new_parent_file = (BaseDirectory *)data->mounts.lopen(new_parent.c_str(), O_RDWR | O_DIRECTORY, 0);
-            if (!new_parent_file)
-            {
-                dealloc(old_special_file);
-
-                error = ENOENT;
-                return -1;
-            }
-
-            BaseSpecialFile *new_special_file = new_parent_file->mksfile(
-                last_slash + 1, O_RDWR, dev_id, old_special_file->get_mode());
-            if (new_special_file)
-            {
-                old_special_file->remove();
-                dealloc(old_special_file);
-                dealloc(new_special_file);
-            }
-            dealloc(new_parent_file);
-            return new_special_file ? 0 : -1;
-        }
-        case FileType::Directory:
-        {
-            // TODO: Recursive move
-            error = ENOTSUP;
-            dealloc(old_file);
-            return -1;
-        }
-        default:
-            dealloc(old_file);
-            error = EINVAL;
-            return -1;
-        }
-    }
-
-    int VFS::remove(int fd)
-    {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
-            return -1;
-
-        int devid = -1;
-
-        if (file->type() == FileType::Special)
-        {
-            devid = ((BaseSpecialFile *)file)->get_device_id();
-            if (devid < 0)
-                return -1;
-        }
-
-        int ret = file->remove();
-        if (ret < 0)
-            return ret;
-
-        if (file->type() == FileType::Special)
-            return data->special_driver_manager.remove_driver(devid);
-        return ret;
-    }
-
-    int VFS::unlink(const char *path)
-    {
-        BaseFile *file = data->mounts.lopen(path, O_WRONLY, 0);
-        if (!file)
-            return -1;
-
-        int ret = file->remove();
-        dealloc(file);
-        return ret;
+        int res = dir->remove(last + 1);
+        dealloc(dir);
+        return res;
     }
 
     int VFS::stat(int fd, struct ::stat *buf)
@@ -998,16 +861,6 @@ namespace Hamster
             return -1;
 
         int ret = file->chown(uid, gid);
-        return ret;
-    }
-
-    char *VFS::basename(int fd)
-    {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
-            return nullptr;
-
-        char *ret = file->basename();
         return ret;
     }
 
