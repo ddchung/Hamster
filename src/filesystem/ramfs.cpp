@@ -734,6 +734,7 @@ namespace Hamster
                 }
 
                 auto *new_node = alloc<RamFsRegularNode>(1, mode, 0, 0);
+                new_node->filesystem = dir_node->filesystem;
                 dir_node->children[name] = new_node;
 
                 return alloc<RamFsRegularHandle>(1, new_node, flags);
@@ -785,6 +786,7 @@ namespace Hamster
                 }
 
                 auto *new_node = alloc<RamFsSymlinkNode>(1, 0777, 0, 0);
+                new_node->filesystem = dir_node->filesystem;
                 new_node->target = target;
                 dir_node->children[name] = new_node;
 
@@ -817,6 +819,7 @@ namespace Hamster
                 }
 
                 auto *new_node = alloc<RamFsSpecialNode>(1, mode, 0, 0);
+                new_node->filesystem = dir_node->filesystem;
                 new_node->device_id = devid;
                 dir_node->children[name] = new_node;
 
@@ -937,10 +940,9 @@ namespace Hamster
     class RamFsData
     {
     public:
-        RamFsData(RamFs *fs)
+        RamFsData()
             : root(alloc<RamFsDirectoryNode>(1, 0777, 0, 0))
         {
-            root->filesystem = fs;
         }
 
         ~RamFsData()
@@ -952,8 +954,9 @@ namespace Hamster
     };
 
     RamFs::RamFs()
-        : data(alloc<RamFsData>(1, this))
+        : data(alloc<RamFsData>(1))
     {
+        data->root->filesystem = this;
     }
 
     RamFs::~RamFs()
