@@ -76,7 +76,7 @@ namespace Hamster
         return 0;
     }
 
-    int Scheduler::make_process_elf(const char *path)
+    int Scheduler::make_process_elf(const char *path, const char *const *argv, const char *const *envp)
     {
         if (!path)
         {
@@ -96,7 +96,7 @@ namespace Hamster
         process->sid = 0;
         process->exit_code = 0;
 
-        if (process->load_elf(path) < 0)
+        if (process->load_elf(path, argv, envp) < 0)
         {
             dealloc(process);
             error = EIO;

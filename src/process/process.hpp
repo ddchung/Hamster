@@ -26,14 +26,12 @@ namespace Hamster
         /**
          * @brief Load an ELF file into the process
          * @param path The path to the ELF file
-         * @param argv Arguments to pass to the program. Note that an automatic first argument is inserted
-         *      * to the front of the program's argv
+         * @param argv Arguments to pass to the program. Note that by convention, the first argument is
+         *      * the program name
          * @param envp Environment variables to pass to the program
          * @warning This will kill all threads and overwrite the memory space, and create
          *        * a single new thread with the entry point of the ELF file
          * @note If `fds` is empty, it will open `/dev/console` 3 times for stdin, stdout, and stderr
-         * @note An argument that contains the last component of `path` will be automatically added to
-         *     * the front of the program's arguments
          */
         int load_elf(const char *path, const char *const *argv = 0, const char *const *envp = 0);
         

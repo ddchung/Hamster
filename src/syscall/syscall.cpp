@@ -57,8 +57,42 @@ namespace Hamster
             else
             {
                 // Relative path, prepend the current working directory
-                return cwd + '/' + String(path);
+                if (cwd[0] == '/')
+                    return cwd + path;
+                else
+                    return cwd + '/' + path;
             }
+        }
+
+        int read32(MemorySpace &mem_sp, uint32_t addr, uint32_t &out)
+        {
+            if (mem_sp.memcpy(&out, addr, sizeof(uint32_t)) != 0)
+                return -1;
+            return 0;
+        }
+
+        char **get_string_array(MemorySpace &mem_sp, uint32_t addr)
+        {
+            size_t count = 0;
+            uint32_t i;
+            for (uint32_t it = addr; read32(mem_sp, it, i) == 0 && i != 0 ; it += 4)
+                ++count;
+            
+            char **strings = alloc<char*>(count + 1);
+            strings[count] = nullptr;
+            for (size_t it = 0; it < count; ++it)
+            {
+                read32(mem_sp, addr + it * 4, i);
+                char *string = mem_sp.get_string(i);
+                if (!string)
+                {
+                    // if it failed, put empty one
+                    string = alloc<char>(1);
+                    string[0] = '\0';
+                }
+                strings[it] = string;
+            }
+            return strings;
         }
 
         // Buffer for I/O operations
@@ -111,7 +145,21 @@ namespace Hamster
             }
             String resolved_path = resolve_path(process->cwd, path);
             dealloc(path);
-            if (process->load_elf(resolved_path.c_str()) < 0)
+
+            char **argv = get_string_array(process->memory_space, args[1]);
+            char **envp = get_string_array(process->memory_space, args[2]);
+
+            int res = process->load_elf(resolved_path.c_str(), argv, envp);
+
+            for (char **it = argv; *it; ++it)
+                dealloc(*it);
+            dealloc(argv);
+
+            for (char **it = envp; *it; ++it)
+                dealloc(*it);
+            dealloc(envp);
+
+            if (res < 0)
             {
                 thread.set_error_code(error);
                 error = 0;
@@ -206,6 +254,32 @@ namespace Hamster
                 return -1;
             }
             set_return_code(thread, 0); // Return 0 on success
+            return 0;
+        }
+        case SyscallID::RENAME:
+        {
+            char *oldpath = process->memory_space.get_string(args[0]);
+            char *newpath = process->memory_space.get_string(args[1]);
+            if (!oldpath || !newpath)
+            {
+                dealloc(oldpath);
+                dealloc(newpath);
+
+                // segfault because of bad memroy IO
+                thread.signal(SIGSEGV);
+                return -1;
+            }
+
+            String oldpath_res = resolve_path(process->cwd, oldpath);
+            String newpath_res = resolve_path(process->cwd, newpath);
+            dealloc(oldpath);
+            dealloc(newpath);
+            set_return_code(thread, vfs.rename(oldpath_res.c_str(), newpath_res.c_str()));
+            if (Hamster::error != 0)
+            {
+                thread.set_error_code(Hamster::error);
+                return -1;
+            }
             return 0;
         }
         case SyscallID::GETPID:
