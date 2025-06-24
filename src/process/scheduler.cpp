@@ -50,7 +50,8 @@ namespace Hamster
         size_t counter = 0;
         for (auto process : processes)
         {
-            if (!process)
+            // Skip PID 0
+            if (!process && counter > 0)
             {
                 new_pid = counter;
                 break;
