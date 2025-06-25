@@ -230,11 +230,22 @@ namespace Hamster
         virtual FileType type() const override { return FileType::Directory; }
 
         /**
-         * @brief List the files in the directory.
+         * @brief List the files in the directory, starting from this directory's offset
+         * @param count The number of entries to list, by default, it will list all entries
          * @return A newly allocated array of newly allocated strings, or on error, it returns nullptr and sets `error`
          * @note Be sure to free both dimensions
+         * @note It may return an array with less than `count` entries, if there are not enough files in the directory
          */
-        virtual char * const *list() = 0;
+        virtual char * const *list(size_t count = SIZE_MAX) = 0;
+
+        /**
+         * @brief Change the offset of the directory.
+         * @param offset The new offset
+         * @param whence One of SEEK_SET, SEEK_CUR, or SEEK_END
+         * @return The new offset in the directory, or on error return -1 and set `error`
+         * @note Equivelant to POSIX `lseek` on a directory
+         */
+        virtual int64_t seek(int64_t offset, int whence) = 0;
 
         /**
          * @brief Get a file in the directory.

@@ -42,15 +42,15 @@ namespace Hamster
 
         String cwd;
 
-        uint32_t pid;
-        uint32_t ppid;
-        uint32_t pgid;
-        uint32_t sid;
-        uint32_t uid;
-        uint32_t gid;
-        uint32_t euid;
-        uint32_t egid;
+        uint32_t pid = 0;
+        uint32_t ppid = 0;
+        uint32_t pgid = 0;
+        uint32_t sid = 0;
+        uint32_t uid = 0;
+        uint32_t gid = 0;
+        uint32_t euid = 0;
+        uint32_t egid = 0;
 
-        uint8_t exit_code;
+        uint8_t exit_code = 0;
     };
 } // namespace Hamster

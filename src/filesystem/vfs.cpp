@@ -1005,8 +1005,11 @@ namespace Hamster
             }
             return ((BaseBlockDeviceHandle *)handle)->seek(offset, whence);
         }
+        case FileType::Directory:
+            // Seeking in directories changes the offset for list()
+            return ((BaseDirectory *)file)->seek(offset, whence);
         default:
-            error = EISDIR;
+            error = ESPIPE;
             return -1;
         }
     }
@@ -1124,7 +1127,7 @@ namespace Hamster
         return ret;
     }
 
-    char *const *VFS::list(int fd)
+    char *const *VFS::list(int fd, size_t count /* = SIZE_MAX */)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
         if (!file)
@@ -1137,7 +1140,7 @@ namespace Hamster
             return nullptr;
         }
 
-        char *const *ret = ((BaseDirectory *)file)->list();
+        char *const *ret = ((BaseDirectory *)file)->list(count);
         return ret;
     }
 

@@ -25,7 +25,7 @@ namespace Hamster
             virtual FileType type() const = 0;
 
             RamFsNode(int mode, int uid, int gid)
-                : mode(mode), uid(uid), gid(gid), vfs_flags(0), refcount(1)
+                : mode(mode), uid(uid), gid(gid), vfs_flags(0), refcount(1), filesystem(nullptr)
             {
             }
 
@@ -604,7 +604,7 @@ namespace Hamster
         {
         public:
             RamFsDirectoryHandle(RamFsDirectoryNode *node, int flags)
-                : RamFsNodeHandle(node, flags)
+                : RamFsNodeHandle(node, flags), offset(0)
             {
             }
 
@@ -629,26 +629,79 @@ namespace Hamster
                 if (!dir_node)
                     return nullptr;
                 
-                return alloc<RamFsDirectoryHandle>(1, dir_node, flags);
+                RamFsDirectoryHandle *new_handle = alloc<RamFsDirectoryHandle>(1, dir_node, flags);
+                new_handle->offset = offset;
+                return new_handle;
             }
 
-            char * const *list() override
+            char * const *list(size_t count /* = SIZE_MAX */) override
             {
                 auto *dir_node = get_node();
                 if (!dir_node)
                     return nullptr;
-
-                size_t count = dir_node->children.size();
-                char **result = alloc<char *>(count + 1);
-                size_t i = 0;
-                for (const auto &[name, _] : dir_node->children)
+                
+                if ((uint64_t)offset >= dir_node->children.size() || offset < 0)
                 {
-                    result[i] = alloc<char>(name.size() + 1);
-                    strcpy(result[i], name.c_str());
-                    ++i;
+                    error = EINVAL;
+                    return nullptr;
                 }
-                result[i] = nullptr;
-                return result;
+
+                count = std::min(count, dir_node->children.size() - offset);
+
+                auto it = dir_node->children.begin();
+                std::advance(it, offset);
+
+                char **strings = alloc<char *>(count + 1);
+                strings[count] = nullptr; // Null-terminate the array
+
+                for (size_t i = 0; i < count; ++i)
+                {
+                    strings[i] = alloc<char>(it->first.size() + 1);
+                    strcpy(strings[i], it->first.c_str());
+                    ++it;
+                }
+
+                return strings;
+            }
+            
+            int64_t seek(int64_t offset, int whence) override
+            {
+                auto *node = get_node();
+                if (!node)
+                    return -1;
+
+                switch (whence)
+                {
+                case SEEK_SET:
+                    if (offset < 0)
+                    {
+                        error = EINVAL;
+                        return -1;
+                    }
+                    this->offset = offset;
+                    break;
+                case SEEK_CUR:
+                    if (this->offset + offset < 0)
+                    {
+                        error = EINVAL;
+                        return -1;
+                    }
+                    this->offset += offset;
+                    break;
+                case SEEK_END:
+                    if ((int64_t)node->children.size() + offset < 0)
+                    {
+                        error = EINVAL;
+                        return -1;
+                    }
+                    this->offset = node->children.size() + offset;
+                    break;
+                default:
+                    error = EINVAL;
+                    return -1;
+                }
+
+                return this->offset;
             }
 
             BaseFile *get(const char *name, int flags, int mode) override
@@ -920,6 +973,8 @@ namespace Hamster
                 return 0;
             }
         private:
+            int64_t offset;    
+
             RamFsDirectoryNode *get_node()
             {
                 if (!node)

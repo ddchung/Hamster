@@ -192,10 +192,11 @@ namespace Hamster
         /**
          * @brief List the contents of a directory
          * @param fd The file descriptor of the directory to list
+         * @param count The number of entries to list, by default it will list all entries
          * @return A newly allocated array of newly allocated strings
          * @note Be sure to free both the array and the strings within
          */
-        char * const *list(int fd);
+        char * const *list(int fd, size_t count = SIZE_MAX);
 
         /**
          * @brief Open a file relative to a directory
