@@ -758,9 +758,82 @@ namespace Hamster
 
     int VFS::rename(const char *old_path, const char *new_path)
     {
-        error = ENOTSUP;
-        // TODO
-        return -1;
+        if (!old_path || !new_path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        const char *last_old = strrchr(old_path, '/');
+        const char *last_new = strrchr(new_path, '/');
+        const char *old_name, *new_name;
+        BaseDirectory *old_dir, *new_dir;
+        if (last_old)
+        {
+            old_name = last_old + 1;
+            String old_dir_name{old_path, (size_t)(last_old - old_path)};
+            old_dir = (BaseDirectory*)data->mounts.lopen(old_dir_name.c_str(), O_RDONLY | O_DIRECTORY, 0);
+        }
+        else
+        {
+            old_name = old_path;
+            old_dir = (BaseDirectory*)data->mounts.lopen("/", O_RDONLY | O_DIRECTORY, 0);
+        }
+
+        if (last_new)
+        {
+            new_name = last_new + 1;
+            new_dir = (BaseDirectory*)data->mounts.lopen(String{new_path, (size_t)(last_new - new_path)}.c_str(), O_WRONLY | O_DIRECTORY, 0);
+        }
+        else
+        {
+            new_name = new_path;
+            new_dir = (BaseDirectory*)data->mounts.lopen("/", O_WRONLY | O_DIRECTORY, 0);
+        }
+
+        if (!old_dir || !new_dir)
+        {
+            dealloc(old_dir);
+            dealloc(new_dir);
+
+            return -1;
+        }
+
+        assert(old_name && new_name);
+
+        BaseFile *old_file = old_dir->get(old_name, O_RDONLY, 0);
+        if (!old_file)
+        {
+            dealloc(old_dir);
+            dealloc(new_dir);
+            error = ENOENT;
+            return -1;
+        }
+
+        if (old_file->get_filesystem() != new_dir->get_filesystem())
+        {
+            dealloc(old_file);
+            dealloc(old_dir);
+            dealloc(new_dir);
+            error = EXDEV; // Cross-device link
+            return -1;
+        }
+
+        int ret = new_dir->link(old_file, new_name);
+
+        if (ret < 0)
+        {
+            dealloc(old_file);
+            dealloc(old_dir);
+            dealloc(new_dir);
+            return -1;
+        }
+
+        ret = old_dir->remove(old_name);
+        dealloc(old_file);
+        dealloc(old_dir);
+        dealloc(new_dir);
+        return ret;
     }
 
     int VFS::remove(const char *path)
