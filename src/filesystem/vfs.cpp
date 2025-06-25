@@ -772,7 +772,7 @@ namespace Hamster
             return -1;
         }
 
-        String dir_name{path, last - path};
+        String dir_name{path, (size_t)(last - path)};
         BaseDirectory *dir = (BaseDirectory*)data->mounts.lopen(dir_name.c_str(), O_WRONLY, 0);
 
         if (!dir)
