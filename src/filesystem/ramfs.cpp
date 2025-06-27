@@ -321,7 +321,11 @@ namespace Hamster
                 
                 for (uint64_t addr = offset; addr < (uint64_t)offset + size; ++addr)
                 {
-                    buf[addr - offset] = reg_node->data[addr];
+                    if (reg_node->data.read_byte(addr, buf[addr - offset]) < 0)
+                    {
+                        error = EIO;
+                        return -1;
+                    }
                 }
                 offset += size;
                 return size;
@@ -352,7 +356,11 @@ namespace Hamster
                 
                 for (uint64_t addr = offset; addr < (uint64_t)offset + size; ++addr)
                 {
-                    reg_node->data[addr] = buf[addr - offset];
+                    if (reg_node->data.write_byte(addr, buf[addr - offset]) < 0)
+                    {
+                        error = EIO;
+                        return -1;
+                    }
                 }
                 offset += size;
                 reg_node->size = std::max(reg_node->size, offset);

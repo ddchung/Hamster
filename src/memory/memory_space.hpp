@@ -7,11 +7,22 @@
 #include <memory/stl_sequential.hpp>
 #include <cstdint>
 #include <cstddef>
+#include <unistd.h>
 
 namespace Hamster
 {
     class MemorySpace
     {
+        // memory mapping
+        struct MmapEntry
+        {
+            uint64_t addr;
+            uint64_t size;
+            uint64_t offset;
+            int fd; // File descriptor, -1 if anonymous mapping
+            uint8_t perms : 3; //0brwx
+            bool shared : 1;
+        };
     public:
         MemorySpace() = default;
         ~MemorySpace() = default;
@@ -19,13 +30,22 @@ namespace Hamster
         MemorySpace &operator=(const MemorySpace &);
         MemorySpace(MemorySpace &&);
         MemorySpace &operator=(MemorySpace &&);
+
         /**
-         * @brief Get a reference to a byte at the given address.
-         * @return A reference to the byte at the given address, or a reference to a dummy on error
-         * @warning This is NOT a reference to a byte in an array, so do not touch any neighboring bytes
-         * @note Also see: Page::get_dummy_byte()
+         * @brief Write to a given byte
+         * @param addr The address to write to
+         * @param value The value to write
+         * @return 0 on success, -1 on error
          */
-        uint8_t &operator[](uint64_t addr);
+        int write_byte(uint64_t addr, uint8_t value);
+
+        /**
+         * @brief Read a byte from the given address
+         * @param addr The address to read from
+         * @param out The output variable to store the read byte
+         * @return 0 on success, -1 on error
+         */
+        int read_byte(uint64_t addr, uint8_t &out);
 
         /**
          * @brief Copy a block of memory from the given address to the given buffer.
@@ -96,7 +116,16 @@ namespace Hamster
          * @return 0 on success, -1 on error
          * @note This will change the permissions for all pages that the range occupies
          */
-        int set_permissions(uint64_t addr, uint8_t mode, size_t size = 0);
+        int set_permissions(uint64_t addr, uint8_t mode, size_t size);
+
+        /**
+         * @brief Set the permissions for a single page
+         * @param addr The address of the page
+         * @param mode A bitmask of permissions 0b00000rwx
+         * @return 0 on success, -1 on error
+         * @note This will change the permissions for the page that the address belongs to
+         */
+        int set_permissions(uint64_t addr, uint8_t mode);
 
         /**
          * @brief Check if a page range has at least the given permissions
@@ -105,7 +134,16 @@ namespace Hamster
          * @param size The size of the range, in bytes
          * @return true if all the pages in the range have at least the given permissions, false otherwise
          */
-        bool check_permissions(uint64_t addr, uint8_t req_perms, size_t size = 0);
+        bool check_permissions(uint64_t addr, uint8_t req_perms, size_t size);
+
+        /**
+         * @brief Check if a single page has at least the given permissions
+         * @param addr The address of the page
+         * @param req_perms The required permissions, in a bitmask 0b00000rwx
+         * @return true if the page has at least the given permissions, false otherwise
+         * @note This will return true if the page is not allocated, as it has the default permissions of 0b00000rwx
+         */
+        bool check_permissions(uint64_t addr, uint8_t req_perms);
 
         /**
          * @brief Swap out all the currently swapped in pages
@@ -113,9 +151,33 @@ namespace Hamster
          */
         int swap_out_all();
 
+        /**
+         * @brief Map a file to a region of memory
+         * @param addr The starting address
+         * @param size The size of the region
+         * @param perms The permissions of the region. bitmask of 0brwx
+         * @param flags The type of mapping. One of MAP_PRIVATE MAP_SHARED MAP_ANONYMOUS
+         * @param fd The file descriptor to map. It must support read/write/seek
+         * @param offset The offset in the file
+         * @return 0 on success, -1 on error
+         * @note This takes ownership of `fd`
+         * @note This will fail on overlapping map
+         */
+        int mmap(uint64_t addr, uint64_t size, uint8_t perms, int flags, int fd, uint64_t offset);
+        
+        /**
+         * @brief Unmap a region of memory
+         * @param addr The starting address of the region
+         * @param size The size of the region
+         * @return 0 on success, -1 on error
+         * @note This allows partial and multiple unmaps, and reigons not mmap'd are skipped
+         */
+        int munmap(uint64_t addr, uint64_t size);
+
     private:
         UnorderedMap<uint64_t, Page> pages;
         List<uint64_t> swapped_on_pages;
+        Vector<MmapEntry> mappings;
 
         int ensure_page(uint64_t addr);
     };

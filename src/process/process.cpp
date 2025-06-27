@@ -130,7 +130,7 @@ namespace Hamster
         sp -= random_data_size;
 
         for (size_t i = 0; i < random_data_size; ++i)
-            memory_space[sp + i] = rand() & 0xFF;
+            memory_space.write_byte(sp + i, (uint8_t)(rand() % 256));
 
         uint64_t random_data_loc = sp;
 
