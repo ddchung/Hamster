@@ -3,7 +3,6 @@
 #pragma once
 
 #include <memory/stl_sequential.hpp>
-#include <functional>
 #include <cstddef>
 #include <cstdint>
 
@@ -61,14 +60,14 @@ namespace Hamster
          *     * and instead of resuming when this callback is done, it will continue pausing with the previous
          *     * callback. Note that to unpause from the callback, you call `resume()` on the thread.
          */
-        void pause(const std::function<void(Thread &)> &callback);
+        void pause(void (*callback)(Thread&));
 
         /**
          * @brief Get the current pause callback, if any
          * @return The current pause callback, or nullptr if there is none
          * @note This will not remove the callback, just return it
          */
-        const std::function<void(Thread &)> &get_current_pause_callback() const;
+        void (*get_current_pause_callback())(Thread&) const;
 
         /**
          * @brief Check if the thread is paused
@@ -92,7 +91,7 @@ namespace Hamster
     private:
         ThreadState state;
         Process *process;
-        Deque<std::function<void(Thread &)>> pause_callbacks;
+        Deque<void (*)(Thread&)> pause_callbacks;
         size_t id;
 
         uint32_t x[32];
