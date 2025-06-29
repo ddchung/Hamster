@@ -110,8 +110,11 @@ int main()
     // create /dev and /dev/console
 
     Hamster::vfs.mkdir("/dev", 0755);
+    Hamster::vfs.mkdir("/tmp", 0755);
     auto ramfs = Hamster::alloc<Hamster::RamFs>();
     Hamster::vfs.mount("/dev", ramfs) == 0 ? (void)0 : Hamster::dealloc(ramfs);
+    ramfs = Hamster::alloc<Hamster::RamFs>();
+    Hamster::vfs.mount("/tmp", ramfs) == 0 ? (void)0 : Hamster::dealloc(ramfs);
     auto console_device = Hamster::alloc<ConsoleCharDevice>();
     Hamster::vfs.mksfile("/dev/console", console_device, 0666) == 0 ? (void)0 : Hamster::dealloc(console_device);
     
