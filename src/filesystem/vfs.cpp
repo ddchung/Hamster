@@ -121,7 +121,11 @@ namespace Hamster
             BaseFile *lopen(const char *path, int flags, int mode, BaseDirectory *dir = nullptr)
             {
                 if (!path)
+                {
+                    error = EINVAL;
+                    dealloc(dir);
                     return nullptr;
+                }
 
                 if (!dir)
                 {
@@ -216,9 +220,22 @@ namespace Hamster
                             return nullptr;
                         }
 
-                        BaseFile *f = lopen(target, flags, mode);
+                        BaseDirectory *dir = (BaseDirectory*)lopen(target, (flags & ~O_CREAT & ~O_EXCL) | O_DIRECTORY, mode);
                         dealloc(target);
-                        return f;
+
+                        if (!dir)
+                        {
+                            error = ENOENT;
+                            return nullptr;
+                        }
+
+                        if (dir->get_vfs_flags() & FLAG_MOUNTPOINT)
+                        {
+                            dir = resolve_mount(dir);
+                        }
+
+                        BaseFile *file = lopen(next, flags, mode, dir);
+                        return file;
                     }
                     case FileType::Directory:
                     {
@@ -1267,22 +1284,27 @@ namespace Hamster
         assert(cloned_file->type() == FileType::Directory);
 
         const char *last = strrchr(path, '/');
-        if (!last)
+        if (last)
         {
-            error = EINVAL;
-            return -1;
+            String parent_path(path, last - path);
+
+            BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0, (BaseDirectory *)cloned_file);
+            if (!parent)
+                return -1;
+            assert(parent->type() == FileType::Directory);
+            auto sym = ((BaseDirectory *)parent)->mksym(last + 1, target);
+            dealloc(parent);
+            dealloc(sym);
+            return sym == nullptr ? -1 : 0;
         }
-
-        String parent_path(path, last - path);
-
-        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0, (BaseDirectory *)cloned_file);
-        if (!parent)
-            return -1;
-        assert(parent->type() == FileType::Directory);
-        auto sym = ((BaseDirectory *)parent)->mksym(last + 1, target);
-        dealloc(parent);
-        dealloc(sym);
-        return sym == nullptr ? -1 : 0;
+        else
+        {
+            // No parent, create a symlink in the directory itself
+            auto sym = ((BaseDirectory *)cloned_file)->mksym(path, target);
+            dealloc(cloned_file);
+            dealloc(sym);
+            return sym == nullptr ? -1 : 0;
+        }
     }
 
     int VFS::mksfile(const char *path, int flags, BaseSpecialDriver *driver, int mode)
@@ -1391,14 +1413,11 @@ namespace Hamster
         if (!sfile)
         {
             data->special_driver_manager.remove_driver(driver_id);
-            dealloc(cloned_file);
             return -1;
         }
 
         // Create the handle
         int fd = data->fd_manager.add_fd(sfile);
-
-        dealloc(cloned_file);
 
         if (fd < 0)
         {
