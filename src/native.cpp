@@ -48,7 +48,7 @@ namespace
             snprintf(full_path, path_len, "%s/%s", native_dir, entry->d_name);
 
             struct stat st;
-            if (stat(full_path, &st) == 0)
+            if (lstat(full_path, &st) == 0)
             {
                 if (S_ISREG(st.st_mode))
                 {
