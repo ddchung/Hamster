@@ -109,11 +109,8 @@ namespace Hamster
         {
         case SyscallID::EXIT:
             printf("Process %u exiting with code %d\n", process->pid, args[0]);
-            process->exit_code = args[0];
-            for (auto &t : process->threads)
-            {
-                t.set_state(ThreadState::ENDED);
-            }
+            process->exit_status = args[0] & 0xFF;
+            process->threads.clear(); 
             return 0;
         case SyscallID::CLOSE:
             fd = deref_fildes(args[0], process);

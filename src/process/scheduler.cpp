@@ -95,7 +95,7 @@ namespace Hamster
         process->ppid = 1;
         process->pgid = 0;
         process->sid = 0;
-        process->exit_code = 0;
+        process->exit_status = 0;
 
         if (process->load_elf(path, argv, envp) < 0)
         {

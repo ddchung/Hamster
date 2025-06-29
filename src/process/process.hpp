@@ -51,6 +51,6 @@ namespace Hamster
         uint32_t euid = 0;
         uint32_t egid = 0;
 
-        uint8_t exit_code = 0;
+        int exit_status = 0;
     };
 } // namespace Hamster
