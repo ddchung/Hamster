@@ -64,6 +64,15 @@ namespace Hamster
          */
         uint32_t get_exit_status(uint32_t ppid, int &exit_status);
 
+        /**
+         * @brief Make all processes with a certain PPID adopted by PID 1 (init)
+         * @param ppid The parent process ID to adopt processes from
+         * @return 0 on success, or -1 on error
+         * @note This will set the PPID of all processes with the given PPID to 1 (init)
+         * @note This is used when a process exits, and its children need to be adopted
+         */
+        int adopt_processes(uint32_t ppid);
+
         // Warning: don't free the processes!
         const List<Process *> &get_processes() const { return processes; }
     private:

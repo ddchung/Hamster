@@ -123,12 +123,8 @@ int main()
     // Run the program
     while (true)
     {
-        if (Hamster::scheduler.tick() < 0)
-        {
-            Hamster::_log("Scheduler tick failed\n");
-            return 1;
-        }
-
+        Hamster::scheduler.tick();
+        
         // Check if there are any processes left
         if (Hamster::scheduler.get_processes().empty())
         {

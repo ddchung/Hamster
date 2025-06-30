@@ -174,6 +174,19 @@ namespace Hamster
         return 0;
     }
 
+    int Scheduler::adopt_processes(uint32_t ppid)
+    {
+        for (auto &process : processes)
+        {
+            if (!process || process->ppid != ppid)
+                continue; // Skip processes that don't match the parent PID
+
+            process->ppid = 1; // Adopt by PID 1 (init)
+        }
+
+        return 0; // Success
+    }
+
     Process *Scheduler::get_process(uint32_t pid) const
     {
         if (pid >= processes.size())
