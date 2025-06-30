@@ -4,10 +4,13 @@
 #include <filesystem/vfs.hpp>
 #include <elf/elf_loader.hpp>
 #include <memory/stl_sequential.hpp>
+#include <memory/stl_map.hpp>
+#include <memory/allocator.hpp>
 #include <errno/errno.h>
 #include <fcntl.h>
 #include <elf.h>
 #include <string.h>
+#include <cassert>
 
 namespace Hamster
 {
@@ -185,15 +188,6 @@ namespace Hamster
         t.get_regs()[2] = sp;
         t.get_regs()[1] = 0; // Set return address to 0 (no return)
 
-        if (fds.empty())
-        {
-            for (int i = 0; i < 3; ++i)
-            {
-                int console_fd = vfs.open("/dev/console", O_RDWR);
-                fds.push_back({console_fd, 0}); // Add stdin, stdout, stderr
-            }
-        }
-
         return 0;
     }
 
@@ -206,6 +200,15 @@ namespace Hamster
         for (Thread &thread : threads)
         {
             thread.set_process(this);
+        }
+
+        // Increment file descriptor reference counts
+        for (const auto &[fd, _] : fds)
+        {
+            if (fd < 0)
+                continue; // Skip invalid file descriptors
+            
+            fd_refcount[fd]++;
         }
     }
 
@@ -235,6 +238,15 @@ namespace Hamster
             thread.set_process(this);
         }
 
+        // Increment file descriptor reference counts
+        for (const auto &[fd, _] : fds)
+        {
+            if (fd < 0)
+                continue; // Skip invalid file descriptors
+            
+            fd_refcount[fd]++;
+        }
+
         return *this;
     }
 
@@ -242,8 +254,16 @@ namespace Hamster
     {
         for (auto [fd, _] : fds)
         {
-            if (fd != -1)
+            if (fd < 0)
+                continue; // Skip invalid file descriptors
+            
+            auto it = fd_refcount.find(fd);
+            assert(it != fd_refcount.end());
+            if (--it->second == 0)
+            {
                 vfs.close(fd);
+                fd_refcount.erase(it);
+            }
         }
         fds.clear();
     }

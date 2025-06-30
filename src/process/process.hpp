@@ -53,4 +53,6 @@ namespace Hamster
 
         int exit_status = 0;
     };
+
+    extern UnorderedMap<int, unsigned int> fd_refcount;
 } // namespace Hamster

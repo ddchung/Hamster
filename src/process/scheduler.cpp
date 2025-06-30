@@ -92,7 +92,7 @@ namespace Hamster
         process->gid = 0;
         process->euid = 0;
         process->egid = 0;
-        process->ppid = 1;
+        process->ppid = 0;
         process->pgid = 0;
         process->sid = 0;
         process->exit_status = 0;
@@ -123,10 +123,7 @@ namespace Hamster
             if (!process)
                 continue; // Skip null processes
             else if (process->threads.empty())
-            {
-                dealloc(process);
-                process = nullptr;
-            }
+                continue; // Skip ended processes
             else
             {
                 // Tick each thread in the process
@@ -135,6 +132,7 @@ namespace Hamster
                         return true; // Remove ended threads
                     if (thread.is_paused())
                     {
+                        ++ticked_count;
                         thread.get_current_pause_callback()(thread);
                         return false; // Keep paused threads
                     }
@@ -145,6 +143,35 @@ namespace Hamster
             }
         }
         return ticked_count; // Return the number of threads that were ticked
+    }
+
+    uint32_t Scheduler::get_exit_status(uint32_t ppid, int &exit_status)
+    {
+        bool found = false;
+        for (auto it = processes.begin(); it != processes.end(); ++it)
+        {
+            Process *process = *it;
+            if (!process || process->ppid != ppid)
+                continue; // Skip processes that don't match the parent PID
+
+            found = true;
+
+            if (!process->threads.empty())
+            {
+                continue; // try to find an ended child
+            }
+
+            exit_status = process->exit_status; // Get the exit status
+
+            uint32_t pid = process->pid; // Get the PID
+            dealloc(process); // Deallocate the process
+            *it = nullptr;
+
+            return pid;
+        }
+
+        error = found ? EBUSY : ECHILD;
+        return 0;
     }
 
     Process *Scheduler::get_process(uint32_t pid) const

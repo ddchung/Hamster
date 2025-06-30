@@ -54,6 +54,16 @@ namespace Hamster
          */
         Process *get_process(uint32_t pid) const;
 
+        /**
+         * @brief Get the exit status of a process, and remove it from the scheduler
+         * @param ppid The parent process ID of the process to get the exit status of
+         * @param exit_status The exit status of the process
+         * @return The PID of the process on success, or 0 on error
+         * @note This will also remove the process from the scheduler, but only if it has exited
+         * @note If the process is still running, it will return 0 and set `error` to `EBUSY`
+         */
+        uint32_t get_exit_status(uint32_t ppid, int &exit_status);
+
         // Warning: don't free the processes!
         const List<Process *> &get_processes() const { return processes; }
     private:

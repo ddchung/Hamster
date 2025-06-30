@@ -75,10 +75,10 @@ namespace Hamster
         {
             size_t count = 0;
             uint32_t i;
-            for (uint32_t it = addr; read32(mem_sp, it, i) == 0 && i != 0 ; it += 4)
+            for (uint32_t it = addr; read32(mem_sp, it, i) == 0 && i != 0; it += 4)
                 ++count;
-            
-            char **strings = alloc<char*>(count + 1);
+
+            char **strings = alloc<char *>(count + 1);
             strings[count] = nullptr;
             for (size_t it = 0; it < count; ++it)
             {
@@ -110,9 +110,10 @@ namespace Hamster
         case SyscallID::EXIT:
             printf("Process %u exiting with code %d\n", process->pid, args[0]);
             process->exit_status = args[0] & 0xFF;
-            process->threads.clear(); 
+            process->threads.clear();
             return 0;
         case SyscallID::CLOSE:
+        {
             fd = deref_fildes(args[0], process);
             if (fd < 0)
             {
@@ -120,6 +121,26 @@ namespace Hamster
                 set_return_code(thread, -1);
                 return -1; // Invalid file descriptor
             }
+
+            auto it = fd_refcount.find(fd);
+            assert(it != fd_refcount.end());
+            if (it->second == 0)
+            {
+                thread.set_error_code(EBADF);
+                set_return_code(thread, -1);
+                return -1; // File descriptor not found
+            }
+            process->fds[args[0]].fd = -1; // Mark the fd as closed
+
+            if (--it->second > 0)
+            {
+                // Still has references, just return
+                set_return_code(thread, 0);
+                return 0;
+            }
+
+            fd_refcount.erase(it);
+
             if (vfs.close(fd) != 0)
             {
                 thread.set_error_code(error);
@@ -127,9 +148,9 @@ namespace Hamster
                 set_return_code(thread, -1);
                 return -1;
             }
-            process->fds[args[0]].fd = -1; // Mark the fd as closed
             set_return_code(thread, 0);    // Return 0 on success
             return 0;
+        }
         case SyscallID::EXECVE:
         {
             char *path = process->memory_space.get_string(args[0]);
@@ -166,8 +187,15 @@ namespace Hamster
             // Close all FD's marked CLOEXEC
             for (auto &[fd, flags] : process->fds)
             {
-                if (flags & FD_CLOEXEC)
+                if (flags & FD_CLOEXEC && fd >= 0)
                 {
+                    auto it = fd_refcount.find(fd);
+                    assert(it != fd_refcount.end());
+                    if (--it->second > 0)
+                    {
+                        // Still has references, just return
+                        continue;
+                    }
                     if (vfs.close(fd) != 0)
                     {
                         thread.set_error_code(error);
@@ -175,6 +203,7 @@ namespace Hamster
                         set_return_code(thread, -1);
                         return -1;
                     }
+                    fd_refcount.erase(it);
                     fd = -1;
                 }
             }
@@ -439,6 +468,7 @@ namespace Hamster
                 set_return_code(thread, -1);
                 return -1;
             }
+            fd_refcount[fd] = 1;
             // Place in first available slot in fds
             for (size_t i = 0; i < process->fds.size(); ++i)
             {
@@ -487,44 +517,38 @@ namespace Hamster
         }
         case SyscallID::WAIT:
         {
-            uint32_t pid = process->pid;
-            uint32_t stat_loc = args[0];
-            // Block until a child process exits
-            thread.pause([pid, stat_loc](Thread &t)
+            thread.pause([](Thread &t)
                          {
-                // Check if a child process has exited
-                for (Process *child : scheduler.get_processes())
+                Process *p = t.get_process();
+                uint32_t stat_loc = t.get_regs()[10]; // a0
+
+                int status = 0;
+
+                uint32_t pid = scheduler.get_exit_status(p->pid, status);
+
+                if (pid == 0)
                 {
-                    if (child->ppid != pid)
-                        continue; // Not a child process
-                    int status = 0;
-                    bool running = false;
-                    for (Thread &child_thread : child->threads)
+                    // fail
+                    if (error != EBUSY)
                     {
-                        // Check for signals
-                        if (child_thread.get_pending_signal() &&
-                            (1 <<( (child_thread.get_pending_signal() - 1))) &
-                            (child_thread.get_signal_mask() & ~SIGKILL & ~SIGSTOP))
-                        {
-                            status |= child_thread.get_pending_signal() & 0xFF;
-                        }
-                        if (child_thread.get_state() != ThreadState::ENDED)
-                        {
-                            running = true; // Child process is still running
-                        }
-                    }
-                    if (!running)
-                    {
-                        status |= child->exit_code << 8; // Set exit code
+                        t.set_error_code(error);
+                        error = 0;
+                        set_return_code(t, -1);
+                        t.resume();
+                        return;
                     }
 
-                    if (status != 0)
-                    {
-                        set_return_code(t, child->pid);
-                        t.get_process()->memory_space.memcpy(stat_loc, &status, sizeof(status));
-                        t.resume();
-                    }
-                } });
+                    // busy, continue waiting
+                    error = 0;
+                    return;
+                }
+
+                uint32_t stat32 = status & 0xFFFFFFFF; // Mask to 32 bits
+
+                p->memory_space.memcpy(stat_loc, &stat32, sizeof(uint32_t));
+
+                set_return_code(t, pid); // Return the PID of the waited process
+                t.resume(); });
             return 0;
         }
         case SyscallID::WRITE:

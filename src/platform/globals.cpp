@@ -23,5 +23,6 @@ namespace Hamster
     PageManager page_manager;
     VFS vfs;
     Scheduler scheduler;
+    UnorderedMap<int, unsigned int> fd_refcount;
 } // namespace Hamster
 

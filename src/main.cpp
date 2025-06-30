@@ -118,15 +118,21 @@ int main()
     auto console_device = Hamster::alloc<ConsoleCharDevice>();
     Hamster::vfs.mksfile("/dev/console", console_device, 0666) == 0 ? (void)0 : Hamster::dealloc(console_device);
     
-    const char *progname[] {"program", nullptr};
-    Hamster::scheduler.make_process_elf("/a.out", progname);
+    Hamster::scheduler.make_process_elf("/usr/bin/init");
 
     // Run the program
     while (true)
     {
-        if (Hamster::scheduler.tick() == 0)
+        if (Hamster::scheduler.tick() < 0)
         {
-            // All processes have finished
+            Hamster::_log("Scheduler tick failed\n");
+            return 1;
+        }
+
+        // Check if there are any processes left
+        if (Hamster::scheduler.get_processes().empty())
+        {
+            Hamster::_log("No more processes left, exiting...\n");
             break;
         }
     }
