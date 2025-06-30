@@ -508,6 +508,16 @@ namespace Hamster
             {
                 for (auto &fd : fds)
                 {
+                    if (fd.file == nullptr)
+                        continue;
+                    if (fd.file->type() == FileType::Special)
+                    {
+                        // Clean up special file handles
+                        BaseSpecialFile *sp_file = (BaseSpecialFile *)fd.file;
+                        BaseSpecialDriverHandle *handle = sp_file->get_handle();
+                        dealloc(handle);
+                        sp_file->set_handle(nullptr);
+                    }
                     dealloc(fd.file);
                     fd.file = nullptr;
                 }
