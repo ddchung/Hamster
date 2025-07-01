@@ -108,7 +108,6 @@ namespace Hamster
         switch (get_syscall_num(thread))
         {
         case SyscallID::EXIT:
-            printf("Process %u exiting with code %d\n", process->pid, args[0]);
             scheduler.adopt_processes(process->pid); // Adopt any children
             process->exit_status = args[0] & 0xFF;
             process->threads.clear();

@@ -426,7 +426,6 @@ namespace Hamster
 
     void Thread::signal(int signal)
     {
-        printf("Process %u Thread %zu recieved signal %d at PC 0x%08x\n", process->pid, id, signal, pc);
         pending_signal = signal;
     }
 
