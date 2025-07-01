@@ -654,7 +654,7 @@ namespace Hamster
                     return nullptr;
                 }
 
-                count = std::min(count, dir_node->children.size() - offset);
+                count = std::min((int64_t)count, (int64_t)dir_node->children.size() - offset);
 
                 auto it = dir_node->children.begin();
                 std::advance(it, offset);

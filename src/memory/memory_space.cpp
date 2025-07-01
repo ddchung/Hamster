@@ -8,7 +8,6 @@
 #include <errno/errno.h>
 #include <cstdint>
 #include <cassert>
-#include <sys/mman.h>
 
 
 namespace Hamster

@@ -169,10 +169,14 @@ namespace Hamster
             sys_flags |= Sys_O_APPEND;
         if (posix_flags & O_NONBLOCK)
             sys_flags |= Sys_O_NONBLOCK;
+#ifdef O_DSYNC
         if (posix_flags & O_DSYNC)
             sys_flags |= Sys_O_DSYNC;
+#endif
+#ifdef O_SYNC
         if (posix_flags & O_SYNC)
             sys_flags |= Sys_O_SYNC;
+#endif
 #ifdef O_RSYNC
         if (posix_flags & O_RSYNC)
             sys_flags |= Sys_O_RSYNC;
@@ -229,10 +233,14 @@ namespace Hamster
             posix_flags |= O_APPEND;
         if (sys_flags & Sys_O_NONBLOCK)
             posix_flags |= O_NONBLOCK;
+#ifdef O_DSYNC
         if (sys_flags & Sys_O_DSYNC)
             posix_flags |= O_DSYNC;
+#endif
+#ifdef O_SYNC
         if (sys_flags & Sys_O_SYNC)
             posix_flags |= O_SYNC;
+#endif
 #ifdef O_RSYNC
         if (sys_flags & Sys_O_RSYNC)
             posix_flags |= O_RSYNC;
