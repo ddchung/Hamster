@@ -120,6 +120,9 @@ int main()
     
     Hamster::scheduler.make_process_elf("/usr/bin/init");
 
+    Hamster::_log("Starting userspace...\n");
+    Hamster::_log("========== [ BEGIN USERSPACE OUTPUT ] ==========\n");
+
     // Run the program
     while (true)
     {
@@ -138,6 +141,7 @@ int main()
 
         if (!has_processes)
         {
+            Hamster::_log("\n=========== [ END USERSPACE OUTPUT ] ===========\n");
             Hamster::_log("No more processes left, exiting...\n");
             break; // Exit the loop if no processes are left
         }
