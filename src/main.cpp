@@ -124,12 +124,22 @@ int main()
     while (true)
     {
         Hamster::scheduler.tick();
-        
+
         // Check if there are any processes left
-        if (Hamster::scheduler.get_processes().empty())
+        bool has_processes = false;
+        for (const auto &process : Hamster::scheduler.get_processes())
+        {
+            if (process && !process->threads.empty())
+            {
+                has_processes = true;
+                break;
+            }
+        }
+
+        if (!has_processes)
         {
             Hamster::_log("No more processes left, exiting...\n");
-            break;
+            break; // Exit the loop if no processes are left
         }
     }
 }
