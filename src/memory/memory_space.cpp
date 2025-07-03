@@ -38,6 +38,21 @@ namespace Hamster
         swapped_on_pages = other.swapped_on_pages; // Copy the list of swapped pages
     }
 
+    MemorySpace::~MemorySpace()
+    {
+        // Clear all pages
+        pages.clear();
+        swapped_on_pages.clear();
+
+        // Close all memory-mapped files
+        for (const auto &entry : mappings)
+        {
+            if (entry.fd < 0)
+                continue; // Skip anonymous mappings
+            vfs.close(entry.fd);
+        }
+    }
+
     MemorySpace &MemorySpace::operator=(const MemorySpace &other)
     {
         if (this != &other)
@@ -499,26 +514,65 @@ namespace Hamster
 
     int MemorySpace::munmap(uint64_t addr, uint64_t size)
     {
-        // Find the mapping
-        size_t index = 0;
-        for (; index < mappings.size(); ++index)
+        for (auto it = mappings.begin(); it != mappings.end(); ++it)
         {
-            const auto &entry = mappings[index];
-            if (addr < entry.addr + entry.size && entry.addr < addr + size)
+            MmapEntry &mapping = *it;
+            // Check if it overlaps
+            if (addr < mapping.addr + mapping.size && mapping.addr < addr + size)
             {
-                break; // Found an overlapping mapping
+                // Unmap the overlapping region
+
+                uint64_t start_off = mapping.addr < addr ? addr - mapping.addr : 0;
+
+                // reverse offset
+                uint64_t r_end_off = mapping.addr + mapping.size > addr + size ? 
+                    mapping.addr + mapping.size - (addr + size) : 0;
+
+                if (start_off == 0 && r_end_off == 0)
+                {
+                    // Unmap the whole mapping
+                    if (mapping.fd >= 0)
+                    {
+                        vfs.close(mapping.fd);
+                    }
+                    
+                    it = mappings.erase(it);
+                }
+                else if (start_off > 0 && r_end_off == 0)
+                {
+                    // Unmap the end of the mapping
+                    mapping.size = start_off;
+                }
+                else if (start_off == 0 && r_end_off > 0)
+                {
+                    // Unmap the start of the mapping
+                    mapping.addr = mapping.addr + mapping.size - r_end_off;
+                    mapping.size = r_end_off;
+                    mapping.offset = mapping.offset + mapping.size - r_end_off;
+                }
+                else
+                {
+                    // Unmap the middle of the mapping
+                    MmapEntry new_mapping;
+
+                    // new_mapping is the higher segment (addresses bigger)
+
+                    new_mapping.addr = mapping.addr + mapping.size - r_end_off;
+                    new_mapping.size = r_end_off;
+                    new_mapping.offset = mapping.offset + mapping.size - r_end_off;
+                    new_mapping.fd = vfs.dup(mapping.fd);
+                    new_mapping.shared = mapping.shared;
+                    new_mapping.perms = mapping.perms;
+
+                    mapping.size = start_off;
+
+                    it = mappings.insert(it, new_mapping);
+                    it += 1; // `it` pointed to the newly inserted entry, which was inserted
+                    // before the current one, so we need to increment it to point to the current one again
+                }
             }
         }
 
-        if (index == mappings.size())
-        {
-            error = ENOENT;
-            return -1; // No overlapping mapping found
-        }
-
-        // remove the entry
-
-        mappings.erase(mappings.begin() + index);
         return 0;
     }
 } // namespace Hamster

@@ -37,7 +37,7 @@ namespace Hamster
         };
     public:
         MemorySpace() = default;
-        ~MemorySpace() = default;
+        ~MemorySpace();
         MemorySpace(const MemorySpace &);
         MemorySpace &operator=(const MemorySpace &);
         MemorySpace(MemorySpace &&);

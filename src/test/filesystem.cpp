@@ -4,6 +4,7 @@
 #include <filesystem/ramfs.hpp>
 #include <memory/allocator.hpp>
 #include <memory/stl_sequential.hpp>
+#include <memory/memory_space.hpp>
 #include <errno/errno.h>
 #include <cassert>
 #include <cstring>
@@ -215,4 +216,54 @@ void test_filesystem()
     assert(vfs->unmount("/") == 0);
 
     dealloc(vfs);
+
+    vfs = &Hamster::vfs; // Use global VFS instance
+    fs = alloc<RamFs>(1);
+    assert(vfs->mount("/", fs) == 0);
+
+    // Test memory mapping
+
+    int mmap_fd = vfs->open("/file.txt", O_RDWR | O_CREAT, 0644);
+    assert(mmap_fd >= 0);
+    
+
+    MemorySpace mem_space;
+
+    // Map 64 bytes starting at virtual address 10
+    assert(mem_space.mmap(10, 64, 07, MAP_SHARED, mmap_fd, 0) == 0);
+
+    // Write to mapped memory
+    const char *mmap_text = "Mapped Memory! 1234567890abcdefghijklmnopqrstuvwxyz";
+    assert(mem_space.memcpy(10, mmap_text, strlen(mmap_text)) == 0);
+
+    fd = vfs->open("/file.txt", O_RDWR);
+    assert(fd >= 0);
+
+    assert(vfs->seek(fd, 0, SEEK_SET) == 0);
+    assert(vfs->read(fd, buf, strlen(mmap_text)) == (ssize_t)strlen(mmap_text));
+    assert(strncmp(buf, mmap_text, strlen(mmap_text)) == 0);
+
+    assert(vfs->seek(fd, 0, SEEK_SET) == 0);
+
+    const char *new_text = "New Text! blah blah blah";
+    const char *expected = "New Text! blah blah blah0abcdefghijklmnopqrstuvwxyz";
+
+    assert(vfs->write(fd, new_text, strlen(new_text)) == (ssize_t)strlen(new_text));
+    assert(mem_space.memcpy(buf, 10, strlen(expected)) == 0);
+
+    assert(strncmp(buf, expected, strlen(expected)) == 0);
+
+    assert(mem_space.munmap(15, 10) == 0); // partially unmap the memory
+
+    new_text = "Partially Unmapping Memory!";
+    expected = "Parti__________ping Memory!cdefghijklmnopqrstuvwxyz";
+
+    assert(vfs->seek(fd, 0, SEEK_SET) == 0);
+    assert(vfs->write(fd, new_text, strlen(new_text)) == (ssize_t)strlen(new_text));
+    assert(mem_space.memcpy(buf, 10, strlen(expected)) == 0);
+    assert(strncmp(buf, expected, 5) == 0);
+    assert(strncmp(buf + 15, expected + 15, strlen(expected) - 15) == 0);
+
+    assert(vfs->close(fd) == 0);
+    assert(vfs->unmount("/") == 0);
 }

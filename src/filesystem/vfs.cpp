@@ -1530,4 +1530,28 @@ namespace Hamster
         BaseCharacterDeviceHandle *char_handle = (BaseCharacterDeviceHandle *)handle;
         return char_handle->isatty();
     }
+
+    int VFS::dup(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        BaseFile *cloned_file = file->clone();
+        if (!cloned_file)
+        {
+            error = EIO;
+            return -1;
+        }
+
+        int new_fd = data->fd_manager.add_fd(cloned_file);
+        if (new_fd < 0)
+        {
+            dealloc(cloned_file);
+            error = EIO;
+            return -1;
+        }
+
+        return new_fd;
+    }
 } // namespace Hamster

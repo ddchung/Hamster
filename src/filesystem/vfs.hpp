@@ -360,6 +360,13 @@ namespace Hamster
          */
         int isatty(int fd);
 
+        /**
+         * @brief Duplicate a file descriptor
+         * @param fd The file descriptor to duplicate
+         * @return A new file descriptor on success, or on error return -1 and set `error`
+         */
+        int dup(int fd);
+
     private:
         VFSData *data;
     };
