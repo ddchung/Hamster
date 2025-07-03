@@ -348,7 +348,7 @@ namespace Hamster
                     seek(0, SEEK_END);
                 
                 // See: the comment on the seek function
-                if (reg_node->data.memset(reg_node->size, 0, offset - reg_node->size) < 0)
+                if (offset > reg_node->size && reg_node->data.memset(reg_node->size, 0, offset - reg_node->size) < 0)
                 {
                     error = EIO;
                     return -1;
