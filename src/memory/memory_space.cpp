@@ -502,10 +502,33 @@ namespace Hamster
             }
         }
 
-        if (fd < 0 && !(flags & MAP_ANONYMOUS))
+        if (fd < 0)
         {
             error = EINVAL;
-            return -1; // Invalid file descriptor for non-anonymous mapping
+            return -1;
+        }
+        else if (flags & MAP_ANONYMOUS)
+        {
+            // Copy the mapping to memory
+            if (vfs.seek(fd, offset, SEEK_SET) < 0)
+            {
+                error = EIO;
+                return -1;
+            }
+            for (uint64_t it = addr; it < addr + size; it += HAMSTER_PAGE_SIZE)
+            {
+                uint8_t byte = 0;
+                if (vfs.read(fd, &byte, 1) < 0)
+                {
+                    error = EIO;
+                    return -1; // Error reading from file
+                }
+                if (write_byte(it, byte) < 0)
+                {
+                    error = EFAULT;
+                    return -1; // Error writing to memory
+                }
+            }
         }
 
         mappings.push_back(MmapEntry{addr, size, offset, fd, (uint8_t)(perms & 07), (flags & MAP_SHARED) != 0});
