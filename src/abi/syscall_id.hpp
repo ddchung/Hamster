@@ -3,7 +3,6 @@
 #pragma once
 
 #include <cstdint>
-#include <fcntl.h>
 
 namespace Hamster
 {

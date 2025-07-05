@@ -7,9 +7,6 @@
 #include <cstdint>
 #include <cstddef>
 
-// expose some macros
-#include <fcntl.h>
-
 // ssize_t
 #include <unistd.h>
 
