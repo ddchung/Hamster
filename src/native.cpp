@@ -11,6 +11,8 @@
 #include <cstdlib>
 #include <dirent.h>
 #include <cstring>
+#include <unistd.h>
+#include <sys/stat.h>
 
 using namespace Hamster;
 

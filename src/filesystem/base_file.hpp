@@ -2,7 +2,8 @@
 
 #pragma once
 
-#include <sys/stat.h>
+#include <abi/structs.hpp>
+#include <abi/values.hpp>
 #include <cstdint>
 #include <cstddef>
 
@@ -57,7 +58,7 @@ namespace Hamster
          * @return 0 on success, or on error return -1 and set `error`
          * @note Only set those fields that are described in POSIX `sys/stat.h`
          */
-        virtual int stat(struct ::stat *buf) = 0;
+        virtual int stat(sys_stat *buf) = 0;
 
         /**
          * @brief Get the mode of the file.

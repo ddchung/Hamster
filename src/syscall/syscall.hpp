@@ -2,12 +2,11 @@
 
 #pragma once
 
-#include <syscall/syscall_id.hpp>
 #include <process/thread.hpp>
 #include <cstdint>
 
 namespace Hamster
 {
-    int do_syscall(Thread &thread);
+    inline int do_syscall(Thread &thread) {return 0;}
 } // namespace Hamster
 

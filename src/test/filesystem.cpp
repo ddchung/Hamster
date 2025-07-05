@@ -49,9 +49,9 @@ void test_filesystem()
     vfs->close(fd);
 
     // 2. Stat and lstat
-    struct stat st;
+    sys_stat st;
     assert(vfs->stat(vfs->open(path, O_RDONLY), &st) == 0);
-    assert(S_ISREG(st.st_mode));
+    assert(is_regular_file(st.mode));
     vfs->close(fd);
 
     assert(vfs->lstat(path, &st) == 0);

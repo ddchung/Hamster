@@ -113,7 +113,7 @@ namespace Hamster
                 return node->filesystem;
             }
 
-            int stat(struct ::stat *buf)
+            int stat(sys_stat *buf)
             {
                 if (!node)
                 {
@@ -121,33 +121,33 @@ namespace Hamster
                     return -1;
                 }
 
-                memset(buf, 0, sizeof(struct ::stat));
+                memset(buf, 0, sizeof(sys_stat));
 
-                buf->st_mode = node->mode;
-                buf->st_uid = node->uid;
-                buf->st_gid = node->gid;
-                buf->st_size = 0;
-                buf->st_nlink = node->refcount;
+                buf->mode = node->mode;
+                buf->uid = node->uid;
+                buf->gid = node->gid;
+                buf->size = 0;
+                buf->nlink = node->refcount;
 
                 if (node->type() == FileType::Regular)
                 {
                     auto *regular_node = static_cast<RamFsRegularNode *>(node);
-                    buf->st_size = regular_node->size;
-                    buf->st_blocks = (regular_node->size + HAMSTER_PAGE_SIZE - 1) / HAMSTER_PAGE_SIZE;
-                    buf->st_blksize = HAMSTER_PAGE_SIZE;
-                    buf->st_mode |= S_IFREG;
+                    buf->size = regular_node->size;
+                    buf->blocks = (regular_node->size + HAMSTER_PAGE_SIZE - 1) / HAMSTER_PAGE_SIZE;
+                    buf->blksize = HAMSTER_PAGE_SIZE;
+                    buf->mode |= STAT_IFREG;
                 }
                 else if (node->type() == FileType::Directory)
                 {
-                    buf->st_mode |= S_IFDIR;
+                    buf->mode |= STAT_IFDIR;
                 }
                 else if (node->type() == FileType::Symlink)
                 {
-                    buf->st_mode |= S_IFLNK;
+                    buf->mode |= STAT_IFLNK;
                 }
                 else if (node->type() == FileType::Special)
                 {
-                    buf->st_mode |= S_IFCHR;
+                    buf->mode |= STAT_IFCHR;
                 }
                 else
                 {
@@ -282,7 +282,7 @@ namespace Hamster
             ~RamFsRegularHandle() override = default;
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
-            int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
+            int stat(sys_stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
             int get_gid() override { return RamFsNodeHandle::get_gid(); }
@@ -493,7 +493,7 @@ namespace Hamster
             ~RamFsSpecialHandle() override = default;
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
-            int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
+            int stat(sys_stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
             int get_gid() override { return RamFsNodeHandle::get_gid(); }
@@ -550,7 +550,7 @@ namespace Hamster
             ~RamFsSymlinkHandle() override = default;
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
-            int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
+            int stat(sys_stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
             int get_gid() override { return RamFsNodeHandle::get_gid(); }
@@ -620,7 +620,7 @@ namespace Hamster
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
 
-            int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
+            int stat(sys_stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
             int get_gid() override { return RamFsNodeHandle::get_gid(); }

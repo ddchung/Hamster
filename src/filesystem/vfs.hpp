@@ -80,7 +80,7 @@ namespace Hamster
          * @note This cannot be used to stat a symlink, as a file descriptor cannot
          *       * point to a symlink
          */
-        int stat(int fd, struct ::stat *buf);
+        int stat(int fd, sys_stat *buf);
 
         /**
          * @brief Stat a file at a given path
@@ -88,7 +88,7 @@ namespace Hamster
          * @return 0 on success, or on error return -1 and set `error`
          * @note This can be used to stat a symlink, as it will not follow it
          */
-        int lstat(const char *path, struct ::stat *buf);
+        int lstat(const char *path, sys_stat *buf);
 
         /**
          * Get some attributes of a file or its descriptor

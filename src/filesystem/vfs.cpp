@@ -883,7 +883,7 @@ namespace Hamster
         return res;
     }
 
-    int VFS::stat(int fd, struct ::stat *buf)
+    int VFS::stat(int fd, sys_stat *buf)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
         if (!file)
@@ -893,7 +893,7 @@ namespace Hamster
         return ret;
     }
 
-    int VFS::lstat(const char *path, struct ::stat *buf)
+    int VFS::lstat(const char *path, sys_stat *buf)
     {
         BaseFile *file = data->mounts.lopen(path, O_RDONLY, 0);
         if (!file)
