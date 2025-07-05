@@ -38,9 +38,6 @@ namespace Hamster
         uint32_t *get_regs() { return x; }
         double *get_fregs() { return f; }
 
-        int get_error_code() const { return error_code; }
-        void set_error_code(int code) { error_code = code; }
-
         int get_signal_mask() const { return signal_mask; }
         void set_signal_mask(int mask) { signal_mask = mask; }
 
@@ -101,8 +98,6 @@ namespace Hamster
 
         int pending_signal;
         int signal_mask;
-
-        int error_code;
 
         // Minimum timing implementation
         uint64_t tick_count;
