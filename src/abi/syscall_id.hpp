@@ -4,7 +4,6 @@
 
 #include <cstdint>
 #include <fcntl.h>
-#include <sys/stat.h>
 
 namespace Hamster
 {
@@ -84,7 +83,7 @@ namespace Hamster
              * @brief Open a file
              * This system call opens a file and returns a file descriptor.
              * @note Userspace sig: `int open(const char *pathname, int flags, mode_t mode);`, `mode_t` = `unsigned int`
-             * @note The `mode_t` is used only if `flags` includes `O_CREAT`
+             * @note The `mode_t` is used only if `flags` includes `OPEN_CREAT`
              */
             OPENAT = 56,
 

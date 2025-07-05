@@ -22,7 +22,7 @@ void test_filesystem()
 
     // 1. File creation and open/write/read/close
     const char *path = "/file.txt";
-    int fd = vfs->mkfile(path, O_RDWR | O_CREAT, 0644);
+    int fd = vfs->mkfile(path, OPEN_RDWR | OPEN_CREAT, 0644);
     assert(fd >= 0);
 
     const char *text = "Hello, VFS!";
@@ -50,15 +50,15 @@ void test_filesystem()
 
     // 2. Stat and lstat
     sys_stat st;
-    assert(vfs->stat(vfs->open(path, O_RDONLY), &st) == 0);
+    assert(vfs->stat(vfs->open(path, OPEN_RDONLY), &st) == 0);
     assert(is_regular_file(st.mode));
     vfs->close(fd);
 
     assert(vfs->lstat(path, &st) == 0);
 
     // 3. Mode, flags, ownership
-    fd = vfs->open(path, O_RDWR);
-    assert(vfs->get_flags(fd) & O_RDWR);
+    fd = vfs->open(path, OPEN_RDWR);
+    assert(vfs->get_flags(fd) & OPEN_RDWR);
     assert(vfs->chmod(fd, 0600) == 0);
     assert((vfs->get_mode(fd) & 0777) == 0600);
     assert(vfs->chown(fd, 1000, 1000) == 0);
@@ -69,11 +69,11 @@ void test_filesystem()
 
     // 4. Directories, openat, mkfileat, mkdir, mkdirat, list
     const char *dpath = "/dir";
-    int dfd = vfs->mkdir(dpath, O_RDONLY, 0755);
+    int dfd = vfs->mkdir(dpath, OPEN_RDONLY, 0755);
     assert(dfd >= 0);
 
     // Create file inside via openat
-    int fd2 = vfs->openat(dfd, "inner.txt", O_RDWR | O_CREAT, 0644);
+    int fd2 = vfs->openat(dfd, "inner.txt", OPEN_RDWR | OPEN_CREAT, 0644);
     assert(fd2 >= 0);
     vfs->close(fd2);
 
@@ -90,7 +90,7 @@ void test_filesystem()
     dealloc(entries);
 
     // Make subdirectory with mkdirat
-    int sub = vfs->mkdirat(dfd, "subdir", O_RDONLY, 0700);
+    int sub = vfs->mkdirat(dfd, "subdir", OPEN_RDONLY, 0700);
     assert(sub >= 0);
     vfs->close(sub);
 
@@ -112,7 +112,7 @@ void test_filesystem()
     dealloc<char>(target);
 
     // symlinkat
-    int dirfd2 = vfs->mkdir("/linkdir", O_RDONLY, 0755);
+    int dirfd2 = vfs->mkdir("/linkdir", OPEN_RDONLY, 0755);
     assert(dirfd2 >= 0);
     assert(vfs->symlinkat(dirfd2, path, "inside") == 0);
     vfs->close(dirfd2);
@@ -195,7 +195,7 @@ void test_filesystem()
     };
 
     TestSpecialDriver *driver = alloc<TestSpecialDriver>(1, deque);
-    int special_fd = vfs->mksfile(special_path, O_RDWR | O_CREAT, driver, 0777);
+    int special_fd = vfs->mksfile(special_path, OPEN_RDWR | OPEN_CREAT, driver, 0777);
     assert(special_fd >= 0);
 
     // Write to special file
@@ -223,7 +223,7 @@ void test_filesystem()
 
     // Test memory mapping
 
-    int mmap_fd = vfs->open("/file.txt", O_RDWR | O_CREAT, 0644);
+    int mmap_fd = vfs->open("/file.txt", OPEN_RDWR | OPEN_CREAT, 0644);
     assert(mmap_fd >= 0);
     
 
@@ -236,7 +236,7 @@ void test_filesystem()
     const char *mmap_text = "Mapped Memory! 1234567890abcdefghijklmnopqrstuvwxyz";
     assert(mem_space.memcpy(10, mmap_text, strlen(mmap_text)) == 0);
 
-    fd = vfs->open("/file.txt", O_RDWR);
+    fd = vfs->open("/file.txt", OPEN_RDWR);
     assert(fd >= 0);
 
     assert(vfs->seek(fd, 0, SEEK_SET) == 0);

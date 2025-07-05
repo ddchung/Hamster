@@ -6,9 +6,6 @@
 #include <cstring>
 #include <elf.h>
 
-// debugging
-#include <cstdio>
-
 namespace Hamster
 {
     namespace

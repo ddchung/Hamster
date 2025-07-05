@@ -81,7 +81,7 @@ namespace Hamster
             return -1;
         }
 
-        int fd = vfs.open(path, O_RDONLY);
+        int fd = vfs.open(path, OPEN_RDONLY);
         if (fd < 0)
             return -1;
         uint64_t entry_point = 0;

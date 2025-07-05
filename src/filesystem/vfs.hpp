@@ -43,7 +43,7 @@ namespace Hamster
          * @brief Open a file at a given path
          * @param path The path to the file
          * @param flags The flags to open the file with
-         * @param mode The mode to open the file with, if `flags & O_CREAT`
+         * @param mode The mode to open the file with, if `flags & OPEN_CREAT`
          * @return A file descriptor on success, or on error return -1 and set `error`
          */
         int open(const char *path, int flags, int mode = 0);
@@ -203,7 +203,7 @@ namespace Hamster
          * @param dir The file descriptor of the directory to open the file relative to
          * @param path The path to the file, starting from the directory
          * @param flags The flags to open the file with
-         * @param mode The mode to open the file with, if `flags & O_CREAT`
+         * @param mode The mode to open the file with, if `flags & OPEN_CREAT`
          * @return A file descriptor on success, or on error return -1 and set `error`
          * @note This is similar to `open`, but the path is relative to the directory
          */

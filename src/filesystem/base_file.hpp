@@ -252,14 +252,14 @@ namespace Hamster
          * @brief Get a file in the directory.
          * @param name The name of the file
          * @param flags The flags to open the file with
-         * @param mode Potential `mode`, if `flags | O_CREAT`
+         * @param mode Potential `mode`, if `flags | OPEN_CREAT`
          * @return A newly allocated `BaseFile` that operates on the opened file, or on error, it returns nullptr and sets `error`
          * @note Be sure to free the file
          * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
-         * @note If `flags | O_CREAT && flags | O_DIRECTORY`, then the file is created as a directory
-         * @note A directory can with any of the three `O_RDONLY`, `O_WRONLY`, or `O_RDWR` flags, which enables or disables some of these functions
+         * @note If `flags | OPEN_CREAT && flags | OPEN_DIRECTORY`, then the file is created as a directory
+         * @note A directory can with any of the three `OPEN_RDONLY`, `OPEN_WRONLY`, or `OPEN_RDWR` flags, which enables or disables some of these functions
          * @note Other than these, it is equivelant to POSIX `open`
-         * @warning When implementing, you MUST ensure that if `flags | O_DIRECTORY`, then the returned file derives from `BaseDirectory`
+         * @warning When implementing, you MUST ensure that if `flags | OPEN_DIRECTORY`, then the returned file derives from `BaseDirectory`
          */
         virtual BaseFile *get(const char *name, int flags, int mode = 0) = 0;
 
@@ -271,7 +271,7 @@ namespace Hamster
          * @return A newly allocated `BaseRegularFile` that operates on the new file, or on error, it returns nullptr and sets `error`
          * @note Be sure to free the file
          * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
-         * @note Equivelant to `this->get(name, (flags & ~O_DIRECTORY) | O_CREAT, mode)`
+         * @note Equivelant to `this->get(name, (flags & ~OPEN_DIRECTORY) | OPEN_CREAT, mode)`
          */
         virtual BaseRegularFile *mkfile(const char *name, int flags, int mode) = 0;
 
@@ -283,7 +283,7 @@ namespace Hamster
          * @return A newly allocated `BaseDirectory` that operates on the new directory, or on error, it returns nullptr and sets `error`
          * @note Be sure to free the file
          * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
-         * @note Equivelant to `this->get(name, flags | O_CREAT | O_DIRECTORY, mode)`
+         * @note Equivelant to `this->get(name, flags | OPEN_CREAT | OPEN_DIRECTORY, mode)`
          */
         virtual BaseDirectory *mkdir(const char *name, int flags, int mode) = 0;
 

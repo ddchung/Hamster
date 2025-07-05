@@ -344,7 +344,7 @@ namespace Hamster
                     file modification operation shall occur between changing the file offset and 
                     the write operation.
                 */
-                if (flags & O_APPEND)
+                if (flags & OPEN_APPEND)
                     seek(0, SEEK_END);
                 
                 // See: the comment on the seek function
@@ -727,7 +727,7 @@ namespace Hamster
                 auto it = dir_node->children.find(name);
                 if (it != dir_node->children.end())
                 {
-                    if (flags & O_EXCL)
+                    if (flags & OPEN_EXCL)
                     {
                         error = EEXIST;
                         return nullptr;
@@ -735,7 +735,7 @@ namespace Hamster
 
                     RamFsNode *node = it->second;
 
-                    if (flags & O_DIRECTORY && node->type() != FileType::Directory)
+                    if (flags & OPEN_DIRECTORY && node->type() != FileType::Directory)
                     {
                         error = ENOTDIR;
                         return nullptr;
@@ -758,13 +758,13 @@ namespace Hamster
                 }
                 else
                 {
-                    if (!(flags & O_CREAT))
+                    if (!(flags & OPEN_CREAT))
                     {
                         error = ENOENT;
                         return nullptr;
                     }
 
-                    if (flags & O_DIRECTORY)
+                    if (flags & OPEN_DIRECTORY)
                     {
                         return mkdir(name, flags, mode);
                     }
