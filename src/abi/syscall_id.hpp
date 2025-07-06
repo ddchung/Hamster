@@ -32,15 +32,6 @@ namespace Hamster
             CLONE = 220,
 
             /**
-             * @brief Clone a task with additional flags
-             * This system call is similar to `CLONE`, but it allows for more complex cloning
-             * operations by providing a larger set of flags.
-             * @note Userspace sig: `int clone3(struct clone_args *cl_args, size_t size);`
-             * @note The `struct clone_args` contains the options
-             */
-            CLONE3 = 435,
-
-            /**
              * @brief Replace the current process image with a new one
              * This system call replaces the current process image with a new program.
              * @note Userspace sig: `int execve(const char *filename, char *const argv[], char *const envp[]);`
