@@ -1176,6 +1176,16 @@ namespace Hamster
         BaseFile *file = data->fd_manager.get_fd(dir);
         if (!file)
             return -1;
+        
+        if (path[0] == '\0')
+        {
+            int fd = dup(dir);
+            if (fd < 0) return -1;
+
+            BaseFile *fdfile = data->fd_manager.get_fd(fd);
+            fdfile->set_flags(flags);
+            return fd;
+        }
 
         if (file->type() != FileType::Directory)
         {
