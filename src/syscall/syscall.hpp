@@ -22,7 +22,6 @@ namespace Hamster
     int sys_exit(Thread &thread);
     int sys_getpid(Thread &thread);
     int sys_clone(Thread &thread);
-    int sys_clone3(Thread &thread);
     int sys_execve(Thread &thread);
     int sys_execveat(Thread &thread);
     int sys_waitid(Thread &thread);
