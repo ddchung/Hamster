@@ -16,7 +16,7 @@ namespace Hamster
         uint32_t flags = get_arg(thread, 0);
 
         // For now, we only support single-threaded processes, so we will not handle any sharing
-        if (flags != SIGCHLD)
+        if (flags != 0 && flags != SIGCHLD)
         {
             error = ENOSYS; // Not implemented
             return transfer_error(thread);
