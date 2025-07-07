@@ -19,8 +19,6 @@ namespace Hamster
                 return sys_getpid(thread);
             case SyscallID::CLONE:
                 return sys_clone(thread);
-            case SyscallID::CLONE3:
-                return sys_clone3(thread);
             case SyscallID::EXECVE:
                 return sys_execve(thread);
             case SyscallID::EXECVEAT:
@@ -137,5 +135,37 @@ namespace Hamster
 
         return fd;
     }
+
+    __attribute__((weak)) int sys_exit(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_getpid(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_clone(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_execve(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_execveat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_waitid(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_wait4(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_kill(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_openat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_read(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_write(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_close(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_lseek(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_newfstatat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_newfstat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_dup(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_dup3(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_mkdirat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_unlinkat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_linkat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_renameat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_renameat2(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_getdents64(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_chdir(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_getcwd(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_faccessat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_pipe2(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_brk(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_mmap2(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_munmap(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_mprotect(Thread &thread) { return set_return(thread, -ENOSYS); };
 } // namespace Hamster
 
