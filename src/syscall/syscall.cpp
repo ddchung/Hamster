@@ -37,8 +37,8 @@ namespace Hamster
                 return sys_write(thread);
             case SyscallID::CLOSE:
                 return sys_close(thread);
-            case SyscallID::LSEEK:
-                return sys_lseek(thread);
+            case SyscallID::LLSEEK:
+                return sys_llseek(thread);
             case SyscallID::NEWFSTATAT:
                 return sys_newfstatat(thread);
             case SyscallID::NEWFSTAT:
@@ -148,7 +148,7 @@ namespace Hamster
     __attribute__((weak)) int sys_read(Thread &thread) { return set_return(thread, -ENOSYS); };
     __attribute__((weak)) int sys_write(Thread &thread) { return set_return(thread, -ENOSYS); };
     __attribute__((weak)) int sys_close(Thread &thread) { return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_lseek(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_llseek(Thread &thread) { return set_return(thread, -ENOSYS); };
     __attribute__((weak)) int sys_newfstatat(Thread &thread) { return set_return(thread, -ENOSYS); };
     __attribute__((weak)) int sys_newfstat(Thread &thread) { return set_return(thread, -ENOSYS); };
     __attribute__((weak)) int sys_dup(Thread &thread) { return set_return(thread, -ENOSYS); };

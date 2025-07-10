@@ -31,7 +31,7 @@ namespace Hamster
     int sys_read(Thread &thread);
     int sys_write(Thread &thread);
     int sys_close(Thread &thread);
-    int sys_lseek(Thread &thread);
+    int sys_llseek(Thread &thread);
     int sys_newfstatat(Thread &thread);
     int sys_newfstat(Thread &thread);
     int sys_dup(Thread &thread);

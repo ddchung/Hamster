@@ -15,28 +15,28 @@ namespace Hamster
              * This system call terminates the calling process.
              * @note Userspace sig: `void exit(int status);`
              */
-            EXIT = 93,
+            EXIT = 93,//
 
             /**
              * @brief Get the PID of the calling process
              * This system call retrieves the process ID of the calling process.
              * @note Userspace sig: `pid_t getpid(void);`, `pid_t` = `int`
              */
-            GETPID = 172,
+            GETPID = 172,//
 
             /**
              * @brief Clone a task
              * This system call creates either a new process or a new thread, depending on the flags provided.
              * @note Userspace sig: `int clone(unsigned long flags, void *stack, int *ptid, int *ctid, unsigned long newtls);`
              */
-            CLONE = 220,
+            CLONE = 220,//
 
             /**
              * @brief Replace the current process image with a new one
              * This system call replaces the current process image with a new program.
              * @note Userspace sig: `int execve(const char *filename, char *const argv[], char *const envp[]);`
              */
-            EXECVE = 221,
+            EXECVE = 221,//
 
             /**
              * @brief Replace the current process image with a new one using file descriptor
@@ -44,7 +44,7 @@ namespace Hamster
              * to a directory file descriptor, instead of the CWD
              * @note Userspace sig: `int execveat(int dirfd, const char *filename, char *const argv[], char *const envp[], int flags);`
              */
-            EXECVEAT = 281,
+            EXECVEAT = 281,//
 
             /**
              * @brief Wait for a child process to change state
@@ -75,35 +75,35 @@ namespace Hamster
              * @note Userspace sig: `int openat(int dfd, const char *pathname, int flags, mode_t mode);`, `mode_t` = `unsigned int`
              * @note The `mode_t` is used only if `flags` includes `OPEN_CREAT`
              */
-            OPENAT = 56,
+            OPENAT = 56,//
 
             /**
              * @brief Read from a file descriptor
              * This system call reads data from a file descriptor into a buffer.
              * @note Userspace sig: `ssize_t read(int fd, void *buf, size_t count);`, `ssize_t` = `long`
              */
-            READ = 63,
+            READ = 63,//
 
             /**
              * @brief Write to a file descriptor
              * This system call writes data from a buffer to a file descriptor.
              * @note Userspace sig: `ssize_t write(int fd, const void *buf, size_t count);`, `ssize_t` = `long`
              */
-            WRITE = 64,
+            WRITE = 64,//
 
             /**
              * @brief Close a file descriptor
              * This system call closes a file descriptor, releasing any resources associated with it.
              * @note Userspace sig: `int close(int fd);`
              */
-            CLOSE = 57,
+            CLOSE = 57,//
 
             /**
              * @brief Change the file offset of a file descriptor
              * This system call changes the file offset of a file descriptor to a specified position.
-             * @note Userspace sig: `off_t lseek(int fd, off_t offset, int whence);`, `off_t` = `long`
+             * @note Userspace sig: `int llseek(int fd, unsigned long off_high, unsigned long off_low, loff_t *result, int whence);`, `loff_t` = `long long`
              */
-            LSEEK = 62,
+            LLSEEK = 62,
 
             /**
              * @brief Get file status of a path relative to a directory file descriptor
