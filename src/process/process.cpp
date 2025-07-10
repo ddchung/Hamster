@@ -198,14 +198,14 @@ namespace Hamster
         // Note that this is not POSIX compliant, so if you're running an init system,
         // let it open the console for userland.
         
-        if (fds.empty())
-        {
-            int console_fd = vfs.open("/dev/console", O_RDWR);
-            fd_refcount[console_fd] = 3; 
-            fds.push_back({console_fd, 0}); // stdin
-            fds.push_back({console_fd, 0}); // stdout
-            fds.push_back({console_fd, 0}); // stderr
-        }
+        // if (fds.empty())
+        // {
+        //     int console_fd = vfs.open("/dev/console", O_RDWR);
+        //     fd_refcount[console_fd] = 3; 
+        //     fds.push_back({console_fd, 0}); // stdin
+        //     fds.push_back({console_fd, 0}); // stdout
+        //     fds.push_back({console_fd, 0}); // stderr
+        // }
 
         uint32_t tp = 0xFFFF0000;
         uint32_t dtv = 0xFFFE0000;
