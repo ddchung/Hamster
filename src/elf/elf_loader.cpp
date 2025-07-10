@@ -12,7 +12,7 @@ namespace Hamster
     {
         int load_elf32(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num)
         {
-            if (vfs.seek(fd, 0, SEEK_SET) < 0)
+            if (vfs.seek(fd, 0, H_SEEK_SET) < 0)
             {
                 error = EIO;
                 return -1;
@@ -63,7 +63,7 @@ namespace Hamster
             ph_num = ehdr.e_phnum;
 
             // Load program headers
-            if (vfs.seek(fd, ehdr.e_phoff, SEEK_SET) < 0)
+            if (vfs.seek(fd, ehdr.e_phoff, H_SEEK_SET) < 0)
             {
                 error = EIO;
                 return -1;
@@ -73,7 +73,7 @@ namespace Hamster
             {
                 Elf32_Phdr phdr;
                 
-                if (vfs.seek(fd, ehdr.e_phoff + i * ehdr.e_phentsize, SEEK_SET) < 0)
+                if (vfs.seek(fd, ehdr.e_phoff + i * ehdr.e_phentsize, H_SEEK_SET) < 0)
                 {
                     error = EIO;
                     return -1;
@@ -95,7 +95,7 @@ namespace Hamster
                 if (phdr.p_type == PT_LOAD)
                 {
                     // Load segment
-                    if (vfs.seek(fd, phdr.p_offset, SEEK_SET) < 0)
+                    if (vfs.seek(fd, phdr.p_offset, H_SEEK_SET) < 0)
                     {
                         error = EIO;
                         return -1;
@@ -137,7 +137,7 @@ namespace Hamster
     int load_elf(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num)
     {
         // Prepare file
-        if (vfs.seek(fd, 0, SEEK_SET) < 0)
+        if (vfs.seek(fd, 0, H_SEEK_SET) < 0)
         {
             error = EIO;
             return -1;

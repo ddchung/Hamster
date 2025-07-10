@@ -239,7 +239,7 @@ namespace Hamster
         /**
          * @brief Change the offset of the directory.
          * @param offset The new offset
-         * @param whence One of SEEK_SET, SEEK_CUR, or SEEK_END
+         * @param whence One of H_SEEK_SET, H_SEEK_CUR, or H_SEEK_END
          * @return The new offset in the directory, or on error return -1 and set `error`
          * @note Equivelant to POSIX `lseek` on a directory
          */

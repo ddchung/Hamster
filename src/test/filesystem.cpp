@@ -30,7 +30,7 @@ void test_filesystem()
     assert(written == (ssize_t)strlen(text));
 
     // Seek back and read
-    assert(vfs->seek(fd, 0, SEEK_SET) == 0);
+    assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
     char buf[64] = {0};
     ssize_t readn = vfs->read(fd, (uint8_t*)buf, sizeof(buf));
     assert(readn == written);
@@ -239,11 +239,11 @@ void test_filesystem()
     fd = vfs->open("/file.txt", OPEN_RDWR);
     assert(fd >= 0);
 
-    assert(vfs->seek(fd, 0, SEEK_SET) == 0);
+    assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
     assert(vfs->read(fd, buf, strlen(mmap_text)) == (ssize_t)strlen(mmap_text));
     assert(strncmp(buf, mmap_text, strlen(mmap_text)) == 0);
 
-    assert(vfs->seek(fd, 0, SEEK_SET) == 0);
+    assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
 
     const char *new_text = "New Text! blah blah blah";
     const char *expected = "New Text! blah blah blah0abcdefghijklmnopqrstuvwxyz";
@@ -258,7 +258,7 @@ void test_filesystem()
     new_text = "Partially Unmapping Memory!";
     expected = "Parti__________ping Memory!cdefghijklmnopqrstuvwxyz";
 
-    assert(vfs->seek(fd, 0, SEEK_SET) == 0);
+    assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
     assert(vfs->write(fd, new_text, strlen(new_text)) == (ssize_t)strlen(new_text));
     assert(mem_space.memcpy(buf, 10, strlen(expected)) == 0);
     assert(strncmp(buf, expected, 5) == 0);

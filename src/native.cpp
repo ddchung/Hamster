@@ -77,7 +77,7 @@ namespace
                         continue;
                     }
 
-                    if (vfs.seek(file_fd, 0, SEEK_SET) < 0)
+                    if (vfs.seek(file_fd, 0, H_SEEK_SET) < 0)
                     {
                         ::close(native_fd);
                         vfs.close(file_fd);

@@ -28,6 +28,10 @@ namespace Hamster
     constexpr int OPEN_DIRECTORY = 0200000; // Open directory
     constexpr int OPEN_NOFOLLOW = 0400000; // Do not follow symbolic links
 
+    constexpr int H_SEEK_SET = 0;    // Set file offset relative to start of file
+    constexpr int H_SEEK_CUR = 1;    // Set file offset relative to current position
+    constexpr int H_SEEK_END = 2;    // Set file offset relative to end of file
+
     inline bool is_directory(int mode) { return (mode & 0170000) == STAT_IFDIR; }
     inline bool is_character_device(int mode) { return (mode & 0170000) == STAT_IFCHR; }
     inline bool is_block_device(int mode) { return (mode & 0170000) == STAT_IFBLK; }

@@ -161,7 +161,7 @@ namespace Hamster
             }
 
             uint64_t offset = addr - mapping->addr + mapping->offset;
-            if (vfs.seek(mapping->fd, offset, SEEK_SET) < 0)
+            if (vfs.seek(mapping->fd, offset, H_SEEK_SET) < 0)
             {
                 error = EIO;
                 return -1;
@@ -219,7 +219,7 @@ namespace Hamster
             }
 
             uint64_t offset = addr - mapping->addr + mapping->offset;
-            if (vfs.seek(mapping->fd, offset, SEEK_SET) < 0)
+            if (vfs.seek(mapping->fd, offset, H_SEEK_SET) < 0)
             {
                 error = EIO;
                 return -1;
@@ -554,7 +554,7 @@ namespace Hamster
         else if (flags & MAP_PRIVATE)
         {
             // Copy the mapping to memory
-            if (vfs.seek(fd, offset, SEEK_SET) < 0)
+            if (vfs.seek(fd, offset, H_SEEK_SET) < 0)
             {
                 error = EIO;
                 return -1;

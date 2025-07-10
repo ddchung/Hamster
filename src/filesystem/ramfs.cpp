@@ -345,7 +345,7 @@ namespace Hamster
                     the write operation.
                 */
                 if (flags & OPEN_APPEND)
-                    seek(0, SEEK_END);
+                    seek(0, H_SEEK_END);
                 
                 // See: the comment on the seek function
                 if (offset > reg_node->size && reg_node->data.memset(reg_node->size, 0, offset - reg_node->size) < 0)
@@ -384,7 +384,7 @@ namespace Hamster
 
                 switch (whence)
                 {
-                case SEEK_SET:
+                case H_SEEK_SET:
                     if (offset < 0)
                     {
                         error = EINVAL;
@@ -392,7 +392,7 @@ namespace Hamster
                     }
                     this->offset = offset;
                     break;
-                case SEEK_CUR:
+                case H_SEEK_CUR:
                     if (this->offset + offset < 0)
                     {
                         error = EINVAL;
@@ -400,7 +400,7 @@ namespace Hamster
                     }
                     this->offset += offset;
                     break;
-                case SEEK_END:
+                case H_SEEK_END:
                     if (reg_node->size + offset < 0)
                     {
                         error = EINVAL;
@@ -418,7 +418,7 @@ namespace Hamster
 
             int64_t tell() override
             {
-                return seek(0, SEEK_CUR);
+                return seek(0, H_SEEK_CUR);
             }
 
             int truncate(int64_t size) override
@@ -680,7 +680,7 @@ namespace Hamster
 
                 switch (whence)
                 {
-                case SEEK_SET:
+                case H_SEEK_SET:
                     if (offset < 0)
                     {
                         error = EINVAL;
@@ -688,7 +688,7 @@ namespace Hamster
                     }
                     this->offset = offset;
                     break;
-                case SEEK_CUR:
+                case H_SEEK_CUR:
                     if (this->offset + offset < 0)
                     {
                         error = EINVAL;
@@ -696,7 +696,7 @@ namespace Hamster
                     }
                     this->offset += offset;
                     break;
-                case SEEK_END:
+                case H_SEEK_END:
                     if ((int64_t)node->children.size() + offset < 0)
                     {
                         error = EINVAL;

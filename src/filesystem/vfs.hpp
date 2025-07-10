@@ -142,7 +142,7 @@ namespace Hamster
          * @brief Seek to a position in a file
          * @param fd The file descriptor to seek
          * @param offset The offset to seek to
-         * @param whence One of `SEEK_SET`, `SEEK_CUR`, or `SEEK_END`
+         * @param whence One of `H_SEEK_SET`, `H_SEEK_CUR`, or `H_SEEK_END`
          * @return 0 on success, or on error return -1 and set `error`
          */
         int seek(int fd, int64_t offset, int whence);
