@@ -13,7 +13,7 @@ namespace Hamster
         // PID 0 doesn't exist
         processes.push_back(nullptr);
     }
-    
+
     Scheduler::~Scheduler()
     {
         for (Process *process : processes)
@@ -44,7 +44,7 @@ namespace Hamster
             error = EINVAL;
             return -1;
         }
-        
+
         // Get a new PID
         int new_pid = -1;
         size_t counter = 0;
@@ -84,7 +84,7 @@ namespace Hamster
             error = EINVAL;
             return -1;
         }
-        
+
         Process *process = alloc<Process>();
 
         process->cwd = "/";
@@ -127,32 +127,38 @@ namespace Hamster
             else
             {
                 // Tick each thread in the process
-                process->threads.remove_if([&](Thread &thread) {
-                    if (thread.get_state() == ThreadState::ENDED)
-                        return true; // Remove ended threads
-                    if (thread.is_paused())
-                    {
-                        ++ticked_count;
-                        thread.get_current_pause_callback()(thread);
-                        return false; // Keep paused threads
-                    }
-                    thread.tick(); // Tick the thread
-                    ++ticked_count; // Count the ticked thread
-                    return false; // Keep running threads
-                });
+                process->threads.remove_if([&](Thread &thread)
+                                           {
+                                               if (thread.get_state() == ThreadState::ENDED)
+                                                   return true; // Remove ended threads
+                                               if (thread.is_paused())
+                                               {
+                                                   ++ticked_count;
+                                                   thread.get_current_pause_callback()(thread);
+                                                   return false; // Keep paused threads
+                                               }
+                                               thread.tick();  // Tick the thread
+                                               ++ticked_count; // Count the ticked thread
+                                               return false;   // Keep running threads
+                                           });
             }
         }
         return ticked_count; // Return the number of threads that were ticked
     }
 
-    uint32_t Scheduler::get_exit_status(uint32_t ppid, int &exit_status)
+    uint32_t Scheduler::get_exit_status(uint32_t ppid, int pid, int &exit_status, bool reap)
     {
         bool found = false;
         for (auto it = processes.begin(); it != processes.end(); ++it)
         {
             Process *process = *it;
-            if (!process || process->ppid != ppid)
+            if (!process)
                 continue; // Skip processes that don't match the parent PID
+
+            if (pid != -1 && process->pid != (uint32_t)pid)
+                continue; // Skip if PID doesn't match
+            if (pid == -1 && process->ppid != ppid)
+                continue; // Skip if PPID doesn't match
 
             found = true;
 
@@ -164,8 +170,11 @@ namespace Hamster
             exit_status = process->exit_status; // Get the exit status
 
             uint32_t pid = process->pid; // Get the PID
-            dealloc(process); // Deallocate the process
-            *it = nullptr;
+            if (reap)
+            {
+                dealloc(process);            // Deallocate the process
+                *it = nullptr;
+            }
 
             return pid;
         }

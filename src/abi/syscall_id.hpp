@@ -52,7 +52,7 @@ namespace Hamster
              * changes state, such as exiting or stopping.
              * @note Userspace sig: `pid_t waitid(int which, pid_t pid, struct siginfo *infop, int options, struct rusage *ru);`, `pid_t` = `int`
              */
-            WAITID = 95,
+            WAITID = 95,//
 
             /**
              * @brief Wait for a child process to change state
@@ -60,7 +60,7 @@ namespace Hamster
              * changes state, such as exiting or stopping.
              * @note Userspace sig: `pid_t wait4(pid_t pid, int *status, int options, struct rusage *ru);`, `pid_t` = `int`
              */
-            WAIT4 = 260,
+            WAIT4 = 260,//
 
             /**
              * @brief Send a signal to a process
@@ -103,7 +103,7 @@ namespace Hamster
              * This system call changes the file offset of a file descriptor to a specified position.
              * @note Userspace sig: `int llseek(int fd, unsigned long off_high, unsigned long off_low, loff_t *result, int whence);`, `loff_t` = `long long`
              */
-            LLSEEK = 62,
+            LLSEEK = 62,//
 
             /**
              * @brief Get file status of a path relative to a directory file descriptor
