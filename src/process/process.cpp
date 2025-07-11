@@ -91,11 +91,14 @@ namespace Hamster
             return -1;
         uint64_t entry_point = 0;
         uint64_t ph_num = 0;
-        if (Hamster::load_elf(fd, memory_space, entry_point, ph_num) < 0)
+        uint64_t brk = 0;
+        if (Hamster::load_elf(fd, memory_space, entry_point, ph_num, brk) < 0)
         {
             error = EIO;
             return -1;
         }
+
+        this->brk = brk;
 
         // Load stack
         uint64_t sp = HAMSTER_STACK_TOP;

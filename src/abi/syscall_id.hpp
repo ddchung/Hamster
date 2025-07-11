@@ -213,9 +213,9 @@ namespace Hamster
 
             /**
              * @brief Set the program data's end (the break)
-             * @note Userspace sig: `int brk(void *end_data_segment);`
+             * @note Userspace sig: `void *brk(void *end_data_segment);`
              */
-            BRK = 214,
+            BRK = 214,//
 
             /**
              * @brief Memory map a file or device into memory

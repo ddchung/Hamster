@@ -91,7 +91,7 @@ namespace Hamster
             // Combine both signal and code parts of exit status, since only one is ever set at a time,
             // and the spec says that this represents both, interpreted depending on the context.
             siginfo.fields.child.status = (exit_status & (exit_status >> 8)) & 0xFF;
-            siginfo.code = exit_status & 0xFF ? 1 : 2; // 1 for exit with code, 2 for signalled exit
+            siginfo.code = exit_status & 0xFF ? 2 : 1; // 1 for exit with code, 2 for signalled exit
 
             // Copy to userspace
 

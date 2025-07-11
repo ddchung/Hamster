@@ -53,6 +53,8 @@ namespace Hamster
         uint32_t egid = 0;
 
         int exit_status = 0;
+
+        uint32_t brk = 0;
     };
 
     extern UnorderedMap<int, unsigned int> fd_refcount;
