@@ -783,7 +783,7 @@ namespace Hamster
         return data->fd_manager.remove_fd(fd);
     }
 
-    int VFS::rename(const char *old_path, const char *new_path)
+    int VFS::renameat(int old_dfd, const char *old_path, int new_dfd, const char *new_path)
     {
         if (!old_path || !new_path)
         {
@@ -794,28 +794,52 @@ namespace Hamster
         const char *last_old = strrchr(old_path, '/');
         const char *last_new = strrchr(new_path, '/');
         const char *old_name, *new_name;
-        BaseDirectory *old_dir, *new_dir;
+
+        BaseFile *f = data->fd_manager.get_fd(old_dfd);
+        if (!f || f->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return -1;
+        }
+        BaseDirectory *old_dir = (BaseDirectory*)f;
+        f = data->fd_manager.get_fd(new_dfd);
+        if (!f || f->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return -1;
+        }
+        BaseDirectory *new_dir = (BaseDirectory*)f;
+
+        old_dir = (BaseDirectory*)old_dir->clone();
+        new_dir = (BaseDirectory*)new_dir->clone();
+        if (!old_dir || !new_dir)
+        {
+            dealloc(old_dir);
+            dealloc(new_dir);
+            return -1;
+        }
+
         if (last_old)
         {
             old_name = last_old + 1;
             String old_dir_name{old_path, (size_t)(last_old - old_path)};
-            old_dir = (BaseDirectory*)data->mounts.lopen(old_dir_name.c_str(), OPEN_RDONLY | OPEN_DIRECTORY, 0);
+            old_dir = (BaseDirectory*)data->mounts.lopen(old_dir_name.c_str(), OPEN_RDONLY | OPEN_DIRECTORY, 0, old_dir);
         }
         else
         {
             old_name = old_path;
-            old_dir = (BaseDirectory*)data->mounts.lopen("/", OPEN_RDONLY | OPEN_DIRECTORY, 0);
+            old_dir = (BaseDirectory*)data->mounts.lopen("/", OPEN_RDONLY | OPEN_DIRECTORY, 0, old_dir);
         }
 
         if (last_new)
         {
             new_name = last_new + 1;
-            new_dir = (BaseDirectory*)data->mounts.lopen(String{new_path, (size_t)(last_new - new_path)}.c_str(), OPEN_WRONLY | OPEN_DIRECTORY, 0);
+            new_dir = (BaseDirectory*)data->mounts.lopen(String{new_path, (size_t)(last_new - new_path)}.c_str(), OPEN_WRONLY | OPEN_DIRECTORY, 0, new_dir);
         }
         else
         {
             new_name = new_path;
-            new_dir = (BaseDirectory*)data->mounts.lopen("/", OPEN_WRONLY | OPEN_DIRECTORY, 0);
+            new_dir = (BaseDirectory*)data->mounts.lopen("/", OPEN_WRONLY | OPEN_DIRECTORY, 0, new_dir);
         }
 
         if (!old_dir || !new_dir)
@@ -863,8 +887,30 @@ namespace Hamster
         return ret;
     }
 
-    int VFS::remove(const char *path)
+    int VFS::rename(const char *old_path, const char *new_path)
     {
+        int rootfd = open("/", OPEN_RDONLY | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return -1;
+
+        int ret = renameat(rootfd, old_path, rootfd, new_path);
+        close(rootfd);
+        return ret;
+    }
+
+    int VFS::removeat(int dfd, const char *path)
+    {
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file || file->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return -1;
+        }   
+
+        BaseDirectory *dir = (BaseDirectory *)file->clone();
+        if (!dir)
+            return -1;
+        
         const char *last = strrchr(path, '/');
         if (!last)
         {
@@ -873,13 +919,28 @@ namespace Hamster
         }
 
         String dir_name{path, (size_t)(last - path)};
-        BaseDirectory *dir = (BaseDirectory*)data->mounts.lopen(dir_name.c_str(), OPEN_WRONLY, 0);
+        dir = (BaseDirectory*)data->mounts.lopen(dir_name.c_str(), OPEN_WRONLY, 0, dir);
 
         if (!dir)
             return -1;
 
         int res = dir->remove(last + 1);
         dealloc(dir);
+        return res;
+    }
+
+    int VFS::remove(const char *path)
+    {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        int rootfd = open("/", OPEN_RDWR | OPEN_DIRECTORY);
+        int res = removeat(rootfd, path);
+        close(rootfd);
+
         return res;
     }
 
@@ -893,8 +954,37 @@ namespace Hamster
         return ret;
     }
 
+    int VFS::lstatat(int dfd, const char *path, sys_stat *buf)
+    {
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file || file->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return -1;
+        }   
+
+        BaseDirectory *dir = (BaseDirectory *)file->clone();
+        if (!dir)
+            return -1;
+        
+
+        file = data->mounts.lopen(path, OPEN_RDONLY, 0, dir);
+        if (!file)
+            return -1;
+
+        int ret = file->stat(buf);
+        dealloc(file);
+        return ret;
+    }
+
     int VFS::lstat(const char *path, sys_stat *buf)
     {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
         BaseFile *file = data->mounts.lopen(path, OPEN_RDONLY, 0);
         if (!file)
             return -1;
@@ -1112,9 +1202,20 @@ namespace Hamster
         }
     }
 
-    char *VFS::get_target(const char *path)
+    char *VFS::get_targetat(int dfd, const char *path)
     {
-        BaseFile *file = data->mounts.lopen(path, OPEN_RDONLY, 0);
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file || file->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return nullptr;
+        }   
+
+        BaseDirectory *dir = (BaseDirectory *)file->clone();
+        if (!dir)
+            return nullptr;
+
+        file = data->mounts.lopen(path, OPEN_RDONLY, 0, dir);
         if (!file)
             return nullptr;
 
@@ -1130,7 +1231,17 @@ namespace Hamster
         return ret;
     }
 
-    int VFS::set_target(const char *path, const char *target)
+    char *VFS::get_target(const char *path)
+    {
+        int rootfd = open("/", OPEN_RDONLY | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return nullptr;
+        char *ret = get_targetat(rootfd, path);
+        close(rootfd);
+        return ret;
+    }
+
+    int VFS::set_targetat(int dfd, const char *path, const char *target)
     {
         if (!path || !target)
         {
@@ -1138,7 +1249,18 @@ namespace Hamster
             return -1;
         }
 
-        BaseFile *file = data->mounts.lopen(path, OPEN_WRONLY, 0);
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file || file->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return -1;
+        }   
+
+        BaseDirectory *dir = (BaseDirectory *)file->clone();
+        if (!dir)
+            return -1;
+
+        file = data->mounts.lopen(path, OPEN_WRONLY, 0, dir);
         if (!file)
             return -1;
 
@@ -1151,6 +1273,23 @@ namespace Hamster
 
         int ret = ((BaseSymlink *)file)->set_target(target);
         dealloc(file);
+        return ret;
+    }
+
+    int VFS::set_target(const char *path, const char *target)
+    {
+        if (!path || !target)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        int rootfd = open("/", OPEN_RDONLY | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return -1;
+
+        int ret = set_targetat(rootfd, path, target);
+        close(rootfd);
         return ret;
     }
 

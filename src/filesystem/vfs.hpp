@@ -65,6 +65,17 @@ namespace Hamster
         int rename(const char *old_path, const char *new_path);
 
         /**
+         * @brief Move a file from one path to another relative to two directories
+         * @param old_dir The file descriptor of the directory to move the file from
+         * @param old_path The path to the file to move, starting from `old_dir`
+         * @param new_dir The file descriptor of the directory to move the file to
+         * @param new_path The path to move the file to, starting from `new_dir`
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This is similar to `rename`, but the paths are relative to the directories
+         */
+        int renameat(int old_dir, const char *old_path, int new_dir, const char *new_path);
+
+        /**
          * @brief Remove a file at a given path
          * @param path The path to the file to remove
          * @return 0 on success, or on error return -1 and set `error`
@@ -72,6 +83,16 @@ namespace Hamster
          * @note This will remove symlinks, not follow them
          */
         int remove(const char *path);
+
+        /**
+         * @brief Remove a file at a given path relative to a directory
+         * @param dir The file descriptor of the directory to remove the file from
+         * @param path The path to the file to remove, starting from the directory
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This does not close any file descriptors that point to the file
+         * @note This will remove symlinks, not follow them
+         */
+        int removeat(int dir, const char *path);
 
         /**
          * @brief Stat a file described by a file descriptor
@@ -89,6 +110,36 @@ namespace Hamster
          * @note This can be used to stat a symlink, as it will not follow it
          */
         int lstat(const char *path, sys_stat *buf);
+
+        /**
+         * @brief Stat a file at a given path relative to a directory
+         * @param dir The file descriptor of the directory to stat the file relative to
+         * @param path The path to the file, starting from the directory
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This can be used to stat a symlink, as it will not follow it
+         * @note This is similar to `lstat`, but the path is relative to the directory
+         */
+        int lstatat(int dir, const char *path, sys_stat *buf);
+
+        /**
+         * @brief Link a file at a given path to another path
+         * @param target The path to the file to link
+         * @param path The path to the new link
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This creates a hard link, not a symlink
+         */
+        int link(const char *target, const char *path);
+
+        /**
+         * @brief Link a file at a given path relative to a directory to another path relative to another directory
+         * @param old_dir The file descriptor of the directory to link the file from
+         * @param old_path The path to the file to link, starting from `old_dir`
+         * @param new_dir The file descriptor of the directory to link the file to
+         * @param new_path The path to the new link, starting from `new_dir`
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This creates a hard link, not a symlink
+         */
+        int linkat(int old_dir, const char *old_path, int new_dir, const char *new_path);
 
         /**
          * Get some attributes of a file or its descriptor
@@ -181,6 +232,17 @@ namespace Hamster
         char *get_target(const char *path);
 
         /**
+         * @brief Get the target that a symlink points to relative to a directory
+         * @param dir The file descriptor of the directory to get the symlink target from
+         * @param path The path to the symlink, starting from the directory
+         * @return A newly allocated string containing the target, or nullptr on error
+         * @note Be sure to free the string when you're done with it
+         * @note This is similar to `get_target`, but the path is relative to the directory
+         * @note This does not validate the symlink, it only treats it as a string
+         */
+        char *get_targetat(int dir, const char *path);
+
+        /**
          * @brief Set the target of a symlink
          * @param path The path to the symlink
          * @param target The new target of the symlink
@@ -188,6 +250,16 @@ namespace Hamster
          * @note This does not validate `target` but it only treats it as a string
          */
         int set_target(const char *path, const char *target);
+
+        /**
+         * @brief Set the target of a symlink relative to a directory
+         * @param dir The file descriptor of the directory to set the symlink target in
+         * @param path The path to the symlink, starting from the directory
+         * @param target The new target of the symlink
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This does not validate `target` but it only treats it as a string
+         */
+        int set_targetat(int dir, const char *path, const char *target);
 
         /**
          * @brief List the contents of a directory
