@@ -34,7 +34,7 @@ if [[ "$command" == "build" ]]; then
     echo
 
     g++ -std=c++20 -Wall -Wextra -pedantic -Ofast -march=native -mtune=native -funroll-loops \
-        -Isrc -Iinclude -o hamster $files
+        -Isrc -Iinclude -DNDEBUG -o hamster $files
     if [[ $? -ne 0 ]]; then
         echo "Error: Build failed. Please check the output for details."
         exit 1
