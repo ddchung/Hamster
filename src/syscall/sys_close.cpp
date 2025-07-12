@@ -44,7 +44,7 @@ namespace Hamster
             return transfer_error(thread);
         }
 
-        return 0;
+        return set_return(thread, 0);
     }
 } // namespace Hamster
 

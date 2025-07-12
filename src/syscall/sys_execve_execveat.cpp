@@ -190,7 +190,7 @@ namespace Hamster
         if (res < 0)
             return transfer_error(thread);
         
-        return 0;
+        return set_return(thread, res);
     }
 } // namespace Hamster
 
