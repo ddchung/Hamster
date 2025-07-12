@@ -8,6 +8,9 @@ namespace Hamster
 {
     namespace SyscallID
     {
+
+        // minor note: those postfixed with // after the number (e.g. `EXIT = 93,//`) are
+        // actually implemented, while those without are not implemented yet and are just stubs
         enum ID : uint16_t
         {
             /**
@@ -23,6 +26,13 @@ namespace Hamster
              * @note Userspace sig: `pid_t getpid(void);`, `pid_t` = `int`
              */
             GETPID = 172,//
+
+            /**
+             * @brief Get the PID of the parent process
+             * This system call retrieves the process ID of the parent process of the calling process.
+             * @note Userspace sig: `pid_t getppid(void);`, `pid_t` = `int`
+             */
+            GETPPID = 173,
 
             /**
              * @brief Clone a task
@@ -119,7 +129,7 @@ namespace Hamster
              * and timestamps.
              * @note Userspace sig: `int newfstat(int fd, struct stat *statbuf);`
              */
-            NEWFSTAT = 80,
+            NEWFSTAT = 80,//
 
             /**
              * @brief Duplicate a file descriptor to the lowest available file descriptor

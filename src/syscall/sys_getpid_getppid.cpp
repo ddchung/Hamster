@@ -1,4 +1,4 @@
-// Hamster getpid syscall
+// Hamster getpid and getppid syscall
 
 #include <syscall/syscall.hpp>
 #include <abi/syscall_id.hpp>
@@ -14,5 +14,14 @@ namespace Hamster
         assert(process);
 
         return set_return(thread, process->pid);
+    }
+
+    int sys_getppid(Thread &thread)
+    {
+        Process *process = thread.get_process();
+
+        assert(process);
+
+        return set_return(thread, process->ppid);
     }
 }
