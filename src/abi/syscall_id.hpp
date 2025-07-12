@@ -32,7 +32,7 @@ namespace Hamster
              * This system call retrieves the process ID of the parent process of the calling process.
              * @note Userspace sig: `pid_t getppid(void);`, `pid_t` = `int`
              */
-            GETPPID = 173,
+            GETPPID = 173,//
 
             /**
              * @brief Clone a task

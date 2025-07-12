@@ -38,6 +38,8 @@ namespace Hamster
                 return sys_exit(thread);
             case SyscallID::GETPID:
                 return sys_getpid(thread);
+            case SyscallID::GETPPID:
+                return sys_getppid(thread);
             case SyscallID::CLONE:
                 return sys_clone(thread);
             case SyscallID::EXECVE:
