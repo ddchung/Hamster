@@ -104,6 +104,25 @@ namespace Hamster
         int stat(int fd, sys_stat *buf);
 
         /**
+         * @brief Stat a file at a given path, following it if it is a symlink
+         * @param path The path to the file
+         * @param buf The stat buffer to populate
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This cannot be used to stat a symlink, as it will follow it
+         */
+        int stat(const char *path, sys_stat *buf);
+
+        /**
+         * @brief Stat a file at a given path relative to a directory, following it if it is a symlink
+         * @param dir The directory to start at
+         * @param path The path to the file, starting from the directory
+         * @param buf The stat buffer to populate
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note THis cannot be used to stata a symlink, as it will follow it
+         */
+        int statat(int dir, const char *path, sys_stat *buf);
+
+        /**
          * @brief Stat a file at a given path
          * @param path The path to the file
          * @return 0 on success, or on error return -1 and set `error`
@@ -132,14 +151,14 @@ namespace Hamster
 
         /**
          * @brief Link a file at a given path relative to a directory to another path relative to another directory
-         * @param old_dir The file descriptor of the directory to link the file from
-         * @param old_path The path to the file to link, starting from `old_dir`
-         * @param new_dir The file descriptor of the directory to link the file to
-         * @param new_path The path to the new link, starting from `new_dir`
+         * @param target_dir The file descriptor of the directory to link the file from
+         * @param target_path The path to the file to link, starting from `old_dir`
+         * @param dir The file descriptor of the directory to link the file to
+         * @param path The path to the new link, starting from `new_dir`
          * @return 0 on success, or on error return -1 and set `error`
          * @note This creates a hard link, not a symlink
          */
-        int linkat(int old_dir, const char *old_path, int new_dir, const char *new_path);
+        int linkat(int target_dir, const char *target_path, int dir, const char *path);
 
         /**
          * Get some attributes of a file or its descriptor

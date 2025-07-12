@@ -274,11 +274,17 @@ namespace Hamster
     int VFS::removeat(int dfd, const char *path)
     {
         BaseFile *file = data->fd_manager.get_fd(dfd);
-        if (!file || file->type() != FileType::Directory)
+        if (!file)
         {
             error = EBADF;
             return -1;
-        }   
+        }
+        
+        if (file->type() != FileType::Directory)
+        {
+            error = ENOTDIR;
+            return -1;
+        }
 
         BaseDirectory *dir = (BaseDirectory *)file->clone();
         if (!dir)
@@ -327,6 +333,77 @@ namespace Hamster
         return ret;
     }
 
+    int VFS::statat(int dfd, const char *path, sys_stat *buf)
+    {
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file)
+        {
+            error = EBADF;
+            return -1;
+        }
+        
+        if (file->type() != FileType::Directory)
+        {
+            error = ENOTDIR;
+            return -1;
+        }
+
+        BaseDirectory *dir = (BaseDirectory *)file->clone();
+        if (!dir)
+            return -1;
+        
+
+        file = data->mounts.lopen(path, OPEN_RDONLY, 0, dir);
+        if (!file)
+            return -1;
+        
+        if (file->type() == FileType::Symlink)
+        {
+            BaseSymlink *link = (BaseSymlink *)file;
+            char *target = link->get_target();
+            dealloc(link);
+
+            if (!target)
+            {
+                error = ENOENT;
+                return -1;
+            }
+
+            // Note: do not specify dir in this one, as symlinks are absolute and should
+            // be relative to the root directory
+            file = data->mounts.lopen(target, OPEN_RDONLY, 0);
+            dealloc(target);
+
+            if (!file)
+            {
+                error = ENOENT;
+                return -1;
+            }
+        }
+
+        int ret = file->stat(buf);
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::stat(const char *path, sys_stat *buf)
+    {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        int rootfd = open("/", OPEN_RDONLY | OPEN_DIRECTORY);
+        if (!rootfd)
+            return -1;
+        
+        int res = statat(rootfd, path, buf);
+        close(rootfd);
+
+        return res;
+    }
+
     int VFS::lstatat(int dfd, const char *path, sys_stat *buf)
     {
         BaseFile *file = data->fd_manager.get_fd(dfd);
@@ -365,6 +442,144 @@ namespace Hamster
         int ret = file->stat(buf);
         dealloc(file);
         return ret;
+    }
+
+    int VFS::linkat(int target_dfd, const char *target_path, int dfd, const char *path)
+    {
+        if (target_dfd < 0 || dfd < 0)
+        {
+            error = EBADF;
+            return -1;
+        }
+
+        if (!target_path || !path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file)
+        {
+            error = EBADF;
+            return -1;
+        }
+        
+        if (file->type() != FileType::Directory)
+        {
+            error = ENOTDIR;
+            return -1;
+        }
+
+        BaseFile *file2 = data->fd_manager.get_fd(target_dfd);
+        if (!file2)
+        {
+            error = EBADF;
+            return -1;
+        }
+        
+        if (file2->type() != FileType::Directory)
+        {
+            error = ENOTDIR;
+            return -1;
+        }
+        
+        BaseDirectory *dir = (BaseDirectory*)file->clone();
+        BaseDirectory *target_dir = (BaseDirectory*)file2->clone();
+
+        if (!dir || !target_dir)
+        {
+            dealloc(dir);
+            dealloc(target_dir);
+            return -1;
+        }
+
+        const char *last = strrchr(path, '/');
+        const char *name = last ? last + 1 : path;
+        char *dirname;
+
+        if (last)
+        {
+            dirname = alloc<char>(last - path + 1);
+            strncpy(dirname, path, last - path);
+            dirname[last - path] = '\0';
+        }
+        else
+        {
+            dirname = alloc<char>(2);
+            dirname[0] = '/';
+            dirname[1] = '\0';
+        }
+
+        BaseDirectory *parent_dir = (BaseDirectory*)data->mounts.lopen(dirname, OPEN_RDWR | OPEN_DIRECTORY, 0, target_dir);
+        dealloc(dirname);
+        BaseFile *target_file = data->mounts.lopen(target_path, OPEN_RDONLY, 0, dir);
+
+        if (!parent_dir || !target_file)
+        {
+            dealloc(parent_dir);
+            dealloc(target_file);
+            return -1;
+        }
+
+        if (target_file->type() == FileType::Symlink)
+        {
+            BaseSymlink *link = (BaseSymlink *)target_file;
+            char *target = link->get_target();
+            dealloc(link);
+
+            if (!target)
+            {
+                dealloc(parent_dir);
+                error = ENOENT;
+                return -1;
+            }
+
+            // Note: do not specify dir in this one, as symlinks are absolute and should
+            // be relative to the root directory
+            target_file = data->mounts.lopen(target, OPEN_RDONLY, 0);
+            dealloc(target);
+
+            if (!target_file)
+            {
+                dealloc(parent_dir);
+                error = ENOENT;
+                return -1;
+            }
+        }
+
+        int res;
+
+        if (target_file->type() != FileType::Directory)
+            res = parent_dir->link(target_file, name);
+        else
+        {
+            error = EPERM;
+            res = -1;
+        }
+
+        dealloc(parent_dir);
+        dealloc(target_file);
+        
+        return res;
+    }
+
+    int VFS::link(const char *target, const char *path)
+    {
+        if (!target || !path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        int rootfd = open("/", OPEN_RDWR | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return -1;
+
+        int res = linkat(rootfd, target, rootfd, path);
+        close(rootfd);
+
+        return res;
     }
 
     int VFS::get_mode(int fd)
