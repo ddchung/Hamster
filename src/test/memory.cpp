@@ -10,6 +10,8 @@
 #include <cassert>
 #include <cstdlib>
 
+#ifndef NDEBUG
+
 static unsigned int hash_int(unsigned int x) {
     x = ((x >> 16) ^ x) * 0x45d9f3b;
     x = ((x >> 16) ^ x) * 0x45d9f3b;
@@ -363,3 +365,5 @@ void test_memory()
         ++i;
     }
 }
+
+#endif // NDEBUG

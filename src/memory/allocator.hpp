@@ -40,7 +40,7 @@ namespace Hamster
         const std::size_t total_size = header_size + data_size + (alignment - 1);
 
         // raw block from malloc
-        void *raw = std::malloc(total_size);
+        void *raw = _malloc(total_size);
         assert(raw != nullptr);
 
         // find an address after the header that satisfies alignment
@@ -117,6 +117,6 @@ namespace Hamster
             (cv_p + i)->~T();
         }
 
-        std::free(raw);
+        _free(raw);
     }
 } // namespace Hamster

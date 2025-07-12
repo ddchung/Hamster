@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstdlib>
 
+#ifndef NDEBUG
+
 uint8_t buffer1[HAMSTER_PAGE_SIZE];
 uint8_t buffer2[HAMSTER_PAGE_SIZE];
 
@@ -98,3 +100,5 @@ void test_platform()
     i = Hamster::_swap_rm_all();
     assert_eq(i, 0);
 }
+
+#endif // NDEBUG

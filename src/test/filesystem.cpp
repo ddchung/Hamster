@@ -11,6 +11,8 @@
 
 using namespace Hamster;
 
+#ifndef NDEBUG
+
 void test_filesystem()
 {
     // Allocate VFS and filesystem using custom allocator
@@ -267,3 +269,5 @@ void test_filesystem()
     assert(vfs->close(fd) == 0);
     assert(vfs->unmount("/") == 0);
 }
+
+#endif // NDEBUG

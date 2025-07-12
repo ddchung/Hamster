@@ -89,6 +89,7 @@ int main()
         return -1;
     }
 
+#ifndef NDEBUG
     Hamster::_log("Testing Platform...\n");
     test_platform();
     Hamster::_log("Done\n");
@@ -100,6 +101,7 @@ int main()
     Hamster::_log("Testing Filesystem...\n");
     test_filesystem();
     Hamster::_log("Done\n");
+#endif // NDEBUG
 
     if (Hamster::_mount_rootfs() != 0)
     {
