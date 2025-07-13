@@ -187,6 +187,22 @@ namespace Hamster
 
         dealloc(path);
 
+
+        // Close all file descriptors marked FD_CLOEXEC (0x1)
+
+        for (auto &fd : process->fds)
+        {
+            if (fd.fd_flags & 0x1) // FD_CLOEXEC
+            {
+                if (--fd_refcount[fd.fd] == 0)
+                {
+                    vfs.close(fd.fd);
+                }
+                fd.fd = -1; // Mark as closed
+                fd.fd_flags = 0; // Reset flags
+            }
+        }
+
         if (res < 0)
             return transfer_error(thread);
         
