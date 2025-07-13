@@ -48,6 +48,16 @@ namespace Hamster
          */
         virtual BaseFilesystem *get_filesystem() = 0;
 
+        /**
+         * @brief Get an integer identifier for the file, valid on the same filesystem, for the lifetime of the file.
+         * @return An integer identifier for the file, or -1 on error
+         * @note This can be any number, just as long as it's different for each file on the same filesystem.
+         * @note This is used by the VFS to identify files, and it will break if this doesn't return a unique value for each file.
+         * @note This can, but is *not* requried to be implemented by returning the inode number
+         */
+        virtual int get_id() const = 0;
+        // Note that for get_id, **FOR NOW** it is almost ok to return random value each time, as it is only used
+        // right now to check for looping symlinks. Doing the rand thing will effectively disable that check.
 
         /**
          * @brief Stat the file.

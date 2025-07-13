@@ -128,6 +128,7 @@ namespace Hamster
             }
             BaseSymlink *link = (BaseSymlink *)file;
             char *target = link->get_target();
+            int id = link->get_id();
             dealloc(link);
 
             if (!target)
@@ -136,9 +137,16 @@ namespace Hamster
                 return -1;
             }
 
-            int fd = open(target, flags, mode);
+            file = data->mounts.lopen(target, flags, mode);
             dealloc(target);
-            return fd;
+            if (!file)
+                return -1;
+            if (file->get_id() == id)
+            {
+                dealloc(file);
+                error = ELOOP; // Loop detected
+                return -1;
+            }
         }
 
         int fd = data->fd_manager.add_fd(file);
@@ -939,6 +947,7 @@ namespace Hamster
             }
             BaseSymlink *link = (BaseSymlink *)new_file;
             char *target = link->get_target();
+            int id = link->get_id();
             dealloc(link);
 
             if (!target)
@@ -947,9 +956,24 @@ namespace Hamster
                 return -1;
             }
 
-            int fd = openat(dir, target, flags, mode);
+            //re-clone the file
+            cloned_file = file->clone();
+            if (!cloned_file)
+            {
+                dealloc(target);
+                return -1;
+            }
+
+            new_file = data->mounts.lopen(target, flags, mode, (BaseDirectory*)cloned_file);
             dealloc(target);
-            return fd;
+            if (!new_file)
+                return -1;
+            if (new_file->get_id() == id)
+            {
+                dealloc(new_file);
+                error = ELOOP; // Loop detected
+                return -1;
+            }
         }
 
         int fd = data->fd_manager.add_fd(new_file);

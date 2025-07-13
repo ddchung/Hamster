@@ -122,6 +122,18 @@ namespace Hamster
                 return node->filesystem;
             }
 
+            int get_id() const
+            {
+                if (!node)
+                {
+                    error = EBADF;
+                    return -1;
+                }
+
+                // this will be different for every file, so we can use the address as an ID
+                return (uintptr_t)(node);
+            }
+
             int stat(sys_stat *buf)
             {
                 if (!node)
@@ -291,6 +303,7 @@ namespace Hamster
             ~RamFsRegularHandle() override = default;
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
+            int get_id() const override { return RamFsNodeHandle::get_id(); }
             int stat(sys_stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
@@ -502,6 +515,7 @@ namespace Hamster
             ~RamFsSpecialHandle() override = default;
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
+            int get_id() const override { return RamFsNodeHandle::get_id(); }
             int stat(sys_stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
@@ -559,6 +573,7 @@ namespace Hamster
             ~RamFsSymlinkHandle() override = default;
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
+            int get_id() const override { return RamFsNodeHandle::get_id(); }
             int stat(sys_stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
@@ -628,7 +643,7 @@ namespace Hamster
             ~RamFsDirectoryHandle() override = default;
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
-
+            int get_id() const override { return RamFsNodeHandle::get_id(); }
             int stat(sys_stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
@@ -657,10 +672,17 @@ namespace Hamster
                 if (!dir_node)
                     return nullptr;
                 
-                if ((uint64_t)offset >= dir_node->children.size() || offset < 0)
+                if (offset < 0)
                 {
                     error = EINVAL;
                     return nullptr;
+                }
+
+                if (offset >= dir_node->children.size())
+                {
+                    char **empty_list = alloc<char *>(1);
+                    empty_list[0] = nullptr; // Null-terminate the array
+                    return empty_list;
                 }
 
                 count = std::min((uint64_t)count, (uint64_t)dir_node->children.size() - offset);

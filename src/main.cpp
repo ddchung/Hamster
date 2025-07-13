@@ -101,6 +101,8 @@ int main()
     Hamster::_log("Testing Filesystem...\n");
     test_filesystem();
     Hamster::_log("Done\n");
+
+    Hamster::error = 0; // Reset error after tests
 #endif // NDEBUG
 
     if (Hamster::_mount_rootfs() != 0)
