@@ -8,26 +8,8 @@
 #include <new>
 #include <type_traits>
 
-#ifndef NDEBUG
-
-#include <unordered_set>
-#include <string>
-#include <cstdio>
-#include <cstdlib>
-#include <typeinfo>
-
-#if __cplusplus >= 202002L
-#include <source_location>
-#endif // __cplusplus >= 202002L
-
-#endif // NDEBUG
-
 namespace Hamster
 {
-#ifndef NDEBUG
-    extern std::unordered_set<void *> allocated_pointers;
-#endif // NDEBUG
-
     template <typename T, typename... Args>
     T *alloc(std::size_t N = 1, Args &&...args)
     {
@@ -64,21 +46,12 @@ namespace Hamster
             new (result + i) T(std::forward<Args>(args)...);
         }
 
-#ifndef NDEBUG
-        // store the pointer in a set for debugging
-        allocated_pointers.insert(result);
-#endif // NDEBUG
-
         return result;
     }
 
     // dealloc<T>(p) — destroy the N objects and free only the original malloc() pointer
     template <typename T>
-    void dealloc(T *cv_p
-#if __cplusplus >= 202002L && !defined(NDEBUG)
-                 , std::source_location loc = std::source_location::current()
-#endif // __cplusplus >= 202002L
-    )
+    void dealloc(T *cv_p)
     {
         using U = std::remove_cv_t<std::remove_pointer_t<T>>;
 
@@ -86,21 +59,6 @@ namespace Hamster
 
         if (!p)
             return;
-
-        #ifndef NDEBUG
-        if (allocated_pointers.find(p) == allocated_pointers.end())
-        {
-            #if __cplusplus >= 202002L
-            fprintf(stderr, "Invalid pointer %p passed to dealloc called from %s:%d\n", (void*)p, (const char *)loc.file_name(), (int)loc.line());
-            #else
-            fprintf(stderr, "Invalid pointer %p passed to dealloc\n", p);
-            #endif // __cplusplus >= 202002L
-            fprintf(stderr, "Pointer not found in allocated pointers set\n");
-            fprintf(stderr, "This can be caused by possible double deletion or memory corruption\n");
-            abort();
-        }
-        allocated_pointers.erase(p);
-        #endif // NDEBUG
 
         const std::size_t header_size = sizeof(void *) + sizeof(std::size_t);
         char *user_ptr = (char *)(p);

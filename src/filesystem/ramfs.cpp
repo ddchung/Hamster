@@ -24,13 +24,15 @@ namespace Hamster
 
             virtual FileType type() const = 0;
 
+            RamFsNode(RamFsNode &&) = delete;
+            RamFsNode(const RamFsNode &) = delete;
+            RamFsNode &operator=(RamFsNode &&) = delete;
+            RamFsNode &operator=(const RamFsNode &) = delete;
+
             RamFsNode(int mode, int uid, int gid)
                 : mode(mode), uid(uid), gid(gid), vfs_flags(0), refcount(1), filesystem(nullptr)
             {
             }
-
-            RamFsNode(const RamFsNode &) = delete;
-            RamFsNode &operator=(const RamFsNode &) = delete;
 
             int mode;
             int uid, gid;
@@ -81,7 +83,14 @@ namespace Hamster
             {
                 for (auto &[name, node] : children)
                 {
-                    dealloc(node);
+                    if (node)
+                    {
+                        node->refcount--;
+                        if (node->refcount == 0)
+                        {
+                            dealloc(node);
+                        }
+                    }
                 }
             }
 
@@ -935,6 +944,19 @@ namespace Hamster
                     return -1;
                 
                 RamFsNode *target = handle->get_node();
+
+
+                if (!target)
+                {
+                    error = EBADF;
+                    return -1;
+                }
+
+                if (dir_node->children.find(name) != dir_node->children.end())
+                {
+                    error = EEXIST;
+                    return -1;
+                }
 
                 dir_node->children[name] = target;
                 target->refcount += 1;
