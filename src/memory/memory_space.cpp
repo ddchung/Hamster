@@ -349,8 +349,20 @@ namespace Hamster
 
         uint8_t byte;
 
-        for (uint64_t it = addr; read_byte(it, byte) == 0 && byte != '\0'; it++)
-            ++length;
+        for (uint64_t it = addr;; it++)
+        {
+            if (read_byte(it, byte) < 0)
+            {
+                return nullptr; // Error already set in read_byte
+            }
+
+            if (byte == '\0')
+            {
+                break; // Found the null terminator
+            }
+
+            length++;
+        }
         
         char *str = alloc<char>(length + 1);
 
