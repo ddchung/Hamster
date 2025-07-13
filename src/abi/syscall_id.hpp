@@ -154,7 +154,7 @@ namespace Hamster
              * This system call creates a new directory at the specified path relative to a directory file descriptor
              * @note Userspace sig: `int mkdirat(int dirfd, const char *pathname, mode_t mode);`, `mode_t` = `unsigned int`
              */
-            MKDIRAT = 34,
+            MKDIRAT = 34,//
 
             /**
              * @brief Remove a file or directory from a path relative to a directory file descriptor
