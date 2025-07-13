@@ -120,13 +120,15 @@ namespace Hamster
 
         statxbuf.mask = 0x7FFU; // Set to STATX_BASIC_STATS only, since we don't support all fields
         
-        *(uint64_t*)&statxbuf.rdev_major = statbuf.rdev;
+        statxbuf.rdev_major = statbuf.rdev >> 32;
+        statxbuf.rdev_minor = statbuf.rdev & 0xFFFFFFFF;
         statxbuf.ino = statbuf.ino;
         statxbuf.mode = statbuf.mode;
         statxbuf.nlink = statbuf.nlink;
         statxbuf.uid = statbuf.uid;
         statxbuf.gid = statbuf.gid;
-        *(uint64_t*)&statxbuf.dev_major = statbuf.dev;
+        statxbuf.dev_major = statbuf.dev >> 32;
+        statxbuf.dev_minor = statbuf.dev & 0xFFFFFFFF;
         statxbuf.size = statbuf.size;
         statxbuf.blksize = statbuf.blksize;
         statxbuf.blocks = statbuf.blocks;
