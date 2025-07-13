@@ -364,6 +364,66 @@ void test_memory()
         assert(x == expected[i]);
         ++i;
     }
+
+    // Allocating zero elements (should return nullptr or valid pointer)
+    int *zero_ptr = Hamster::alloc<int>(0);
+    Hamster::dealloc(zero_ptr);
+
+    // STLAllocator edge cases
+    Hamster::Vector<int> stl_vec;
+    for (int i = 0; i < 100; ++i) stl_vec.push_back(i);
+    for (int i = 0; i < 100; ++i) assert(stl_vec[i] == i);
+    stl_vec.clear();
+
+    // Page edge cases
+    Hamster::Page page;
+    page.swap_out();
+    // Accessing swapped-out page returns dummy
+    uint8_t &dummy_ref = page[0];
+    dummy_ref = 55;
+    assert(Hamster::Page::get_dummy() == 55);
+    page.swap_in();
+    // Out-of-bounds access returns dummy
+    uint8_t &oob_ref = page[HAMSTER_PAGE_SIZE + 1000];
+    oob_ref = 77;
+    assert(Hamster::Page::get_dummy() == 77);
+    // Set/get flags
+    page.get_flags() = 0xABCD;
+    assert(page.get_flags() == 0xABCD);
+
+    // MemorySpace edge cases
+    Hamster::MemorySpace ms;
+    // Write/read to unallocated address (should auto-allocate)
+    assert(ms.write_byte(0x100000, 0x42) == 0);
+    uint8_t val = 0;
+    assert(ms.read_byte(0x100000, val) == 0 && val == 0x42);
+    // Deallocate already deallocated page
+    assert(ms.deallocate_page(0x100000) == 0);
+    assert(ms.deallocate_page(0x100000) == -1);
+    // Allocate page at 0x200000
+    assert(ms.write_byte(0x200000, 0x0) == 0);
+    // Set permissions and check enforcement
+    assert(ms.set_permissions(0x200000, 0x0) == 0); // no access
+    assert(ms.write_byte(0x200000, 0x11) == -1); // should fail
+    assert(ms.set_permissions(0x200000, 0x2) == 0); // write only
+    assert(ms.write_byte(0x200000, 0x22) == 0);
+    assert(ms.set_permissions(0x200000, 0x1) == 0); // read only
+    assert(ms.write_byte(0x200000, 0x33) == -1); // should fail
+    // Copy/move assignment and self-assignment
+    Hamster::MemorySpace ms2;
+    ms2 = ms;
+    ms2 = ms2;
+    Hamster::MemorySpace ms3(std::move(ms2));
+    ms3 = std::move(ms3);
+
+    // mmap/munmap edge cases (simulate with invalid params)
+    assert(ms.mmap(0x300000, 0x1000, 0x3, MAP_PRIVATE, -1, 0) == -1); // invalid fd
+
+    // STLAllocator with map
+    Hamster::Map<int, int> stl_map;
+    stl_map[1] = 2;
+    stl_map[3] = 4;
+    assert(stl_map[1] == 2 && stl_map[3] == 4);
 }
 
 #endif // NDEBUG

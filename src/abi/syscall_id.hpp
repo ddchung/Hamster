@@ -168,14 +168,14 @@ namespace Hamster
              * This system call creates a hard link to a file at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags);`
              */
-            LINKAT = 37,
+            LINKAT = 37,//
 
             /**
              * @brief Rename a file or directory from a path relative to a directory file descriptor
              * This system call renames a file or directory at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int renameat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath);`
              */
-            RENAMEAT = 38,
+            RENAMEAT = 38,//
 
             /**
              * @brief Rename a file or directory from a path relative to a directory file descriptor with an additional flag
