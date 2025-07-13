@@ -1,4 +1,4 @@
-// Hamster renameat system call
+// Hamster renameat and renameat2 system calls
 
 #include <syscall/syscall.hpp>
 #include <abi/syscall_id.hpp>
@@ -109,5 +109,19 @@ namespace Hamster
         }
 
         return set_return(thread, 0);
+    }
+
+    // For now, we don't support renameat2 flags, it will just redirect to renameat
+    int sys_renameat2(Thread &thread)
+    {
+        // Check for unsupported options
+        uint32_t flags = get_arg(thread, 4);
+
+        if (flags != 0)
+        {
+            error = ENOTSUP; // Not supported
+            return transfer_error(thread);
+        }
+        return sys_renameat(thread);
     }
 } // namespace Hamster
