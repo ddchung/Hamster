@@ -51,5 +51,8 @@ namespace Hamster
     int sys_mmap2(Thread &thread);
     int sys_munmap(Thread &thread);
     int sys_mprotect(Thread &thread);
+    int sys_statx(Thread &thread);
+    int sys_readlinkat(Thread &thread);
+    int sys_symlinkat(Thread &thread);
 } // namespace Hamster
 

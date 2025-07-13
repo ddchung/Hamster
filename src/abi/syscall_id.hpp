@@ -205,7 +205,7 @@ namespace Hamster
              * This system call retrieves the current working directory of the calling process.
              * @note Userspace sig: `char *getcwd(char *buf, size_t size);`, `size_t` = `unsigned long`
              */
-            GETCWD = 17,
+            GETCWD = 17,//
 
             /**
              * @brief Check if a file exists, and potentially if it is read|write|execute accessible
@@ -247,6 +247,28 @@ namespace Hamster
              * @note Userspace sig: `int mprotect(void *addr, size_t len, int prot);`
              */
             MPROTECT = 226,
+
+            /**
+             * @brief Extended stat
+             * This system call retrieves extended file status information, such as attributes and timestamps,
+             * for a file or directory.
+             * @note Userspace sig: `int statx(int dirfd, const char *pathname, int flags, unsigned int mask, struct statx *statxbuf);`
+             */
+            STATX = 291,//
+
+            /**
+             * @brief Read a symbolic link
+             * This system call reads the target of a symbolic link and returns it in a buffer.
+             * @note Userspace sig: `ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);`, `ssize_t` = `long`
+             */
+            READLINKAT = 78,
+
+            /**
+             * @brief Create a symbolic link
+             * This system call creates a symbolic link at the specified path relative to a directory file descriptor
+             * @note Userspace sig: `int symlinkat(const char *target, int newdirfd, const char *linkpath);`
+             */
+            SYMLINKAT = 36,
         };
     } // namespace SyscallID
 } // namespace Hamster

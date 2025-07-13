@@ -98,6 +98,12 @@ namespace Hamster
                 return sys_munmap(thread);
             case SyscallID::MPROTECT:
                 return sys_mprotect(thread);
+            case SyscallID::STATX:
+                return sys_statx(thread);
+            case SyscallID::READLINKAT:
+                return sys_readlinkat(thread);
+            case SyscallID::SYMLINKAT:
+                return sys_symlinkat(thread);
             default:
                 LOG_UNKNOWN_SYSCALL(thread);
                 set_return(thread, -EINVAL);
@@ -191,5 +197,8 @@ namespace Hamster
     __attribute__((weak)) int sys_mmap2(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
     __attribute__((weak)) int sys_munmap(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
     __attribute__((weak)) int sys_mprotect(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_statx(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_readlinkat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_symlinkat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
 } // namespace Hamster
 
