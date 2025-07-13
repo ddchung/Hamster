@@ -414,7 +414,11 @@ void test_memory()
     ms2 = ms;
     ms2 = ms2;
     Hamster::MemorySpace ms3(std::move(ms2));
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wself-move"
     ms3 = std::move(ms3);
+#pragma GCC diagnostic pop
 
     // mmap/munmap edge cases (simulate with invalid params)
     assert(ms.mmap(0x300000, 0x1000, 0x3, MAP_PRIVATE, -1, 0) == -1); // invalid fd
