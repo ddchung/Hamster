@@ -121,7 +121,7 @@ namespace Hamster
              * and timestamps.
              * @note Userspace sig: `int newfstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags);`
              */
-            NEWFSTATAT = 79,
+            NEWFSTATAT = 79,//
 
             /**
              * @brief Get file status of a path relative to the current working directory
@@ -137,7 +137,7 @@ namespace Hamster
              * file descriptors to refer to the same open file.
              * @note Userspace sig: `int dup(int oldfd);`
              */
-            DUP = 23,
+            DUP = 23,//
 
             /**
              * @brief Duplicate a file descriptor to a specific file descriptor
@@ -147,7 +147,7 @@ namespace Hamster
              * it is closed, with any errors ignored, before the operation
              * @note Userspace sig: `int dup3(int oldfd, int newfd, int flag);`
              */
-            DUP3 = 24,
+            DUP3 = 24,//
 
             /**
              * @brief Create a new directory from a path relative to a directory file descriptor
