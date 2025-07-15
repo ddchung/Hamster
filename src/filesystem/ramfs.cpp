@@ -144,7 +144,8 @@ namespace Hamster
 
                 memset(buf, 0, sizeof(sys_stat));
 
-                buf->mode = node->mode;
+                buf->ino = get_id();
+                buf->mode = node->mode & 0777;
                 buf->uid = node->uid;
                 buf->gid = node->gid;
                 buf->size = 0;
@@ -678,7 +679,7 @@ namespace Hamster
                     return nullptr;
                 }
 
-                if (offset >= dir_node->children.size())
+                if (offset >= (int64_t)dir_node->children.size())
                 {
                     char **empty_list = alloc<char *>(1);
                     empty_list[0] = nullptr; // Null-terminate the array
@@ -699,6 +700,8 @@ namespace Hamster
                     strcpy(strings[i], it->first.c_str());
                     ++it;
                 }
+
+                offset += count;
 
                 return strings;
             }
