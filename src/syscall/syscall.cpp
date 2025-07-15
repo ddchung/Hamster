@@ -104,6 +104,14 @@ namespace Hamster
                 return sys_readlinkat(thread);
             case SyscallID::SYMLINKAT:
                 return sys_symlinkat(thread);
+            case SyscallID::GETUID:
+                return sys_getuid(thread);
+            case SyscallID::GETEUID:
+                return sys_geteuid(thread);
+            case SyscallID::GETGID:
+                return sys_getgid(thread);
+            case SyscallID::GETEGID:
+                return sys_getegid(thread);
             default:
                 LOG_UNKNOWN_SYSCALL(thread);
                 set_return(thread, -EINVAL);
@@ -200,5 +208,9 @@ namespace Hamster
     __attribute__((weak)) int sys_statx(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
     __attribute__((weak)) int sys_readlinkat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
     __attribute__((weak)) int sys_symlinkat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_getuid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_geteuid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_getgid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_getegid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
 } // namespace Hamster
 

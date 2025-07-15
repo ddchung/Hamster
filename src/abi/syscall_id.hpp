@@ -183,7 +183,7 @@ namespace Hamster
              * allowing for additional flags to control the operation.
              * @note Userspace sig: `int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, unsigned int flags);`
              */
-            RENAMEAT2 = 276,
+            RENAMEAT2 = 276,//
 
             /**
              * @brief Read the directory entries of a directory file descriptor
@@ -269,6 +269,30 @@ namespace Hamster
              * @note Userspace sig: `int symlinkat(const char *target, int newdirfd, const char *linkpath);`
              */
             SYMLINKAT = 36,
+
+            /**
+             * @brief Get the user ID of the calling process
+             * @note Userspace sig: `uid_t getuid(void);`, `uid_t` = `unsigned int`
+             */
+            GETUID = 174,
+
+            /**
+             * @brief Get effective user ID of the calling process
+             * @note Userspace sig: `uid_t geteuid(void);`, `uid_t` = `unsigned int`
+             */
+            GETEUID = 175,
+
+            /**
+             * @brief Get the group ID of the calling process
+             * @note Userspace sig: `gid_t getgid(void);`, `gid_t` = `unsigned int`
+             */
+            GETGID = 176,
+
+            /**
+             * @brief Get effective group ID of the calling process
+             * @note Userspace sig: `gid_t getegid(void);`, `gid_t` = `unsigned int`
+             */
+            GETEGID = 177,
         };
     } // namespace SyscallID
 } // namespace Hamster
