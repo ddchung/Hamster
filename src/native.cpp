@@ -57,7 +57,7 @@ namespace
                 if (S_ISREG(st.st_mode))
                 {
                     // regular file
-                    int file_fd = vfs.openat(vfs_dir, entry->d_name, OPEN_CREAT | OPEN_RDWR | OPEN_EXCL, st.st_mode | 0777);
+                    int file_fd = vfs.openat(vfs_dir, entry->d_name, OPEN_CREAT | OPEN_RDWR | OPEN_EXCL, 0755);
                     if (file_fd < 0)
                     {
                         dealloc(full_path);
@@ -114,7 +114,7 @@ namespace
 
                     // open read-write to be able to iterate and create files in it
                     // Note that this is Hamster-specific VFS behavior
-                    int new_vfs_dir = vfs.mkdirat(vfs_dir, entry->d_name, OPEN_RDWR, st.st_mode | 0777);
+                    int new_vfs_dir = vfs.mkdirat(vfs_dir, entry->d_name, OPEN_RDWR, 0755);
                     if (new_vfs_dir < 0)
                     {
                         dealloc(full_path);
