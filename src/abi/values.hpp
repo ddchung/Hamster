@@ -11,6 +11,7 @@ namespace Hamster
     constexpr int STAT_IFIFO = 0010000;  // FIFO
     constexpr int STAT_IFLNK = 0120000;  // Symbolic link
     constexpr int STAT_IFSOCK = 0140000; // Socket
+    constexpr int STAT_IFMT = 0170000;  // File type mask
 
     constexpr int OPEN_ACCMODE = 00000003; // Mask for file access modes
     constexpr int OPEN_RDONLY = 00000000;  // Read-only mode
@@ -32,12 +33,12 @@ namespace Hamster
     constexpr int H_SEEK_CUR = 1;    // Set file offset relative to current position
     constexpr int H_SEEK_END = 2;    // Set file offset relative to end of file
 
-    inline bool is_directory(int mode) { return (mode & 0170000) == STAT_IFDIR; }
-    inline bool is_character_device(int mode) { return (mode & 0170000) == STAT_IFCHR; }
-    inline bool is_block_device(int mode) { return (mode & 0170000) == STAT_IFBLK; }
-    inline bool is_regular_file(int mode) { return (mode & 0170000) == STAT_IFREG; }
-    inline bool is_fifo(int mode) { return (mode & 0170000) == STAT_IFIFO; }
-    inline bool is_symbolic_link(int mode) { return (mode & 0170000) == STAT_IFLNK; }
-    inline bool is_socket(int mode) { return (mode & 0170000) == STAT_IFSOCK; }
+    inline bool is_directory(int mode) { return (mode & STAT_IFMT) == STAT_IFDIR; }
+    inline bool is_character_device(int mode) { return (mode & STAT_IFMT) == STAT_IFCHR; }
+    inline bool is_block_device(int mode) { return (mode & STAT_IFMT) == STAT_IFBLK; }
+    inline bool is_regular_file(int mode) { return (mode & STAT_IFMT) == STAT_IFREG; }
+    inline bool is_fifo(int mode) { return (mode & STAT_IFMT) == STAT_IFIFO; }
+    inline bool is_symbolic_link(int mode) { return (mode & STAT_IFMT) == STAT_IFLNK; }
+    inline bool is_socket(int mode) { return (mode & STAT_IFMT) == STAT_IFSOCK; }
 } // namespace Hamster
 
