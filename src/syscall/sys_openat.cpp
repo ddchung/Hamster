@@ -14,6 +14,13 @@ namespace Hamster
         int32_t flags = get_arg(thread, 2);
         int32_t mode = get_arg(thread, 3);
 
+        if (flags & OPEN_CREAT && flags & OPEN_DIRECTORY)
+        {
+            // Compatibility with Linux: If both flags are set, create a file, not a directory
+            // Note that on Hamster, having both flags creates a directory
+            flags &= ~OPEN_DIRECTORY;
+        }
+
         bool is_ref_root = false;
 
         // Get the path from the thread's memory space
