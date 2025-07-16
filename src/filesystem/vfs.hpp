@@ -444,12 +444,13 @@ namespace Hamster
         int mksfileat(int dir, const char *path, BaseSpecialDriver *driver, int mode);
 
         /**
-         * @brief Check whether a given file is a TTY device
-         * @param fd The file descriptor to check
-         * @return 1 if it is a TTY device, 0 if it is not, or on error return -1 and set `error`
-         * @note For non-character devices, this returns 0
+         * @brief Perform an ioctl operation on a special device
+         * @param fd the file descriptor of the device
+         * @param req The operation to perform
+         * @param arg An optional argument for the operation
+         * @return It depends. See comment on `BaseSpecialFileHandle::ioctl`
          */
-        int isatty(int fd);
+        int ioctl(int fd, int req, IoctlArg arg = IoctlArg());
 
         /**
          * @brief Duplicate a file descriptor

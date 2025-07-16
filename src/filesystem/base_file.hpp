@@ -365,7 +365,26 @@ namespace Hamster
     {
         BlockDevice,
         CharacterDevice,
+        Fifo,
         Socket,
+    };
+
+    struct IoctlArg
+    {
+        IoctlArg(int i = 0)
+            : i(i) 
+        {
+        }
+
+        IoctlArg(void *p)
+            : p(p) 
+        {
+        }
+
+        union {
+            int i;
+            void *p;
+        };
     };
 
     class BaseSpecialDriverHandle
@@ -409,18 +428,27 @@ namespace Hamster
          * @return 0 on success, or on error return -1 and set `error`
          */
         virtual int set_flags(int flags) = 0;
+
+        /**
+         * @brief Perform an ioctl operation on the special file.
+         * @param request The request to perform
+         * @param arg An optional argument for the request, which can be an integer or a pointer, depending on the request
+         * @return It depends on the request, but it is guaranteed to return -1 on error and set `error`, but otherwise
+         *       * it depends.
+         */
+        virtual int ioctl(int request, IoctlArg arg = IoctlArg()) = 0;
     };
 
     class BaseCharacterDeviceHandle : public BaseSpecialDriverHandle
     {
     public:
         virtual SpecialFileType special_type() override { return SpecialFileType::CharacterDevice; }
+    };
 
-        /**
-         * @brief Check if the device is a TTY device
-         * @return 1 if it is, 0 if it's not, or on error return -1 and set `error`
-         */
-        virtual int isatty() { return 0; }
+    class BaseFifoHandle : public BaseSpecialDriverHandle
+    {
+    public:
+        virtual SpecialFileType special_type() override { return SpecialFileType::Fifo; }
     };
 
     class BaseSocketDeviceHandle : public BaseSpecialDriverHandle

@@ -51,9 +51,10 @@ public:
 #endif
     }
 
-    int isatty() override
+    int ioctl(int req, Hamster::IoctlArg args) override
     {
-        return 1; // This is a TTY device
+        Hamster::error = ENOTTY;
+        return -1;
     }
 
     int get_flags() override

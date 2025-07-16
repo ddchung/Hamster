@@ -178,6 +178,12 @@ void test_filesystem()
             this->flags = flags;
             return 0;
         }
+
+        int ioctl(int flags, IoctlArg arg) override
+        {
+            error = ENOTTY;
+            return -1;
+        }
     private:
         Deque<int> &deque;
         int flags;

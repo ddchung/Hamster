@@ -338,6 +338,39 @@ namespace Hamster
             return -1;
 
         int ret = file->stat(buf);
+
+        if (file->type() == FileType::Special)
+        {
+            // Get the special file handle
+            BaseSpecialDriverHandle *handle = get_special_handle((BaseSpecialFile *)file, data->special_driver_manager);
+            if (!handle)
+            {
+                error = EBADF;
+                return -1;
+            }
+
+            buf->mode &= ~STAT_IFMT; // Clear the file type bits
+
+            switch (handle->special_type())
+            {
+                case SpecialFileType::CharacterDevice:
+                    buf->mode |= STAT_IFCHR;
+                    break;
+                case SpecialFileType::BlockDevice:
+                    buf->mode |= STAT_IFBLK;
+                    break;
+                case SpecialFileType::Socket:
+                    buf->mode |= STAT_IFSOCK;
+                    break;
+                case SpecialFileType::Fifo:
+                    buf->mode |= STAT_IFIFO;
+                    break;
+                default:
+                    // Do nothing for other types
+                    break;
+            }
+        }
+
         return ret;
     }
 
@@ -1266,14 +1299,17 @@ namespace Hamster
         return 0;
     }
 
-    int VFS::isatty(int fd)
+    int VFS::ioctl(int fd, int req, IoctlArg arg)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
         if (!file)
             return -1;
 
         if (file->type() != FileType::Special)
-            return 0;
+        {
+            error = ENOTTY;
+            return -1;
+        }
         
         BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
         BaseSpecialDriverHandle *handle = sp_file->get_handle();
@@ -1286,10 +1322,7 @@ namespace Hamster
         }
         if (!handle)
             return -1;
-        if (handle->special_type() != SpecialFileType::CharacterDevice)
-            return 0; // Not a character device
-        BaseCharacterDeviceHandle *char_handle = (BaseCharacterDeviceHandle *)handle;
-        return char_handle->isatty();
+        return handle->ioctl(req, arg);
     }
 
     int VFS::dup(int fd)
