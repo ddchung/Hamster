@@ -169,11 +169,12 @@ namespace Hamster
                 }
                 else if (node->type() == FileType::Special)
                 {
-                    buf->mode |= STAT_IFCHR;
+                    auto *special_node = static_cast<RamFsSpecialNode *>(node);
+                    buf->rdev = special_node->device_id;
                 }
                 else
                 {
-                    error = EIO;
+                    error = ENOTSUP;
                     return -1;
                 }
 
