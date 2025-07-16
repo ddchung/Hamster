@@ -112,6 +112,10 @@ namespace Hamster
                 return sys_getgid(thread);
             case SyscallID::GETEGID:
                 return sys_getegid(thread);
+            case SyscallID::IOCTL:
+                return sys_ioctl(thread);
+            case SyscallID::FCNTL:
+                return sys_fcntl(thread);
             default:
                 LOG_UNKNOWN_SYSCALL(thread);
                 set_return(thread, -EINVAL);
@@ -212,5 +216,7 @@ namespace Hamster
     __attribute__((weak)) int sys_geteuid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
     __attribute__((weak)) int sys_getgid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
     __attribute__((weak)) int sys_getegid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_ioctl(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_fcntl(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
 } // namespace Hamster
 

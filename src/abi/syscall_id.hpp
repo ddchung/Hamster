@@ -293,6 +293,20 @@ namespace Hamster
              * @note Userspace sig: `gid_t getegid(void);`, `gid_t` = `unsigned int`
              */
             GETEGID = 177,
+
+            /**
+             * ioctl.
+             * @note Userspace sig: `int ioctl(int fd, int request, ...);`
+             */
+            IOCTL = 29,
+
+            /**
+             * @brief Perform an operation on a file descriptor
+             * This system call performs an operation on a file descriptor, such as changing its flags or
+             * retrieving its status.
+             * @note Userspace sig: `int fcntl(int fd, int cmd, ...);`
+             */
+            FCNTL = 25,
         };
     } // namespace SyscallID
 } // namespace Hamster

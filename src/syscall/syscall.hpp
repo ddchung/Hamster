@@ -58,5 +58,7 @@ namespace Hamster
     int sys_geteuid(Thread &thread);
     int sys_getgid(Thread &thread);
     int sys_getegid(Thread &thread);
+    int sys_ioctl(Thread &thread);
+    int sys_fcntl(Thread &thread);
 } // namespace Hamster
 
