@@ -372,19 +372,17 @@ namespace Hamster
     struct IoctlArg
     {
         IoctlArg(int i = 0)
-            : i(i) 
+            : i(i), p(nullptr)
         {
         }
 
         IoctlArg(void *p)
-            : p(p) 
+            : i(0), p(p)
         {
         }
-
-        union {
-            int i;
-            void *p;
-        };
+        
+        int i;
+        void *p;
     };
 
     class BaseSpecialDriverHandle

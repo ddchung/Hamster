@@ -12,6 +12,7 @@
 #ifdef __STDC_HOSTED__
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
 #endif
 
 void test_platform();
@@ -53,8 +54,15 @@ public:
 
     int ioctl(int req, Hamster::IoctlArg args) override
     {
-        Hamster::error = ENOTTY;
+#ifdef __STDC_HOSTED__
+        if (args.p)
+            return ::ioctl(STDIN_FILENO, req, args.p);
+        else
+            return ::ioctl(STDIN_FILENO, req, args.i);
+#else
+        Hamster::error = ENOSYS; // Not implemented
         return -1;
+#endif
     }
 
     int get_flags() override
