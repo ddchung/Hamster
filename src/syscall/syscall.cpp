@@ -161,7 +161,7 @@ namespace Hamster
         }
 
         Process *proc = thread.get_process();
-        if (thread_fd > (int)proc->fds.size())
+        if (thread_fd >= (int)proc->fds.size())
         {
             error = EBADF;
             return -1;
