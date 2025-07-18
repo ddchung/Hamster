@@ -119,7 +119,7 @@ namespace Hamster
             }
         }
 
-        return res;
+        return set_return(thread, res);
     }
 } // namespace Hamster
 
