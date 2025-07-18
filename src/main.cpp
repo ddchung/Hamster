@@ -26,11 +26,22 @@ class ConsoleCharDeviceHandle : public Hamster::BaseCharacterDeviceHandle
 public:
     ssize_t write(const uint8_t *buf, size_t size) override
     {
+#ifdef __STDC_HOSTED__
+        ssize_t bytes_written = ::write(STDOUT_FILENO, buf, size);
+        if (bytes_written < 0)
+        {
+            Hamster::error = errno;
+            errno = 0;
+            return -1;
+        }
+        return bytes_written;
+#else
         for (size_t i = 0; i < size; ++i)
         {
             Hamster::_log(buf[i]);
         }
         return size;
+#endif
     }
 
     ssize_t read(uint8_t *buf, size_t size) override
