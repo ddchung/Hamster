@@ -42,7 +42,7 @@ namespace Hamster
             }
 
             int op_ppid = thread.get_process()->pid;
-            int op_pid = which == 1 ? id : -1; // P_PID or P_ALL
+            int op_pid = (which == 1 ? id : -1); // P_PID or P_ALL
             int exit_status = 0;
 
             // WNOWAIT
