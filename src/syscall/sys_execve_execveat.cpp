@@ -60,7 +60,7 @@ namespace Hamster
         char *path = process->memory_space.get_string(filename);
         if (!path)
         {
-            error = EIO;
+            error = EFAULT;
             return transfer_error(thread);
         }
 
