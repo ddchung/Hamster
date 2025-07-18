@@ -94,7 +94,6 @@ namespace Hamster
         uint64_t brk = 0;
         if (Hamster::load_elf(fd, memory_space, entry_point, ph_num, brk) < 0)
         {
-            error = EIO;
             return -1;
         }
 
