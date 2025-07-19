@@ -231,6 +231,7 @@ namespace Hamster
                 return -1;
             }
         }
+        mounts.clear();
         mounts.push_back(alloc<MountPoint>(1, "/", fs));
         BaseFile *file = lopen("/", OPEN_RDONLY | OPEN_DIRECTORY, 0);
         if (!file)
