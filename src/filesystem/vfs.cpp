@@ -376,58 +376,25 @@ namespace Hamster
 
     int VFS::statat(int dfd, const char *path, sys_stat *buf)
     {
-        BaseFile *file = data->fd_manager.get_fd(dfd);
-        if (!file)
-        {
-            error = EBADF;
+        int fd = openat(dfd, path, OPEN_RDONLY);
+        if (fd < 0)
             return -1;
-        }
-        
-        if (file->type() != FileType::Directory)
-        {
-            error = ENOTDIR;
-            return -1;
-        }
-
-        BaseDirectory *dir = (BaseDirectory *)file->clone();
-        if (!dir)
-            return -1;
-        
-
-        file = data->mounts.lopen(path, OPEN_RDONLY, 0, dir);
-        if (!file)
-            return -1;
-        
-        if (file->type() == FileType::Symlink)
-        {
-            BaseSymlink *link = (BaseSymlink *)file;
-            char *target = link->get_target();
-            dealloc(link);
-
-            if (!target)
-            {
-                error = ENOENT;
-                return -1;
-            }
-
-            // Note: do not specify dir in this one, as symlinks are absolute and should
-            // be relative to the root directory
-            file = data->mounts.lopen(target, OPEN_RDONLY, 0);
-            dealloc(target);
-
-            if (!file)
-            {
-                error = ENOENT;
-                return -1;
-            }
-        }
-
-        int ret = file->stat(buf);
-        dealloc(file);
-        return ret;
+        int res = stat(fd, buf);
+        close(fd);
+        return res;
     }
 
     int VFS::stat(const char *path, sys_stat *buf)
+    {
+        int fd = open(path, OPEN_RDONLY);
+        if (fd < 0)
+            return -1;
+        int res = stat(fd, buf);
+        close(fd);
+        return res;
+    }
+
+    int VFS::lstatat(int dfd, const char *path, sys_stat *buf)
     {
         if (!path)
         {
@@ -435,36 +402,85 @@ namespace Hamster
             return -1;
         }
 
-        int rootfd = open("/", OPEN_RDONLY | OPEN_DIRECTORY);
-        if (!rootfd)
-            return -1;
-        
-        int res = statat(rootfd, path, buf);
-        close(rootfd);
-
-        return res;
-    }
-
-    int VFS::lstatat(int dfd, const char *path, sys_stat *buf)
-    {
-        BaseFile *file = data->fd_manager.get_fd(dfd);
-        if (!file || file->type() != FileType::Directory)
+        const char *last = strrchr(path, '/');
+        BaseFile *file = nullptr;
+        if (last)
         {
-            error = EBADF;
-            return -1;
-        }   
+            String dir_name{path, (size_t)(last - path)};
 
-        BaseDirectory *dir = (BaseDirectory *)file->clone();
-        if (!dir)
-            return -1;
-        
+            int parent_fd = openat(dfd, dir_name.c_str(), OPEN_RDONLY | OPEN_DIRECTORY);
+            if (parent_fd < 0)
+                return -1;
+            
+            BaseDirectory *parent_dir = (BaseDirectory *)data->fd_manager.get_fd(parent_fd);
+            
+            assert(parent_dir);
 
-        file = data->mounts.lopen(path, OPEN_RDONLY, 0, dir);
+            file = parent_dir->get(last + 1, OPEN_RDONLY, 0);
+            close(parent_fd);
+        }
+        else
+        {
+            BaseDirectory *parent_dir = (BaseDirectory *)data->fd_manager.get_fd(dfd);
+            if (!parent_dir)
+            {
+                error = EBADF;
+                return -1;
+            }
+
+            file = parent_dir->get(path, OPEN_RDONLY, 0);
+        }
+
         if (!file)
+        {
             return -1;
+        }
 
         int ret = file->stat(buf);
+
+        if (ret < 0)
+        {
+            dealloc(file);
+            return -1;
+        }
+
+        if (file->type() == FileType::Special)
+        {
+            // Get the special file handle
+            BaseSpecialDriverHandle *handle = get_special_handle((BaseSpecialFile *)file, data->special_driver_manager);
+            if (!handle)
+            {
+                dealloc(file);
+                error = EBADF;
+                return -1;
+            }
+
+            buf->mode &= ~STAT_IFMT; // Clear the file type bits
+
+            switch (handle->special_type())
+            {
+                case SpecialFileType::CharacterDevice:
+                    buf->mode |= STAT_IFCHR;
+                    break;
+                case SpecialFileType::BlockDevice:
+                    buf->mode |= STAT_IFBLK;
+                    break;
+                case SpecialFileType::Socket:
+                    buf->mode |= STAT_IFSOCK;
+                    break;
+                case SpecialFileType::Fifo:
+                    buf->mode |= STAT_IFIFO;
+                    break;
+                default:
+                    // Do nothing for other types
+                    break;
+            }
+
+            dealloc(handle);
+        }
+
         dealloc(file);
+
         return ret;
     }
 
