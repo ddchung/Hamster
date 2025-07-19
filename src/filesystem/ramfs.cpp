@@ -79,10 +79,40 @@ namespace Hamster
 
             using RamFsNode::RamFsNode;
 
-            ~RamFsDirectoryNode()
+            // Removes . and ..
+            void remove_dir_hardlinks()
             {
+                auto it = children.find(".");
+                if (it != children.end())
+                {
+                    it->second->refcount--;
+                    children.erase(it);
+                }
+                it = children.find("..");
+                if (it != children.end())
+                {
+                    it->second->refcount--;
+                    children.erase(it);
+                }
+
+                // Recurse into children
                 for (auto &[name, node] : children)
                 {
+                    if (node->type() == FileType::Directory)
+                    {
+                        auto *dir_node = static_cast<RamFsDirectoryNode *>(node);
+                        dir_node->remove_dir_hardlinks();
+                    }
+                }
+            }
+
+            ~RamFsDirectoryNode()
+            {
+                remove_dir_hardlinks();
+                for (auto &[name, node] : children)
+                {
+                    if (name == "." || name == "..")
+                        continue; // Skip self and parent references
                     if (node)
                     {
                         node->refcount--;
@@ -92,6 +122,7 @@ namespace Hamster
                         }
                     }
                 }
+                children.clear();
             }
 
             Map<String, RamFsNode *> children;
@@ -859,6 +890,11 @@ namespace Hamster
                 dir_node->children[name] = new_node;
                 new_node->filesystem = dir_node->filesystem;
 
+                new_node->children["."] = new_node; // Self-reference
+                new_node->children[".."] = dir_node; // Parent reference
+                dir_node->refcount++; // Increment parent directory's refcount
+                new_node->refcount++; // Increment new directory's refcount
+
                 return alloc<RamFsDirectoryHandle>(1, new_node, flags);
             }
 
@@ -949,8 +985,8 @@ namespace Hamster
                     handle = (RamFsRegularHandle*)file;
                     break;
                 case FileType::Directory:
-                    handle = (RamFsDirectoryHandle*)file;
-                    break;
+                    error = EISDIR;
+                    return -1;
                 case FileType::Special:
                     handle = (RamFsSpecialHandle*)file;
                     break;
@@ -1013,11 +1049,12 @@ namespace Hamster
 
                 if (node->type() == FileType::Directory)
                 {
-                    if (((RamFsDirectoryNode *)node)->children.size() > 0)
+                    if (((RamFsDirectoryNode *)node)->children.size() > 2)
                     {
                         error = ENOTEMPTY;
                         return -1;
                     }
+                    ((RamFsDirectoryNode *)node)->remove_dir_hardlinks();
                 }
 
                 dir_node->children.erase(it);
@@ -1054,6 +1091,8 @@ namespace Hamster
         RamFsData()
             : root(alloc<RamFsDirectoryNode>(1, 0777, 0, 0))
         {
+            root->children["."] = root; // Self-reference
+            root->refcount += 1;
         }
 
         ~RamFsData()

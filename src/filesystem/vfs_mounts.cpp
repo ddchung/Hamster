@@ -107,17 +107,7 @@ namespace Hamster
             ++path;
         if (*path == '\0')
             return dir;
-        if (path[0] == '.' && (path[1] == '/' || path[1] == '\0'))
-            return dir;
-        if (path[0] == '.' && path[1] == '.' && (path[2] == '/' || path[2] == '\0'))
-        {
-            dealloc(dir);
-            error = ENOENT;
-            return nullptr;
-        }
         const char *next = strchr(path, '/');
-        if (next && next[0] == '.' && next[1] == '.' && (next[2] == '/' || next[2] == '\0'))
-            return dir;
         if (!next)
         {
             BaseFile *file = dir->get(path, flags, mode);
