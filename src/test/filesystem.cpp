@@ -410,7 +410,11 @@ void test_filesystem()
     assert(dfd >= 0);
     char * const *empty_entries = vfs->list(dfd);
     assert(empty_entries != nullptr);
-    assert(empty_entries[0] == nullptr);
+    assert(strcmp(empty_entries[0], ".") == 0 || strcmp(empty_entries[0], "..") == 0);
+    assert(strcmp(empty_entries[1], ".") == 0 || strcmp(empty_entries[1], "..") == 0);
+    assert(empty_entries[2] == nullptr);
+    dealloc(empty_entries[0]);
+    dealloc(empty_entries[1]);
     dealloc(empty_entries);
     vfs->close(dfd);
 
