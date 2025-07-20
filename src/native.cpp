@@ -392,7 +392,6 @@ int Hamster::_mount_rootfs()
     Hamster::vfs.mount("/tmp", ramfs) == 0 ? (void)0 : Hamster::dealloc(ramfs);
     auto console_device = Hamster::alloc<ConsoleCharDevice>();
     Hamster::vfs.mksfile("/dev/console", console_device, 0666) == 0 ? (void)0 : Hamster::dealloc(console_device);
-    Hamster::vfs.symlink("/dev/tty", "/dev/console");
 
     return 0;
 }
