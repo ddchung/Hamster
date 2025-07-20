@@ -176,7 +176,7 @@ namespace Hamster
 
         _trace("%d", -error_code);
 
-        if (error_code >= 0 && error_code < sizeof(error_names) / sizeof(error_names[0]) && error_names[error_code])
+        if (error_code >= 0 && (unsigned long)error_code < sizeof(error_names) / sizeof(error_names[0]) && error_names[error_code])
         {
             _trace(" (%s)", error_names[error_code]);
         }
