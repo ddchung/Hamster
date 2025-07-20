@@ -2,6 +2,7 @@
 
 #include <process/scheduler.hpp>
 #include <memory/allocator.hpp>
+#include <platform/config.hpp>
 #include <errno/errno.h>
 #include <utility>
 
@@ -129,6 +130,8 @@ namespace Hamster
                 // Tick each thread in the process
                 process->threads.remove_if([&](Thread &thread)
                                            {
+                                            for (size_t i = 0; i < HAMSTER_THREAD_TIME_SLICE; ++i)
+                                            {
                                                if (thread.get_state() == ThreadState::ENDED)
                                                    return true; // Remove ended threads
                                                if (thread.is_paused())
@@ -139,8 +142,10 @@ namespace Hamster
                                                }
                                                thread.tick();  // Tick the thread
                                                ++ticked_count; // Count the ticked thread
+                                            }
                                                return false;   // Keep running threads
                                            });
+                process->memory_space.swap_out_all();
             }
         }
         return ticked_count; // Return the number of threads that were ticked
