@@ -9,6 +9,7 @@
 #include <errno/errno.h>
 #include <cstring>
 
+
 namespace Hamster
 {
     int sys_statx(Thread &thread)
@@ -34,6 +35,8 @@ namespace Hamster
             return transfer_error(thread);
         }
 
+        _trace("statx: dirfd=%d, path=\"%s\", flags=0x%x, statxbuf_addr=0x%x, ret: ", thread_dfd, path_str, flags, statxbuf_addr);
+
         if (path_str[0] == '\0' && !(flags & 0x1000)) // AT_EMPTY_PATH
         {
             error = ENOENT;
@@ -57,6 +60,8 @@ namespace Hamster
             strcpy(new_buffer, process->cwd.c_str());
             strcat(new_buffer, "/");
             strcat(new_buffer, path_str);
+
+            _trace("new path=\"%s\" ret: ", new_buffer);
 
             dealloc(path_str);
             path_str = new_buffer;

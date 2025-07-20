@@ -30,6 +30,8 @@ namespace Hamster
         uint32_t dirp_addr = get_arg(thread, 1);
         uint32_t count = get_arg(thread, 2);
 
+        _trace("getdents64: fd=%d, dirp_addr=0x%x, count=%u, ret: ", get_arg(thread, 0), dirp_addr, count);
+
         if (fd < 0)
         {
             error = EBADF;

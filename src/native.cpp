@@ -13,8 +13,11 @@
 #include <cstring>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <fcntl.h>
 #include <termios.h>
+#include <cstdarg>
+#include <string>
 
 using namespace Hamster;
 
@@ -183,29 +186,130 @@ namespace
 
         raw = orig_termios; /* copy original and then modify below */
 
-        /* input modes - clear indicated ones giving: no break, no CR to NL,
-           no parity check, no strip char, no start/stop output (sic) control */
-        raw.c_iflag |= ICRNL;
+        // /* input modes - clear indicated ones giving: no break, no CR to NL,
+        //    no parity check, no strip char, no start/stop output (sic) control */
+        // raw.c_iflag |= ICRNL;
 
-        /* control modes - set 8 bit chars */
-        raw.c_cflag |= (CS8);
+        // /* control modes - set 8 bit chars */
+        // raw.c_cflag |= (CS8);
 
-        /* local modes - clear giving: echoing off, canonical off (no erase with
-           backspace, ^U,...),  no extended functions, no signal chars (^Z,^C) */
-        raw.c_lflag &= ~(ISIG);
+        // /* local modes - clear giving: echoing off, canonical off (no erase with
+        //    backspace, ^U,...),  no extended functions, no signal chars (^Z,^C) */
+        // raw.c_lflag &= ~(ISIG);
 
-        /* control chars - set return condition: min number of bytes and timer */
-        raw.c_cc[VMIN] = 1;
+        // /* control chars - set return condition: min number of bytes and timer */
+        raw.c_cc[VMIN] = 0;
         raw.c_cc[VTIME] = 0;
 
         /* put terminal in raw mode after flushing */
         if (tcsetattr(ttyfd, TCSAFLUSH, &raw) < 0)
-            printf("Warning: Can't set TTY to raw mode, skipping.\n");
+        printf("Warning: Can't set TTY to raw mode, skipping.\n");
     }
+
+    FILE *trace_file = nullptr;
+    
+    std::string trace_write_buf;
+
+    void trace_atexit_handler()
+    {
+        if (trace_file)
+        {
+            fclose(trace_file);
+            trace_file = nullptr;
+        }
+    }
+
+    // Console device
+
+    class ConsoleCharDeviceHandle : public Hamster::BaseCharacterDeviceHandle
+    {
+    public:
+        ssize_t write(const uint8_t *buf, size_t size) override
+        {
+            ssize_t bytes_written = ::write(STDOUT_FILENO, buf, size);
+            if (bytes_written < 0)
+            {
+                Hamster::error = errno;
+                errno = 0;
+                return -1;
+            }
+
+            // trace if tracing is enabled
+            if (trace_file)
+            {
+                trace_write_buf.append(reinterpret_cast<const char *>(buf), bytes_written);
+            }
+
+            return bytes_written;
+        }
+
+        ssize_t read(uint8_t *buf, size_t size) override
+        {
+            ssize_t bytes_read = ::read(STDIN_FILENO, buf, size);
+            if (bytes_read < 0)
+            {
+                Hamster::error = errno;
+                errno = 0;
+                return -1;
+            }
+            return bytes_read;
+        }
+
+        int ioctl(int req, Hamster::IoctlArg args) override
+        {
+            if (args.p)
+                return ::ioctl(STDIN_FILENO, req, args.p);
+            else
+                return ::ioctl(STDIN_FILENO, req, args.i);
+        }
+
+        int get_flags() override
+        {
+            return flags;
+        }
+
+        int set_flags(int new_flags) override
+        {
+            flags = new_flags;
+            return 0; // Success
+        }
+
+        int flags = 0;
+    };
+
+    class ConsoleCharDevice : public Hamster::BaseSpecialDriver
+    {
+    public:
+        Hamster::BaseSpecialDriverHandle *create_handle(int flags) override
+        {
+            auto *handle = Hamster::alloc<ConsoleCharDeviceHandle>();
+            handle->set_flags(flags);
+            return handle;
+        }
+    };
 }
 
 int Hamster::_init_platform()
 {
+    char trace_file_name[256];
+    printf("Enter trace file name (or leave empty to disable tracing): ");
+    fgets(trace_file_name, sizeof(trace_file_name), stdin);
+    trace_file_name[strcspn(trace_file_name, "\n")] = 0;
+    if (trace_file_name[0] != '\0')
+    {
+        trace_file = fopen(trace_file_name, "w");
+        if (!trace_file)
+        {
+            perror("Failed to open trace file");
+            return -1;
+        }
+        atexit(trace_atexit_handler);
+    }
+    else
+    {
+        trace_file = nullptr;
+    }
+
     if (isatty(ttyfd))
     {
         /* store current tty settings in orig_termios */
@@ -226,6 +330,32 @@ int Hamster::_init_platform()
         tty_raw();  /* put tty in raw mode */
     }
     return 0;
+}
+
+
+void Hamster::_trace(const char *fmt, ...)
+{
+    if (!trace_file)
+        return;
+    
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(trace_file, fmt, args);
+    va_end(args);
+}
+
+void Hamster::_flush_trace()
+{
+    while (true)
+    {
+        size_t pos = trace_write_buf.find('\n');
+        if (pos == std::string::npos)
+            break; // No more complete lines
+
+        std::string line = trace_write_buf.substr(0, pos + 1);
+        _trace("[OUTPUT] %s", line.c_str());
+        trace_write_buf.erase(0, pos + 1);
+    }
 }
 
 int Hamster::_mount_rootfs()
@@ -253,6 +383,16 @@ int Hamster::_mount_rootfs()
     recursive_copy_to_vfs(HAMSTER_NATIVE_FS_ROOT, fd);
 
     vfs.close(fd);
+
+    Hamster::vfs.mkdir("/dev", 0755);
+    Hamster::vfs.mkdir("/tmp", 0755);
+    ramfs = Hamster::alloc<Hamster::RamFs>();
+    Hamster::vfs.mount("/dev", ramfs) == 0 ? (void)0 : Hamster::dealloc(ramfs);
+    ramfs = Hamster::alloc<Hamster::RamFs>();
+    Hamster::vfs.mount("/tmp", ramfs) == 0 ? (void)0 : Hamster::dealloc(ramfs);
+    auto console_device = Hamster::alloc<ConsoleCharDevice>();
+    Hamster::vfs.mksfile("/dev/console", console_device, 0666) == 0 ? (void)0 : Hamster::dealloc(console_device);
+    Hamster::vfs.symlink("/dev/tty", "/dev/console");
 
     return 0;
 }

@@ -5,32 +5,61 @@
 #include <abi/syscall_id.hpp>
 #include <errno/errno.h>
 
-// Set to 1 to enable unknown syscall logging
-#if 0
-
-#include <cstdio>
-#define LOG_NOTIMPL_SYSCALL(name, thread) \
-    do { \
-        printf("Thread %zu in Process %zu: Syscall %s not implemented\n", (thread).get_id(), (thread).get_process()->pid, (name)); \
-    } while (0)
-
-#define LOG_UNKNOWN_SYSCALL(thread) \
-    do { \
-        printf("Thread %zu in Process %zu: Unknown syscall ID %d\n", (thread).get_id(), (thread).get_process()->pid, (thread).get_regs()[17]); \
-    } while (0)
-
-#else
-
-#define LOG_NOTIMPL_SYSCALL(name, thread) ((void)0)
-#define LOG_UNKNOWN_SYSCALL(thread) ((void)0)
-
-#endif
+static const char *error_names[] = {
+    "No Error",                                // 0 - No error
+    "EPERM - Operation not permitted",         // 1
+    "ENOENT - No such file or directory",      // 2
+    "ESRCH - No such process",                 // 3
+    "EINTR - Interrupted system call",         // 4
+    "EIO - I/O error",                         // 5
+    "ENXIO - No such device or address",       // 6
+    "E2BIG - Argument list too long",          // 7
+    "ENOEXEC - Exec format error",             // 8
+    "EBADF - Bad file number",                 // 9
+    "ECHILD - No child processes",             // 10
+    "EAGAIN - Try again",                      // 11
+    "ENOMEM - Out of memory",                  // 12
+    "EACCES - Permission denied",              // 13
+    "EFAULT - Bad address",                    // 14
+    "ENOTBLK - Block device required",         // 15
+    "EBUSY - Device or resource busy",         // 16
+    "EEXIST - File exists",                    // 17
+    "EXDEV - Cross-device link",               // 18
+    "ENODEV - No such device",                 // 19
+    "ENOTDIR - Not a directory",               // 20
+    "EISDIR - Is a directory",                 // 21
+    "EINVAL - Invalid argument",               // 22
+    "ENFILE - File table overflow",            // 23
+    "EMFILE - Too many open files",            // 24
+    "ENOTTY - Not a typewriter",               // 25
+    "ETXTBSY - Text file busy",                // 26
+    "EFBIG - File too large",                  // 27
+    "ENOSPC - No space left on device",        // 28
+    "ESPIPE - Illegal seek",                   // 29
+    "EROFS - Read-only file system",           // 30
+    "EMLINK - Too many links",                 // 31
+    "EPIPE - Broken pipe",                     // 32
+    "EDOM - Math argument out of domain of func", // 33
+    "ERANGE - Math result not representable"   // 34
+};
 
 namespace Hamster
 {
     int do_syscall(Thread &thread)
     {
         int syscall_id = thread.get_regs()[17]; // a7 is the syscall ID in RISC-V calling convention
+        
+        _trace("[INFO] Syscall ID: %d", syscall_id);
+
+        if (syscall_id == 93 || syscall_id == 95 || syscall_id == 260 || syscall_id == 221 || syscall_id == 281)
+        {
+            // These don't return, so print a newline
+            _trace("\n");
+        }
+        else
+        {
+            _trace(" returning: ");
+        }
 
         switch (syscall_id)
         {
@@ -117,9 +146,9 @@ namespace Hamster
             case SyscallID::FCNTL:
                 return sys_fcntl(thread);
             default:
-                LOG_UNKNOWN_SYSCALL(thread);
-                set_return(thread, -EINVAL);
-                return -1;
+                _trace("(Unknown system call) ");
+                error = ENOSYS;
+                return transfer_error(thread);
         }
 
         // ???
@@ -133,6 +162,9 @@ namespace Hamster
         {
             return 0;
         }
+
+        // trace("[%d = %d] ", index, thread.get_regs()[10 + index]);
+
         return thread.get_regs()[10 + index]; // a0 is at index 10 in the register array
     }
 
@@ -142,13 +174,32 @@ namespace Hamster
         int error_code = Hamster::error;
         Hamster::error = 0; // Reset the global error code
 
-        return set_return(thread, -error_code);
+        _trace("%d", -error_code);
+
+        if (error_code >= 0 && error_code < sizeof(error_names) / sizeof(error_names[0]) && error_names[error_code])
+        {
+            _trace(" (%s)", error_names[error_code]);
+        }
+        else
+        {
+            _trace(" (Unknown error code %d)", error_code);
+        }
+
+        _flush_trace();
+
+        // Set the return value to -error_code
+        thread.get_regs()[10] = -error_code;
+        _trace("\n");
+
+        return -1;
     }
 
     int set_return(Thread &thread, uint32_t value)
     {
         // Set the return value in a0 register
         thread.get_regs()[10] = value; // a0 is at index 10 in the register array
+        _trace("%d\n", value);
+        _flush_trace();
         return 0; // Success
     }
 
@@ -178,45 +229,45 @@ namespace Hamster
         return fd;
     }
 
-    __attribute__((weak)) int sys_exit(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_getpid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_clone(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_execve(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_execveat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_waitid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_wait4(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_kill(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_openat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_read(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_write(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_close(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_llseek(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_newfstatat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_newfstat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_dup(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_dup3(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_mkdirat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_unlinkat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_linkat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_renameat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_renameat2(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_getdents64(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_chdir(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_getcwd(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_faccessat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_pipe2(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_brk(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_mmap2(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_munmap(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_mprotect(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_statx(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_readlinkat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_symlinkat(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_getuid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_geteuid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_getgid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_getegid(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_ioctl(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
-    __attribute__((weak)) int sys_fcntl(Thread &thread) { LOG_NOTIMPL_SYSCALL(__func__, thread); return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_exit(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_getpid(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_clone(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_execve(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_execveat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_waitid(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_wait4(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_kill(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_openat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_read(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_write(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_close(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_llseek(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_newfstatat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_newfstat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_dup(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_dup3(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_mkdirat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_unlinkat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_linkat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_renameat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_renameat2(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_getdents64(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_chdir(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_getcwd(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_faccessat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_pipe2(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_brk(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_mmap2(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_munmap(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_mprotect(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_statx(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_readlinkat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_symlinkat(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_getuid(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_geteuid(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_getgid(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_getegid(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_ioctl(Thread &thread) { return set_return(thread, -ENOSYS); };
+    __attribute__((weak)) int sys_fcntl(Thread &thread) { return set_return(thread, -ENOSYS); };
 } // namespace Hamster
 

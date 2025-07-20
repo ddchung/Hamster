@@ -45,4 +45,18 @@ namespace Hamster
     // Log
     int _log(const char * msg);
     int _log(char c);
+
+    // Trace
+    // This is a debug function, by default it does nothing
+    // If overridden, it is **VERY IMPORTANT** that it traces to a different
+    // place than _log, or else the output will be incomprehensible
+    ///
+    // It is a printf drop-in replacement
+    // It is encouraged to use the C lib's *printf functions, instead of a hand-rolled one
+    // because of potential usages of uncommon format specifiers (like "%.*s")
+    __attribute__((format(printf, 1, 2)))
+    void _trace(const char *fmt, ...);
+
+    // Sync said trace. Only called after a section of trace
+    void _flush_trace();
 }

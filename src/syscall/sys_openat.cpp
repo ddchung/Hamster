@@ -34,6 +34,8 @@ namespace Hamster
             return transfer_error(thread);
         }
 
+        _trace("openat: dfd=%d, path=\"%s\", flags=0x%x, mode=0%o, ret: ", thread_dfd, path_str, flags, mode);
+
         if (path_str[0] == '/')
         {
             // Absolute path, use the root directory
