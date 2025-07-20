@@ -459,6 +459,17 @@ namespace Hamster
          */
         int dup(int fd);
 
+        /**
+         * @brief Set the flags of a file descriptor (O_APPEND, O_ASYNC, etc.)
+         * @param fd The file descriptor to set the flags of
+         * @param flags The new flags to set
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This does not change the file descriptor itself, only the flags
+         * @note This is not the CLOEXEC flag, however the file status flags that were passed to `open`
+         * @note This may change O_RDONLY, O_WRONLY, or O_RDWR, depending on filesystem support
+         */
+        int set_flags(int fd, int flags);
+
     private:
         VFSData *data;
     };

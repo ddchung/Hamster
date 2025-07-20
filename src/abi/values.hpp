@@ -75,6 +75,13 @@ namespace Hamster
     inline constexpr int H_TIOCCBRK = 0x5428;
     inline constexpr int H_TIOCGSID = 0x5429;
 
+    inline constexpr int FILE_DUPFD = 0;   /* dup */
+    inline constexpr int FILE_DUPFD_CLOEXEC = 1030; /* dup with close-on-exec */
+    inline constexpr int FILE_GETFD = 1;   /* get close_on_exec */
+    inline constexpr int FILE_SETFD = 2;   /* set/clear close_on_exec */
+    inline constexpr int FILE_GETFL = 3;   /* get file->f_flags */
+    inline constexpr int FILE_SETFL = 4;   /* set file->f_flags */
+
     inline bool is_directory(int mode) { return (mode & STAT_IFMT) == STAT_IFDIR; }
     inline bool is_character_device(int mode) { return (mode & STAT_IFMT) == STAT_IFCHR; }
     inline bool is_block_device(int mode) { return (mode & STAT_IFMT) == STAT_IFBLK; }

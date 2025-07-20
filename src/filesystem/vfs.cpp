@@ -1364,4 +1364,13 @@ namespace Hamster
 
         return new_fd;
     }
+
+    int VFS::set_flags(int fd, int flags)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        return file->set_flags(flags);
+    }
 } // namespace Hamster
