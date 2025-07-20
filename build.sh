@@ -22,6 +22,13 @@ if [[ "$command" == "build" ]]; then
         exit 1
     fi
 
+    mkdir -p build
+
+
+    # Clean up any previous build artifacts
+    rm -rf build/* 2>/dev/null
+    rm hamster 2>/dev/null
+
     # Find the C++ source files in the src directory
     files=$(find src -type f -name "*.cpp")
 
@@ -33,8 +40,31 @@ if [[ "$command" == "build" ]]; then
 
     echo
 
-    g++ -std=c++20 -Wall -Wextra -pedantic -Ofast -march=native -mtune=native -funroll-loops \
-        -Isrc -Iinclude -DNDEBUG -o hamster $files
+    for file in $files; do
+        if [[ ! -f "$file" ]]; then
+            echo "Error: Source file '$file' not found."
+            exit 1
+        fi
+
+        echo "Compiling $file..."
+
+        output_file="build/$file.o"
+
+        mkdir -p "$(dirname "$output_file")"
+
+        g++ -std=c++20 -Wall -Wextra -Ofast -march=native -mtune=native -funroll-loops \
+            -Isrc -Iinclude -c "$file" -o "$output_file" &
+    done
+
+    wait
+
+    echo "Linking object files..."
+
+    to_link=$(find build -type f -name "*.o")
+
+    g++ -std=c++20 -Wall -Wextra -Ofast -march=native -mtune=native -funroll-loops \
+        -o hamster $to_link
+    
     if [[ $? -ne 0 ]]; then
         echo "Error: Build failed. Please check the output for details."
         exit 1
