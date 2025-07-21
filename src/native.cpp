@@ -5,6 +5,7 @@
 #include <platform/platform.hpp>
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
+#include <filesystem/device_manager.hpp>
 #include <memory/allocator.hpp>
 #include <errno/errno.h>
 #include <cstdio>
@@ -391,7 +392,8 @@ int Hamster::_mount_rootfs()
     ramfs = Hamster::alloc<Hamster::RamFs>();
     Hamster::vfs.mount("/tmp", ramfs) == 0 ? (void)0 : Hamster::dealloc(ramfs);
     auto console_device = Hamster::alloc<ConsoleCharDevice>();
-    Hamster::vfs.mksfile("/dev/console", console_device, 0666) == 0 ? (void)0 : Hamster::dealloc(console_device);
+    Hamster::device_manager.register_device({5, 1}, console_device);
+    Hamster::vfs.mknod("/dev/console", {5, 1}, 0666);
 
     return 0;
 }

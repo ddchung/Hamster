@@ -2,6 +2,7 @@
 
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
+#include <filesystem/device_manager.hpp>
 #include <memory/allocator.hpp>
 #include <memory/stl_sequential.hpp>
 #include <memory/memory_space.hpp>
@@ -204,7 +205,8 @@ void test_filesystem()
     };
 
     TestSpecialDriver *driver = alloc<TestSpecialDriver>(1, deque);
-    int special_fd = vfs->mksfile(special_path, OPEN_RDWR | OPEN_CREAT, driver, 0777);
+    device_manager.register_device({1, 1}, driver);
+    int special_fd = vfs->mknod(special_path, OPEN_RDWR | OPEN_CREAT, {1, 1}, 0777);
     assert(special_fd >= 0);
 
     // Write to special file
@@ -356,8 +358,7 @@ void test_filesystem()
     // first, make the directory for the special file
     assert(vfs->mkdir("/dev", 0755) == 0);
 
-    driver = alloc<TestSpecialDriver>(1, deque);
-    int sfd = vfs->mksfile("/dev/test", OPEN_RDWR | OPEN_CREAT, driver, 0666);
+    int sfd = vfs->mknod("/dev/test", OPEN_RDWR | OPEN_CREAT, {1, 1}, 0666);
     assert(sfd >= 0);
     // Try to open with wrong flags
     assert(vfs->open("/dev/test", OPEN_DIRECTORY) < 0);
@@ -427,10 +428,6 @@ void test_filesystem()
     // Symlink loop detection (should fail to open)
     fd = vfs->open("/selflink", OPEN_RDWR);
     assert(fd < 0);
-
-    // --- Special File Error Cases ---
-    // Try to create special file with invalid driver
-    assert(vfs->mksfile("/baddev", OPEN_RDWR | OPEN_CREAT, nullptr, 0666) < 0);
 
     // --- Rename/Remove Error Cases ---
     // Rename non-existent file
