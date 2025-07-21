@@ -17,7 +17,9 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <termios.h>
+#include <dirent.h>
 #include <cstdarg>
+#include <queue>
 #include <string>
 
 using namespace Hamster;
@@ -26,132 +28,709 @@ using namespace Hamster;
 
 namespace
 {
-    void recursive_copy_to_vfs(const char *native_dir, int vfs_dir)
+    void swap_error()
     {
-        if (!native_dir || vfs_dir < 0)
-            return;
+        // Swap the error code with the global error code
+        int err = Hamster::error;
+        Hamster::error = errno;
+        errno = err;
+    }
 
-        DIR *dir = opendir(native_dir);
-        if (!dir)
+    class NativeFileHandle
+    {
+    public:
+        NativeFileHandle(int fd, BaseFilesystem *fs)
+            : fd(fd), filesystem(fs) {}
+        
+        ~NativeFileHandle()
         {
-            // Handle error opening directory
-            return;
+            if (fd >= 0)
+            {
+                close(fd);
+            }
+            fd = -1;
+            filesystem = nullptr;
         }
 
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != NULL)
-        {
-            // Skip current and parent directory entries
-            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-                continue;
+        BaseFilesystem *get_filesystem()
+        { return filesystem; }
 
-            // Build full path for the current entry
-            size_t path_len = strlen(native_dir) + strlen(entry->d_name) + 2;
-            char *full_path = alloc<char>(path_len);
-            if (!full_path)
+        int get_id() const
+        {
+            if (fd < 0)
             {
-                closedir(dir);
-                return;
+                errno = EBADF;
+                return -1;
             }
-            snprintf(full_path, path_len, "%s/%s", native_dir, entry->d_name);
 
             struct stat st;
-            if (lstat(full_path, &st) == 0)
+            if (fstat(fd, &st) < 0)
             {
-                if (S_ISREG(st.st_mode))
-                {
-                    // regular file
-                    int file_fd = vfs.openat(vfs_dir, entry->d_name, OPEN_CREAT | OPEN_RDWR | OPEN_EXCL, 0755);
-                    if (file_fd < 0)
-                    {
-                        dealloc(full_path);
-                        continue;
-                    }
-
-                    // Copy contents
-
-                    // This is *not* reentrant or multi-thread safe, however,
-                    // Hamster is single-threaded and it is impossible to re-enter
-                    // this function in said single-threaded environment.
-
-                    int native_fd = ::open(full_path, O_RDONLY);
-                    if (native_fd < 0)
-                    {
-                        vfs.close(file_fd);
-                        dealloc(full_path);
-                        continue;
-                    }
-
-                    if (vfs.seek(file_fd, 0, H_SEEK_SET) < 0)
-                    {
-                        ::close(native_fd);
-                        vfs.close(file_fd);
-                        dealloc(full_path);
-                        continue;
-                    }
-
-                    static char buffer[4096];
-                    ssize_t bytes_read;
-                    while ((bytes_read = ::read(native_fd, buffer, sizeof(buffer))) > 0)
-                    {
-                        ssize_t bytes_written = vfs.write(file_fd, buffer, bytes_read);
-                        if (bytes_written < 0)
-                        {
-                            break; // Error writing to VFS
-                        }
-                        while (bytes_written < bytes_read)
-                        {
-                            ssize_t additional_bytes = vfs.write(file_fd, buffer + bytes_written, bytes_read - bytes_written);
-                            if (additional_bytes < 0)
-                            {
-                                break; // Error writing to VFS
-                            }
-                            bytes_written += additional_bytes;
-                        }
-                    }
-                    ::close(native_fd);
-                    vfs.close(file_fd);
-                }
-                else if (S_ISDIR(st.st_mode))
-                {
-                    // directory
-
-                    // open read-write to be able to iterate and create files in it
-                    // Note that this is Hamster-specific VFS behavior
-                    int new_vfs_dir = vfs.mkdirat(vfs_dir, entry->d_name, OPEN_RDWR, 0755);
-                    if (new_vfs_dir < 0)
-                    {
-                        dealloc(full_path);
-                        continue;
-                    }
-
-                    // Recursively copy contents of the directory
-                    recursive_copy_to_vfs(full_path, new_vfs_dir);
-
-                    vfs.close(new_vfs_dir);
-                }
-                else if (S_ISLNK(st.st_mode))
-                {
-                    // symlink
-                    char link_target[PATH_MAX];
-                    ssize_t len = readlink(full_path, link_target, sizeof(link_target) - 1);
-                    if (len >= 0)
-                    {
-                        link_target[len] = '\0'; // Null-terminate the string
-                        vfs.symlinkat(vfs_dir, entry->d_name, link_target);
-                    }
-                }
-
-                // Other file types (e.g., sockets, FIFOs) are ignored for now
-                // Maybe later in the future, we could support them by making a new driver
-                // for each one that writes to the real file
+                swap_error();
+                return -1;
             }
 
-            dealloc(full_path);
+            return st.st_ino; // Return inode number as ID
         }
 
-        closedir(dir);
-    }
+        int stat(sys_stat *buf)
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return -1;
+            }
+
+            struct stat st;
+            if (fstat(fd, &st) < 0)
+            {
+                swap_error();
+                return -1;
+            }
+
+            buf->dev = st.st_dev;
+            buf->ino = st.st_ino;
+            buf->mode = st.st_mode;
+            buf->nlink = st.st_nlink;
+            buf->uid = st.st_uid;
+            buf->gid = st.st_gid;
+            buf->size = st.st_size;
+            buf->atime = st.st_atime;
+            buf->mtime = st.st_mtime;
+            buf->ctime = st.st_ctime;
+
+            return 0; // Success
+        }
+
+        int get_mode()
+        {
+            sys_stat st;
+            if (stat(&st) < 0)
+            {
+                return -1;
+            }
+            return st.mode;
+        }
+
+        int get_flags()
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return -1;
+            }
+
+            int flags = fcntl(fd, F_GETFL);
+            if (flags < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return flags;
+        }
+
+        int get_uid()
+        {
+            sys_stat st;
+            if (stat(&st) < 0)
+            {
+                return -1;
+            }
+            return st.uid;
+        }
+
+        int get_gid()
+        {
+            sys_stat st;
+            if (stat(&st) < 0)
+            {
+                return -1;
+            }
+            return st.gid;
+        }
+
+        int chmod(int mode)
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return -1;
+            }
+
+            if (fchmod(fd, mode) < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return 0; // Success
+        }
+
+        int chown(int uid, int gid)
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return -1;
+            }
+
+            if (fchown(fd, uid, gid) < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return 0; // Success
+        }
+
+        int set_flags(int flags)
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return -1;
+            }
+
+            if (fcntl(fd, F_SETFL, flags) < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return 0; // Success
+        }
+
+        // not actually from basefile, but used to get the protected fd
+        int get_fd() const
+        {
+            return fd;
+        }
+
+    protected:
+        int fd;
+        BaseFilesystem *filesystem;
+    };
+
+    class NativeRegularFileHandle : public BaseRegularFile, public NativeFileHandle
+    {
+    public:
+        using NativeFileHandle::NativeFileHandle;
+
+        // Common to all file types
+
+        BaseFile *clone() override
+        {
+            int new_fd = dup(fd);
+            if (new_fd < 0)
+            {
+                swap_error();
+                return nullptr;
+            }
+            return alloc<NativeRegularFileHandle>(1, new_fd, filesystem);
+        }
+
+        BaseFilesystem *get_filesystem() override { return NativeFileHandle::get_filesystem(); }
+        int get_id() const override { return NativeFileHandle::get_id(); }
+        int stat(sys_stat *buf) override { return NativeFileHandle::stat(buf); }
+        int get_mode() override { return NativeFileHandle::get_mode(); }
+        int get_flags() override { return NativeFileHandle::get_flags(); }
+        int get_uid() override { return NativeFileHandle::get_uid(); }
+        int get_gid() override { return NativeFileHandle::get_gid(); }
+        int chmod(int mode) override { return NativeFileHandle::chmod(mode); }
+        int chown(int uid, int gid) override { return NativeFileHandle::chown(uid, gid); }
+        int set_flags(int flags) override { return NativeFileHandle::set_flags(flags); }
+
+        ssize_t read(uint8_t *buf, size_t size) override
+        {
+            ssize_t ret = ::read(fd, buf, size);
+            if (ret < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return ret;
+        }
+
+        ssize_t write(const uint8_t *buf, size_t size) override
+        {
+            ssize_t ret = ::write(fd, buf, size);
+            if (ret < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return ret;
+        }
+
+        int64_t seek(int64_t offset, int whence) override
+        {
+            off_t ret = lseek(fd, offset, whence);
+            if (ret < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return ret;
+        }
+
+        int64_t tell() override
+        {
+            off_t ret = lseek(fd, 0, SEEK_CUR);
+            if (ret < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return ret;
+        }
+
+        int truncate(int64_t size) override
+        {
+            if (ftruncate(fd, size) < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return 0; // Success
+        }
+
+        int64_t size() override
+        {
+            sys_stat st;
+            if (stat(&st) < 0)
+            {
+                return -1;
+            }
+            return st.size;
+        }
+    };
+
+    class NativeSpecialFileHandle : public BaseSpecialFile, public NativeFileHandle
+    {
+    public:
+        using NativeFileHandle::NativeFileHandle;
+
+        BaseFile *clone() override
+        {
+            int new_fd = dup(fd);
+            if (new_fd < 0)
+            {
+                swap_error();
+                return nullptr;
+            }
+            return alloc<NativeSpecialFileHandle>(1, new_fd, filesystem);
+        }
+
+        BaseFilesystem *get_filesystem() override { return NativeFileHandle::get_filesystem(); }
+        int get_id() const override { return NativeFileHandle::get_id(); }
+        int stat(sys_stat *buf) override { return NativeFileHandle::stat(buf); }
+        int get_mode() override { return NativeFileHandle::get_mode(); }
+        int get_flags() override { return NativeFileHandle::get_flags(); }
+        int get_uid() override { return NativeFileHandle::get_uid(); }
+        int get_gid() override { return NativeFileHandle::get_gid(); }
+        int chmod(int mode) override { return NativeFileHandle::chmod(mode); }
+        int chown(int uid, int gid) override { return NativeFileHandle::chown(uid, gid); }
+        int set_flags(int flags) override { return NativeFileHandle::set_flags(flags); }
+
+        DeviceID get_device_id() override
+        {
+            sys_stat st;
+            if (stat(&st) < 0)
+            {
+                return {0, 0}; // Return invalid device ID on error
+            }
+            return {static_cast<uint32_t>(st.rdev >> 20), static_cast<uint32_t>(st.rdev & 0xFFFFF)};
+        }
+    };
+
+    class NativeSymlinkHandle : public BaseSymlink, public NativeFileHandle
+    {
+    public:
+        using NativeFileHandle::NativeFileHandle;
+
+        BaseFile *clone() override
+        {
+            int new_fd = dup(fd);
+            if (new_fd < 0)
+            {
+                swap_error();
+                return nullptr;
+            }
+            return alloc<NativeSymlinkHandle>(1, new_fd, filesystem);
+        }
+
+        BaseFilesystem *get_filesystem() override { return NativeFileHandle::get_filesystem(); }
+        int get_id() const override { return NativeFileHandle::get_id(); }
+        int stat(sys_stat *buf) override { return NativeFileHandle::stat(buf); }
+        int get_mode() override { return NativeFileHandle::get_mode(); }
+        int get_flags() override { return NativeFileHandle::get_flags(); }
+        int get_uid() override { return NativeFileHandle::get_uid(); }
+        int get_gid() override { return NativeFileHandle::get_gid(); }
+        int chmod(int mode) override { return NativeFileHandle::chmod(mode); }
+        int chown(int uid, int gid) override { return NativeFileHandle::chown(uid, gid); }
+        int set_flags(int flags) override { return NativeFileHandle::set_flags(flags); }
+
+        char *get_target() override
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return nullptr;
+            }
+
+            char target[PATH_MAX];
+            ssize_t len = readlinkat(fd, "", target, sizeof(target) - 1);
+            if (len < 0)
+            {
+                swap_error();
+                return nullptr;
+            }
+
+            target[len] = '\0'; // Null-terminate the string
+            char *result = alloc<char>(len + 1);
+            strcpy(result, target);
+            return result;
+        }
+
+        int set_target(const char *target) override
+        {
+            // TODO: change the target of the symlink
+            error = ENOSYS;
+            return -1; // Not implemented
+        }
+    };
+
+    class NativeDirectoryHandle : public BaseDirectory, public NativeFileHandle
+    {
+    public:
+        using NativeFileHandle::NativeFileHandle;
+
+        BaseFile *clone() override
+        {
+            int new_fd = dup(fd);
+            if (new_fd < 0)
+            {
+                swap_error();
+                return nullptr;
+            }
+            return alloc<NativeDirectoryHandle>(1, new_fd, filesystem);
+        }
+
+        BaseFilesystem *get_filesystem() override { return NativeFileHandle::get_filesystem(); }
+        int get_id() const override { return NativeFileHandle::get_id(); }
+        int stat(sys_stat *buf) override { return NativeFileHandle::stat(buf); }
+        int get_mode() override { return NativeFileHandle::get_mode(); }
+        int get_flags() override { return NativeFileHandle::get_flags(); }
+        int get_uid() override { return NativeFileHandle::get_uid(); }
+        int get_gid() override { return NativeFileHandle::get_gid(); }
+        int chmod(int mode) override { return NativeFileHandle::chmod(mode); }
+        int chown(int uid, int gid) override { return NativeFileHandle::chown(uid, gid); }
+        int set_flags(int flags) override { return NativeFileHandle::set_flags(flags); }
+
+        char * const *list(size_t count) override
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return nullptr;
+            }
+
+            int dup_fd = dup(fd);
+
+            DIR *dir = fdopendir(dup_fd);
+            if (!dir)
+            {
+                swap_error();
+                return nullptr;
+            }
+
+            std::queue<char *> entries;
+            struct dirent *entry;
+            while ((entry = readdir(dir)) != nullptr)
+            {
+                if (count == 0)
+                    break;
+                const char *name = entry->d_name;
+                size_t len = strlen(name);
+                char *name_copy = alloc<char>(len + 1);
+                strcpy(name_copy, name);
+                entries.push(name_copy);
+
+                --count;
+            }
+
+            closedir(dir);
+
+            char **result = alloc<char *>(entries.size() + 1);
+            result[entries.size()] = nullptr; // Null-terminate the array
+
+            size_t i = 0;
+            while (!entries.empty())
+            {
+                result[i++] = entries.front();
+                entries.pop();
+            }
+
+            return result;
+        }
+
+        int64_t seek(int64_t offset, int whence) override
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return -1;
+            }
+
+            off_t ret = lseek(fd, offset, whence);
+            if (ret < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return ret;
+        }
+
+        BaseFile *get(const char *name, int flags, int mode) override
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return nullptr;
+            }
+
+            int new_fd = openat(fd, name, O_RDWR | O_NOFOLLOW);
+            if (new_fd < 0)
+            {
+                if (errno == ENOENT && (flags & OPEN_CREAT))
+                {
+                    return flags & OPEN_DIRECTORY ?
+                        (BaseFile*)mkdir(name, O_RDWR, mode) :
+                        (BaseFile*)mkfile(name, O_RDWR, mode);
+                }
+                else if (errno == ELOOP)
+                {
+                    new_fd = openat(fd, name, O_PATH | O_NOFOLLOW);
+                    if (new_fd < 0)
+                    {
+                        swap_error();
+                        return nullptr;
+                    }
+                }
+                else if (errno == EISDIR)
+                {
+                    new_fd = openat(fd, name, O_RDONLY | O_DIRECTORY);
+                    if (new_fd < 0)
+                    {
+                        swap_error();
+                        return nullptr;
+                    }
+                }
+                else
+                {
+                    swap_error();
+                    return nullptr;
+                }
+            }
+            struct stat st;
+            if (fstat(new_fd, &st) < 0)
+            {
+                swap_error();
+                close(new_fd);
+                return nullptr;
+            }
+
+            BaseFile *file = nullptr;
+
+            if (S_ISREG(st.st_mode))
+            {
+                file = alloc<NativeRegularFileHandle>(1, new_fd, filesystem);
+            }
+            else if (S_ISDIR(st.st_mode))
+            {
+                file = alloc<NativeDirectoryHandle>(1, new_fd, filesystem);
+            }
+            else if (S_ISLNK(st.st_mode))
+            {
+                file = alloc<NativeSymlinkHandle>(1, new_fd, filesystem);
+            }
+            else if (S_ISCHR(st.st_mode) || S_ISBLK(st.st_mode))
+            {
+                file = alloc<NativeSpecialFileHandle>(1, new_fd, filesystem);
+            }
+            else
+            {
+                close(new_fd);
+                errno = ENOSYS; // Unsupported file type
+                return nullptr;
+            }
+
+            return file;
+        }
+
+        BaseRegularFile *mkfile(const char *name, int flags, int mode) override
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return nullptr;
+            }
+
+            int new_fd = openat(fd, name, O_RDWR | O_CREAT | O_EXCL, mode);
+
+            if (new_fd < 0)
+            {
+                swap_error();
+                return nullptr;
+            }
+            
+            return alloc<NativeRegularFileHandle>(1, new_fd, filesystem);
+        }
+
+        BaseDirectory *mkdir(const char *name, int flags, int mode) override
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return nullptr;
+            }
+
+            int new_fd = mkdirat(fd, name, mode);
+            if (new_fd < 0)
+            {
+                swap_error();
+                return nullptr;
+            }
+
+            return alloc<NativeDirectoryHandle>(1, new_fd, filesystem);
+        }
+
+        BaseSymlink *mksym(const char *name, const char *target) override
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return nullptr;
+            }
+
+            int ret = symlinkat(target, fd, name);
+            if (ret < 0)
+            {
+                swap_error();
+                return nullptr;
+            }
+
+            int new_fd = openat(fd, name, O_PATH | O_NOFOLLOW);
+            if (new_fd < 0)
+            {
+                swap_error();
+                return nullptr;
+            }
+
+            return alloc<NativeSymlinkHandle>(1, new_fd, filesystem);
+        }
+
+        BaseSpecialFile *mksfile(const char *name, int flags, DeviceID device_id, int mode) override
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return nullptr;
+            }
+
+            // Create a special file (character or block device)
+            int new_fd = mknodat(fd, name, mode, device_id.major << 20 | (device_id.minor & 0xFFFFF));
+            if (new_fd < 0)
+            {
+                swap_error();
+                return nullptr;
+            }
+
+            return alloc<NativeSpecialFileHandle>(1, new_fd, filesystem);
+        }
+
+        int link(BaseFile *file, const char *name) override
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return -1;
+            }
+
+            if (get_filesystem() != file->get_filesystem())
+            {
+                errno = EXDEV; // Cross-device link not permitted
+                return -1;
+            }
+
+            int file_fd = -1;
+            switch (file->type())
+            {
+            case FileType::Regular:
+                file_fd = ((NativeRegularFileHandle *)file)->get_fd();
+                break;
+            case FileType::Directory:
+                file_fd = ((NativeDirectoryHandle *)file)->get_fd();
+                break;
+            case FileType::Symlink:
+                file_fd = ((NativeSymlinkHandle *)file)->get_fd();
+                break;
+            case FileType::Special:
+                file_fd = ((NativeSpecialFileHandle *)file)->get_fd();
+                break;
+            default:
+                errno = EBADF; // Invalid file type for linking
+                return -1;
+            }
+
+            if (file_fd < 0)
+            {
+                errno = EBADF; // Bad file descriptor
+                return -1;
+            }
+
+            int ret = linkat(file_fd, "", fd, name, AT_EMPTY_PATH);
+
+            if (ret < 0)
+            {
+                swap_error();
+                return -1;
+            }
+
+            return 0; // Success
+        }
+
+        int remove(const char *name) override
+        {
+            if (fd < 0)
+            {
+                errno = EBADF;
+                return -1;
+            }
+
+            if (unlinkat(fd, name, 0) == 0)
+                return 0;
+            if (unlinkat(fd, name, AT_REMOVEDIR) == 0)
+                return 0;
+            swap_error();
+            return -1;
+        }
+    };
+
+    class NativeFilesystem : public BaseFilesystem
+    {
+    public:
+        const char *root_start;
+
+        BaseDirectory *open_root(int flags) override
+        {
+            int fd = open(root_start, O_RDONLY | O_DIRECTORY);
+            if (fd < 0)
+            {
+                swap_error();
+                return nullptr;
+            }
+
+            return alloc<NativeDirectoryHandle>(1, fd, this);
+        }
+    };
 } // namespace
 
 namespace
@@ -361,33 +940,13 @@ void Hamster::_flush_trace()
 
 int Hamster::_mount_rootfs()
 {
-    RamFs *ramfs = alloc<RamFs>();
-
-    if (vfs.mount("/", ramfs) < 0)
-    {
-        dealloc(ramfs);
-
-        if (errno != EBUSY)
-        {
-            // We will continue if there is already something on "/"
-            return -1;
-        }
-    }
-
-    int fd = vfs.open("/", OPEN_RDWR | OPEN_DIRECTORY);
-
-    if (fd < 0)
-    {
-        return -1;
-    }
-
-    recursive_copy_to_vfs(HAMSTER_NATIVE_FS_ROOT, fd);
-
-    vfs.close(fd);
+    auto fs = Hamster::alloc<NativeFilesystem>();
+    fs->root_start = HAMSTER_NATIVE_FS_ROOT;
+    Hamster::vfs.mount("/", fs) == 0 ? (void)0 : Hamster::dealloc(fs);
 
     Hamster::vfs.mkdir("/dev", 0755);
     Hamster::vfs.mkdir("/tmp", 0755);
-    ramfs = Hamster::alloc<Hamster::RamFs>();
+    BaseFilesystem *ramfs = Hamster::alloc<Hamster::RamFs>();
     Hamster::vfs.mount("/dev", ramfs) == 0 ? (void)0 : Hamster::dealloc(ramfs);
     ramfs = Hamster::alloc<Hamster::RamFs>();
     Hamster::vfs.mount("/tmp", ramfs) == 0 ? (void)0 : Hamster::dealloc(ramfs);

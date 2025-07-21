@@ -132,8 +132,8 @@ namespace Hamster
         statxbuf.nlink = statbuf.nlink;
         statxbuf.uid = statbuf.uid;
         statxbuf.gid = statbuf.gid;
-        statxbuf.dev_major = statbuf.dev >> 32;
-        statxbuf.dev_minor = statbuf.dev & 0xFFFFFFFF;
+        statxbuf.dev_major = statbuf.dev >> 20;
+        statxbuf.dev_minor = statbuf.dev & 0xFFFFF;
         statxbuf.size = statbuf.size;
         statxbuf.blksize = statbuf.blksize;
         statxbuf.blocks = statbuf.blocks;

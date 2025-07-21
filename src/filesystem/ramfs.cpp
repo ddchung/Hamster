@@ -200,7 +200,7 @@ namespace Hamster
                 else if (node->type() == FileType::Special)
                 {
                     auto *special_node = static_cast<RamFsSpecialNode *>(node);
-                    buf->rdev = (uint64_t)special_node->device_id.major << 32 | (uint64_t)special_node->device_id.minor;
+                    buf->rdev = special_node->device_id.major << 20 | special_node->device_id.minor & 0xFFFFF;
                 }
                 else
                 {
