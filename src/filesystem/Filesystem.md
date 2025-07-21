@@ -90,9 +90,9 @@ This type of handle operates on a regular file node. Its operations are:
 - `read`: Reads data from the file, at the current offset, and it will increment the offset by the number of bytes read afterwards
 - `write`: Writes data to the file, at the current offset, or if `flags | O_APPEND`, it will first set the offset to the end of the file before writing. This will also increment the offset afterwards
 - `seek`: This moves the current offset, in one of three ways:
-    - `SEEK_SET`: This sets the offset to an absolute position
-    - `SEEK_CUR`: This changes the offset relative to where it currently is
-    - `SEEK_END`: This sets the offset to a position relative to the end of the file
+    - `H_SEEK_SET`: This sets the offset to an absolute position
+    - `H_SEEK_CUR`: This changes the offset relative to where it currently is
+    - `H_SEEK_END`: This sets the offset to a position relative to the end of the file
 - `tell`: Get the current offset
 - `truncate`: This will either extend the file with zeros, or delete excess data.
 - `size`: Get the size of the file

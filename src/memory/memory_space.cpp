@@ -36,6 +36,19 @@ namespace Hamster
             pages[page_start] = Page(page); // Copy the page
         }
         swapped_on_pages = other.swapped_on_pages; // Copy the list of swapped pages
+
+        mappings.reserve(other.mappings.size());
+        
+        // Copy mappings and duplicate file descriptors
+        for (const auto &mapping : other.mappings)
+        {
+            MmapEntry new_mapping = mapping;
+            if (mapping.fd >= 0)
+            {
+                new_mapping.fd = vfs.dup(mapping.fd);
+            }
+            mappings.push_back(new_mapping);
+        }
     }
 
     MemorySpace::~MemorySpace()
@@ -47,9 +60,8 @@ namespace Hamster
         // Close all memory-mapped files
         for (const auto &entry : mappings)
         {
-            if (entry.fd < 0)
-                continue; // Skip anonymous mappings
-            vfs.close(entry.fd);
+            if (entry.fd >= 0)
+                vfs.close(entry.fd);
         }
     }
 
@@ -57,9 +69,17 @@ namespace Hamster
     {
         if (this != &other)
         {
-            // Clear current pages
+            // Close existing mappings
+            for (const auto &entry : mappings)
+            {
+                if (entry.fd >= 0)
+                    vfs.close(entry.fd);
+            }
+            
+            // Clear current state
             pages.clear();
             swapped_on_pages.clear();
+            mappings.clear();
 
             // Deep-copy all pages
             for (const auto &page_pair : other.pages)
@@ -69,25 +89,49 @@ namespace Hamster
                 pages[page_start] = Page(page); // Copy the page
             }
             swapped_on_pages = other.swapped_on_pages; // Copy the list of swapped pages
+            
+            // Copy mappings and duplicate file descriptors
+
+            mappings.reserve(other.mappings.size());
+            for (const auto &mapping : other.mappings)
+            {
+                MmapEntry new_mapping = mapping;
+                if (mapping.fd >= 0)
+                {
+                    new_mapping.fd = vfs.dup(mapping.fd);
+                }
+                mappings.push_back(new_mapping);
+            }
         }
         return *this;
     }
 
     MemorySpace::MemorySpace(MemorySpace &&other)
-        : pages(std::move(other.pages)), swapped_on_pages(std::move(other.swapped_on_pages))
+        : pages(std::move(other.pages)), swapped_on_pages(std::move(other.swapped_on_pages)),
+          mappings(std::move(other.mappings))
     {
         other.pages.clear();
         other.swapped_on_pages.clear();
+        other.mappings.clear();
     }
 
     MemorySpace &MemorySpace::operator=(MemorySpace &&other)
     {
         if (this != &other)
         {
+            // Close existing mappings
+            for (const auto &entry : mappings)
+            {
+                if (entry.fd >= 0)
+                    vfs.close(entry.fd);
+            }
+            
             pages = std::move(other.pages);
             swapped_on_pages = std::move(other.swapped_on_pages);
+            mappings = std::move(other.mappings);
             other.pages.clear();
             other.swapped_on_pages.clear();
+            other.mappings.clear();
         }
         return *this;
     }
@@ -99,8 +143,8 @@ namespace Hamster
         MmapEntry *mapping = nullptr;
         for (auto &entry : mappings)
         {
-            if (addr >= entry.addr && addr < entry.addr + entry.size &&
-                entry.fd >= 0) // Don't consider anonymous mappings, as they will be handled just like
+            if (addr >= entry.addr && addr < entry.addr + entry.size && entry.shared &&
+                entry.fd >= 0) // Don't consider anonymous/private mappings, as they will be handled just like
                                // normal memory
             {
                 mapping = &entry;
@@ -117,7 +161,7 @@ namespace Hamster
             }
 
             uint64_t offset = addr - mapping->addr + mapping->offset;
-            if (vfs.seek(mapping->fd, offset, SEEK_SET) < 0)
+            if (vfs.seek(mapping->fd, offset, H_SEEK_SET) < 0)
             {
                 error = EIO;
                 return -1;
@@ -157,7 +201,7 @@ namespace Hamster
         MmapEntry *mapping = nullptr;
         for (auto &entry : mappings)
         {
-            if (addr >= entry.addr && addr < entry.addr + entry.size &&
+            if (addr >= entry.addr && addr < entry.addr + entry.size && entry.shared &&
                 entry.fd >= 0) // Don't consider anonymous mappings, as they will be handled just like
                                // normal memory
             {
@@ -175,7 +219,7 @@ namespace Hamster
             }
 
             uint64_t offset = addr - mapping->addr + mapping->offset;
-            if (vfs.seek(mapping->fd, offset, SEEK_SET) < 0)
+            if (vfs.seek(mapping->fd, offset, H_SEEK_SET) < 0)
             {
                 error = EIO;
                 return -1;
@@ -305,8 +349,20 @@ namespace Hamster
 
         uint8_t byte;
 
-        for (uint64_t it = addr; read_byte(it, byte) == 0 && byte != '\0'; it++)
-            ++length;
+        for (uint64_t it = addr;; it++)
+        {
+            if (read_byte(it, byte) < 0)
+            {
+                return nullptr; // Error already set in read_byte
+            }
+
+            if (byte == '\0')
+            {
+                break; // Found the null terminator
+            }
+
+            length++;
+        }
         
         char *str = alloc<char>(length + 1);
 
@@ -507,15 +563,15 @@ namespace Hamster
             error = EINVAL;
             return -1;
         }
-        else if (flags & MAP_ANONYMOUS)
+        else if (flags & MAP_PRIVATE)
         {
             // Copy the mapping to memory
-            if (vfs.seek(fd, offset, SEEK_SET) < 0)
+            if (vfs.seek(fd, offset, H_SEEK_SET) < 0)
             {
                 error = EIO;
                 return -1;
             }
-            for (uint64_t it = addr; it < addr + size; it += HAMSTER_PAGE_SIZE)
+            for (uint64_t it = 0; it < size; it++)
             {
                 uint8_t byte = 0;
                 if (vfs.read(fd, &byte, 1) < 0)
@@ -523,9 +579,8 @@ namespace Hamster
                     error = EIO;
                     return -1; // Error reading from file
                 }
-                if (write_byte(it, byte) < 0)
+                if (write_byte(addr + it, byte) < 0)
                 {
-                    error = EFAULT;
                     return -1; // Error writing to memory
                 }
             }
@@ -537,7 +592,7 @@ namespace Hamster
 
     int MemorySpace::munmap(uint64_t addr, uint64_t size)
     {
-        for (auto it = mappings.begin(); it != mappings.end(); ++it)
+        for (auto it = mappings.begin(); it != mappings.end(); /* no increment */)
         {
             MmapEntry &mapping = *it;
             // Check if it overlaps
@@ -565,6 +620,7 @@ namespace Hamster
                 {
                     // Unmap the end of the mapping
                     mapping.size = start_off;
+                    ++it;
                 }
                 else if (start_off == 0 && r_end_off > 0)
                 {
@@ -572,6 +628,7 @@ namespace Hamster
                     mapping.addr = mapping.addr + mapping.size - r_end_off;
                     mapping.size = r_end_off;
                     mapping.offset = mapping.offset + mapping.size - r_end_off;
+                    ++it;
                 }
                 else
                 {
@@ -589,10 +646,14 @@ namespace Hamster
 
                     mapping.size = start_off;
 
-                    it = mappings.insert(it, new_mapping);
-                    it += 1; // `it` pointed to the newly inserted entry, which was inserted
-                    // before the current one, so we need to increment it to point to the current one again
+                    it = mappings.insert(it + 1, new_mapping);
+                    // it now points to the newly inserted element, increment to continue
+                    ++it;
                 }
+            }
+            else
+            {
+                ++it;
             }
         }
 

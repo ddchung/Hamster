@@ -57,12 +57,14 @@ namespace Hamster
         /**
          * @brief Get the exit status of a process, and remove it from the scheduler
          * @param ppid The parent process ID of the process to get the exit status of
+         * @param pid The specific PID of the process to get the exit status of, or -1 to get any child
          * @param exit_status The exit status of the process
+         * @param reap Whether to remove the zombie after successful call or not
          * @return The PID of the process on success, or 0 on error
          * @note This will also remove the process from the scheduler, but only if it has exited
          * @note If the process is still running, it will return 0 and set `error` to `EBUSY`
          */
-        uint32_t get_exit_status(uint32_t ppid, int &exit_status);
+        uint32_t get_exit_status(uint32_t ppid, int pid, int &exit_status, bool reap = true);
 
         /**
          * @brief Make all processes with a certain PPID adopted by PID 1 (init)

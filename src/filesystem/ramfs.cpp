@@ -24,13 +24,15 @@ namespace Hamster
 
             virtual FileType type() const = 0;
 
+            RamFsNode(RamFsNode &&) = delete;
+            RamFsNode(const RamFsNode &) = delete;
+            RamFsNode &operator=(RamFsNode &&) = delete;
+            RamFsNode &operator=(const RamFsNode &) = delete;
+
             RamFsNode(int mode, int uid, int gid)
                 : mode(mode), uid(uid), gid(gid), vfs_flags(0), refcount(1), filesystem(nullptr)
             {
             }
-
-            RamFsNode(const RamFsNode &) = delete;
-            RamFsNode &operator=(const RamFsNode &) = delete;
 
             int mode;
             int uid, gid;
@@ -77,12 +79,50 @@ namespace Hamster
 
             using RamFsNode::RamFsNode;
 
-            ~RamFsDirectoryNode()
+            // Removes . and ..
+            void remove_dir_hardlinks()
             {
+                auto it = children.find(".");
+                if (it != children.end())
+                {
+                    it->second->refcount--;
+                    children.erase(it);
+                }
+                it = children.find("..");
+                if (it != children.end())
+                {
+                    it->second->refcount--;
+                    children.erase(it);
+                }
+
+                // Recurse into children
                 for (auto &[name, node] : children)
                 {
-                    dealloc(node);
+                    if (node->type() == FileType::Directory)
+                    {
+                        auto *dir_node = static_cast<RamFsDirectoryNode *>(node);
+                        dir_node->remove_dir_hardlinks();
+                    }
                 }
+            }
+
+            ~RamFsDirectoryNode()
+            {
+                remove_dir_hardlinks();
+                for (auto &[name, node] : children)
+                {
+                    if (name == "." || name == "..")
+                        continue; // Skip self and parent references
+                    if (node)
+                    {
+                        node->refcount--;
+                        if (node->refcount == 0)
+                        {
+                            dealloc(node);
+                        }
+                    }
+                }
+                children.clear();
             }
 
             Map<String, RamFsNode *> children;
@@ -113,7 +153,7 @@ namespace Hamster
                 return node->filesystem;
             }
 
-            int stat(struct ::stat *buf)
+            int get_id() const
             {
                 if (!node)
                 {
@@ -121,37 +161,51 @@ namespace Hamster
                     return -1;
                 }
 
-                memset(buf, 0, sizeof(struct ::stat));
+                // this will be different for every file, so we can use the address as an ID
+                return (uintptr_t)(node);
+            }
 
-                buf->st_mode = node->mode;
-                buf->st_uid = node->uid;
-                buf->st_gid = node->gid;
-                buf->st_size = 0;
-                buf->st_nlink = node->refcount;
+            int stat(sys_stat *buf)
+            {
+                if (!node)
+                {
+                    error = EBADF;
+                    return -1;
+                }
+
+                memset(buf, 0, sizeof(sys_stat));
+
+                buf->ino = get_id();
+                buf->mode = node->mode & 0777;
+                buf->uid = node->uid;
+                buf->gid = node->gid;
+                buf->size = 0;
+                buf->nlink = node->refcount;
 
                 if (node->type() == FileType::Regular)
                 {
                     auto *regular_node = static_cast<RamFsRegularNode *>(node);
-                    buf->st_size = regular_node->size;
-                    buf->st_blocks = (regular_node->size + HAMSTER_PAGE_SIZE - 1) / HAMSTER_PAGE_SIZE;
-                    buf->st_blksize = HAMSTER_PAGE_SIZE;
-                    buf->st_mode |= S_IFREG;
+                    buf->size = regular_node->size;
+                    buf->blocks = (regular_node->size + HAMSTER_PAGE_SIZE - 1) / HAMSTER_PAGE_SIZE;
+                    buf->blksize = HAMSTER_PAGE_SIZE;
+                    buf->mode |= STAT_IFREG;
                 }
                 else if (node->type() == FileType::Directory)
                 {
-                    buf->st_mode |= S_IFDIR;
+                    buf->mode |= STAT_IFDIR;
                 }
                 else if (node->type() == FileType::Symlink)
                 {
-                    buf->st_mode |= S_IFLNK;
+                    buf->mode |= STAT_IFLNK;
                 }
                 else if (node->type() == FileType::Special)
                 {
-                    buf->st_mode |= S_IFCHR;
+                    auto *special_node = static_cast<RamFsSpecialNode *>(node);
+                    buf->rdev = special_node->device_id;
                 }
                 else
                 {
-                    error = EIO;
+                    error = ENOTSUP;
                     return -1;
                 }
 
@@ -282,7 +336,8 @@ namespace Hamster
             ~RamFsRegularHandle() override = default;
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
-            int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
+            int get_id() const override { return RamFsNodeHandle::get_id(); }
+            int stat(sys_stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
             int get_gid() override { return RamFsNodeHandle::get_gid(); }
@@ -344,8 +399,8 @@ namespace Hamster
                     file modification operation shall occur between changing the file offset and 
                     the write operation.
                 */
-                if (flags & O_APPEND)
-                    seek(0, SEEK_END);
+                if (flags & OPEN_APPEND)
+                    seek(0, H_SEEK_END);
                 
                 // See: the comment on the seek function
                 if (offset > reg_node->size && reg_node->data.memset(reg_node->size, 0, offset - reg_node->size) < 0)
@@ -384,7 +439,7 @@ namespace Hamster
 
                 switch (whence)
                 {
-                case SEEK_SET:
+                case H_SEEK_SET:
                     if (offset < 0)
                     {
                         error = EINVAL;
@@ -392,7 +447,7 @@ namespace Hamster
                     }
                     this->offset = offset;
                     break;
-                case SEEK_CUR:
+                case H_SEEK_CUR:
                     if (this->offset + offset < 0)
                     {
                         error = EINVAL;
@@ -400,7 +455,7 @@ namespace Hamster
                     }
                     this->offset += offset;
                     break;
-                case SEEK_END:
+                case H_SEEK_END:
                     if (reg_node->size + offset < 0)
                     {
                         error = EINVAL;
@@ -418,7 +473,7 @@ namespace Hamster
 
             int64_t tell() override
             {
-                return seek(0, SEEK_CUR);
+                return seek(0, H_SEEK_CUR);
             }
 
             int truncate(int64_t size) override
@@ -493,7 +548,8 @@ namespace Hamster
             ~RamFsSpecialHandle() override = default;
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
-            int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
+            int get_id() const override { return RamFsNodeHandle::get_id(); }
+            int stat(sys_stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
             int get_gid() override { return RamFsNodeHandle::get_gid(); }
@@ -550,7 +606,8 @@ namespace Hamster
             ~RamFsSymlinkHandle() override = default;
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
-            int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
+            int get_id() const override { return RamFsNodeHandle::get_id(); }
+            int stat(sys_stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
             int get_gid() override { return RamFsNodeHandle::get_gid(); }
@@ -619,8 +676,8 @@ namespace Hamster
             ~RamFsDirectoryHandle() override = default;
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
-
-            int stat(struct ::stat *buf) override { return RamFsNodeHandle::stat(buf); }
+            int get_id() const override { return RamFsNodeHandle::get_id(); }
+            int stat(sys_stat *buf) override { return RamFsNodeHandle::stat(buf); }
             int get_mode() override { return RamFsNodeHandle::get_mode(); }
             int get_uid() override { return RamFsNodeHandle::get_uid(); }
             int get_gid() override { return RamFsNodeHandle::get_gid(); }
@@ -648,10 +705,17 @@ namespace Hamster
                 if (!dir_node)
                     return nullptr;
                 
-                if ((uint64_t)offset >= dir_node->children.size() || offset < 0)
+                if (offset < 0)
                 {
                     error = EINVAL;
                     return nullptr;
+                }
+
+                if (offset >= (int64_t)dir_node->children.size())
+                {
+                    char **empty_list = alloc<char *>(1);
+                    empty_list[0] = nullptr; // Null-terminate the array
+                    return empty_list;
                 }
 
                 count = std::min((uint64_t)count, (uint64_t)dir_node->children.size() - offset);
@@ -669,6 +733,8 @@ namespace Hamster
                     ++it;
                 }
 
+                offset += count;
+
                 return strings;
             }
             
@@ -680,7 +746,7 @@ namespace Hamster
 
                 switch (whence)
                 {
-                case SEEK_SET:
+                case H_SEEK_SET:
                     if (offset < 0)
                     {
                         error = EINVAL;
@@ -688,7 +754,7 @@ namespace Hamster
                     }
                     this->offset = offset;
                     break;
-                case SEEK_CUR:
+                case H_SEEK_CUR:
                     if (this->offset + offset < 0)
                     {
                         error = EINVAL;
@@ -696,7 +762,7 @@ namespace Hamster
                     }
                     this->offset += offset;
                     break;
-                case SEEK_END:
+                case H_SEEK_END:
                     if ((int64_t)node->children.size() + offset < 0)
                     {
                         error = EINVAL;
@@ -727,7 +793,7 @@ namespace Hamster
                 auto it = dir_node->children.find(name);
                 if (it != dir_node->children.end())
                 {
-                    if (flags & O_EXCL)
+                    if (flags & OPEN_EXCL)
                     {
                         error = EEXIST;
                         return nullptr;
@@ -735,7 +801,7 @@ namespace Hamster
 
                     RamFsNode *node = it->second;
 
-                    if (flags & O_DIRECTORY && node->type() != FileType::Directory)
+                    if (flags & OPEN_DIRECTORY && node->type() != FileType::Directory)
                     {
                         error = ENOTDIR;
                         return nullptr;
@@ -758,13 +824,13 @@ namespace Hamster
                 }
                 else
                 {
-                    if (!(flags & O_CREAT))
+                    if (!(flags & OPEN_CREAT))
                     {
                         error = ENOENT;
                         return nullptr;
                     }
 
-                    if (flags & O_DIRECTORY)
+                    if (flags & OPEN_DIRECTORY)
                     {
                         return mkdir(name, flags, mode);
                     }
@@ -823,6 +889,11 @@ namespace Hamster
                 auto *new_node = alloc<RamFsDirectoryNode>(1, mode, 0, 0);
                 dir_node->children[name] = new_node;
                 new_node->filesystem = dir_node->filesystem;
+
+                new_node->children["."] = new_node; // Self-reference
+                new_node->children[".."] = dir_node; // Parent reference
+                dir_node->refcount++; // Increment parent directory's refcount
+                new_node->refcount++; // Increment new directory's refcount
 
                 return alloc<RamFsDirectoryHandle>(1, new_node, flags);
             }
@@ -914,8 +985,8 @@ namespace Hamster
                     handle = (RamFsRegularHandle*)file;
                     break;
                 case FileType::Directory:
-                    handle = (RamFsDirectoryHandle*)file;
-                    break;
+                    error = EISDIR;
+                    return -1;
                 case FileType::Special:
                     handle = (RamFsSpecialHandle*)file;
                     break;
@@ -935,6 +1006,19 @@ namespace Hamster
                     return -1;
                 
                 RamFsNode *target = handle->get_node();
+
+
+                if (!target)
+                {
+                    error = EBADF;
+                    return -1;
+                }
+
+                if (dir_node->children.find(name) != dir_node->children.end())
+                {
+                    error = EEXIST;
+                    return -1;
+                }
 
                 dir_node->children[name] = target;
                 target->refcount += 1;
@@ -965,11 +1049,12 @@ namespace Hamster
 
                 if (node->type() == FileType::Directory)
                 {
-                    if (((RamFsDirectoryNode *)node)->children.size() > 0)
+                    if (((RamFsDirectoryNode *)node)->children.size() > 2)
                     {
                         error = ENOTEMPTY;
                         return -1;
                     }
+                    ((RamFsDirectoryNode *)node)->remove_dir_hardlinks();
                 }
 
                 dir_node->children.erase(it);
@@ -1006,6 +1091,8 @@ namespace Hamster
         RamFsData()
             : root(alloc<RamFsDirectoryNode>(1, 0777, 0, 0))
         {
+            root->children["."] = root; // Self-reference
+            root->refcount += 1;
         }
 
         ~RamFsData()

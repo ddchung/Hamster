@@ -68,7 +68,7 @@ namespace Hamster
         }
     } // namespace
 
-    int Process::load_elf(const char *path, const char *const *argv, const char *const *envp)
+    int Process::load_elf(const char *path, const char *const *argv, const char *const *envp, int dirfd)
     {
         static const char *empty[] = {0};
         if (!argv)
@@ -81,16 +81,23 @@ namespace Hamster
             return -1;
         }
 
-        int fd = vfs.open(path, O_RDONLY);
+        int fd;
+        if (dirfd >= 0)
+            fd = vfs.openat(dirfd, path, OPEN_RDONLY);
+        else
+            fd = vfs.open(path, OPEN_RDONLY);
+        
         if (fd < 0)
             return -1;
         uint64_t entry_point = 0;
         uint64_t ph_num = 0;
-        if (Hamster::load_elf(fd, memory_space, entry_point, ph_num) < 0)
+        uint64_t brk = 0;
+        if (Hamster::load_elf(fd, memory_space, entry_point, ph_num, brk) < 0)
         {
-            error = EIO;
             return -1;
         }
+
+        this->brk = brk;
 
         // Load stack
         uint64_t sp = HAMSTER_STACK_TOP;
@@ -181,13 +188,38 @@ namespace Hamster
 
         push_stack(memory_space, sp, argc);
 
-        threads.clear();
+        for (auto &thread : threads)
+            thread.set_state(ThreadState::ENDED);
 
         Thread &t = threads.emplace_back(this, 0);
         t.set_pc(entry_point);
         t.get_regs()[2] = sp;
         t.get_regs()[1] = 0; // Set return address to 0 (no return)
 
+        // uncomment to open console if no fds are set
+        // Note that this is not POSIX compliant, so if you're running an init system,
+        // let it open the console for userland.
+        
+        // if (fds.empty())
+        // {
+        //     int console_fd = vfs.open("/dev/console", O_RDWR);
+        //     fd_refcount[console_fd] = 3; 
+        //     fds.push_back({console_fd, 0}); // stdin
+        //     fds.push_back({console_fd, 0}); // stdout
+        //     fds.push_back({console_fd, 0}); // stderr
+        // }
+
+        uint32_t tp = 0xFFFF0000;
+        uint32_t dtv = 0xFFFE0000;
+        uint32_t tls = 0xFFFC0000;
+
+        t.get_regs()[3] = tp; // set tp
+        uint32_t i = 1;
+
+        memory_space.memcpy(tp, &dtv, 4); // *(uint32_t*)tp = dtv
+        memory_space.memcpy(dtv, &i, 4);       // dtv[0] = 1
+        memory_space.memcpy(dtv + 4, &tls, 4);               // dtv[1] = tls_base
+        memory_space.memset(tls, 0, HAMSTER_PAGE_SIZE);      // init TLS memory
         return 0;
     }
 
