@@ -64,8 +64,6 @@ namespace Hamster
          * @note This can, but is *not* requried to be implemented by returning the inode number
          */
         virtual int get_id() const = 0;
-        // Note that for get_id, **FOR NOW** it is almost ok to return random value each time, as it is only used
-        // right now to check for looping symlinks. Doing the rand thing will effectively disable that check.
 
         /**
          * @brief Stat the file.
