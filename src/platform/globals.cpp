@@ -3,6 +3,7 @@
 #include <memory/page_manager.hpp>
 #include <memory/allocator.hpp>
 #include <filesystem/vfs.hpp>
+#include <filesystem/device_manager.hpp>
 #include <process/scheduler.hpp>
 
 #ifndef NDEBUG
@@ -48,6 +49,13 @@ namespace Hamster
      * provides: page_manager
      */
     PageManager page_manager;
+
+    /**
+     * Device Manager
+     * requires: allocator
+     * provides: device_manager
+     */
+    DeviceManager device_manager;
 
     /**
      * Ram Filesystem
