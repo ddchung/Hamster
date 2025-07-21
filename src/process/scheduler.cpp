@@ -2,6 +2,7 @@
 
 #include <process/scheduler.hpp>
 #include <memory/allocator.hpp>
+#include <platform/config.hpp>
 #include <errno/errno.h>
 #include <utility>
 
@@ -13,7 +14,7 @@ namespace Hamster
         // PID 0 doesn't exist
         processes.push_back(nullptr);
     }
-    
+
     Scheduler::~Scheduler()
     {
         for (Process *process : processes)
@@ -44,13 +45,14 @@ namespace Hamster
             error = EINVAL;
             return -1;
         }
-        
+
         // Get a new PID
         int new_pid = -1;
         size_t counter = 0;
         for (auto process : processes)
         {
-            if (!process)
+            // Skip PID 0
+            if (!process && counter > 0)
             {
                 new_pid = counter;
                 break;
@@ -83,7 +85,7 @@ namespace Hamster
             error = EINVAL;
             return -1;
         }
-        
+
         Process *process = alloc<Process>();
 
         process->cwd = "/";
@@ -91,10 +93,10 @@ namespace Hamster
         process->gid = 0;
         process->euid = 0;
         process->egid = 0;
-        process->ppid = 1;
+        process->ppid = 0;
         process->pgid = 0;
         process->sid = 0;
-        process->exit_code = 0;
+        process->exit_status = 0;
 
         if (process->load_elf(path, argv, envp) < 0)
         {
@@ -122,28 +124,81 @@ namespace Hamster
             if (!process)
                 continue; // Skip null processes
             else if (process->threads.empty())
-            {
-                dealloc(process);
-                process = nullptr;
-            }
+                continue; // Skip ended processes
             else
             {
                 // Tick each thread in the process
-                process->threads.remove_if([&](Thread &thread) {
-                    if (thread.get_state() == ThreadState::ENDED)
-                        return true; // Remove ended threads
-                    if (thread.is_paused())
-                    {
-                        thread.get_current_pause_callback()(thread);
-                        return false; // Keep paused threads
-                    }
-                    thread.tick(); // Tick the thread
-                    ++ticked_count; // Count the ticked thread
-                    return false; // Keep running threads
-                });
+                process->threads.remove_if([&](Thread &thread)
+                                           {
+                                            for (size_t i = 0; i < HAMSTER_THREAD_TIME_SLICE; ++i)
+                                            {
+                                               if (thread.get_state() == ThreadState::ENDED)
+                                                   return true; // Remove ended threads
+                                               if (thread.is_paused())
+                                               {
+                                                   ++ticked_count;
+                                                   thread.get_current_pause_callback()(thread);
+                                                   return false; // Keep paused threads
+                                               }
+                                               thread.tick();  // Tick the thread
+                                               ++ticked_count; // Count the ticked thread
+                                            }
+                                               return false;   // Keep running threads
+                                           });
+                process->memory_space.swap_out_all();
             }
         }
         return ticked_count; // Return the number of threads that were ticked
+    }
+
+    uint32_t Scheduler::get_exit_status(uint32_t ppid, int pid, int &exit_status, bool reap)
+    {
+        bool found = false;
+        for (auto it = processes.begin(); it != processes.end(); ++it)
+        {
+            Process *process = *it;
+            if (!process)
+                continue; // Skip processes that don't match the parent PID
+
+            if (pid != -1 && process->pid != (uint32_t)pid)
+                continue; // Skip if PID doesn't match
+            if (pid == -1 && process->ppid != ppid)
+                continue; // Skip if PPID doesn't match
+
+            found = true;
+
+            if (!process->threads.empty())
+            {
+                continue; // try to find an ended child
+            }
+
+            exit_status = process->exit_status; // Get the exit status
+
+            uint32_t pid = process->pid; // Get the PID
+            if (reap)
+            {
+                dealloc(process);            // Deallocate the process
+                *it = nullptr;
+            }
+
+            return pid;
+        }
+
+        error = found ? EBUSY : ECHILD;
+        return 0;
+    }
+
+    int Scheduler::adopt_processes(uint32_t ppid)
+    {
+        for (auto &process : processes)
+        {
+            if (!process || process->ppid != ppid)
+                continue; // Skip processes that don't match the parent PID
+
+            process->ppid = 1; // Adopt by PID 1 (init)
+        }
+
+        return 0; // Success
     }
 
     Process *Scheduler::get_process(uint32_t pid) const

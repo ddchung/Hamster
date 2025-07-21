@@ -15,13 +15,64 @@ namespace Hamster
     // This file defines the sequence of construction and destruction of global objects
     // Higher priority objects should be constructed first, and therefore should appear first in this file
 
+    /* These don't have any dependencies, put first */
+
+    /**
+     * Allocated Pointers
+     * requires: none
+     * provides: allocator
+     */
 #ifndef NDEBUG
     std::unordered_set<void *> allocated_pointers;
 #endif // NDEBUG
 
+    /**
+     * Error
+     * requires: none
+     * provides: error
+     */
     int error{0};
+
+    /**
+     * FD Reference Count
+     * requires: none
+     * provides: fd_refcount
+     */
+    UnorderedMap<int, unsigned int> fd_refcount;
+
+    /* These ones depend on each other, in this order */
+
+    /**
+     * Page Manager
+     * requires: allocator, error
+     * provides: page_manager
+     */
     PageManager page_manager;
+
+    /**
+     * Ram Filesystem
+     * requires: page_manager, allocator, error
+     * provides: ramfs
+     */
+
+    /**
+     * Virtual Filesystem
+     * requires: *fs, allocator, error
+     * provides: vfs
+     */
     VFS vfs;
+
+    /**
+     * Process
+     * requires: page_manager, vfs, allocator, error, fd_refcount
+     * provides: process
+     */
+
+    /**
+     * Scheduler
+     * requires: process
+     * provides: scheduler
+     */
     Scheduler scheduler;
 } // namespace Hamster
 

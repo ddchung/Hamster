@@ -54,6 +54,27 @@ namespace Hamster
          */
         Process *get_process(uint32_t pid) const;
 
+        /**
+         * @brief Get the exit status of a process, and remove it from the scheduler
+         * @param ppid The parent process ID of the process to get the exit status of
+         * @param pid The specific PID of the process to get the exit status of, or -1 to get any child
+         * @param exit_status The exit status of the process
+         * @param reap Whether to remove the zombie after successful call or not
+         * @return The PID of the process on success, or 0 on error
+         * @note This will also remove the process from the scheduler, but only if it has exited
+         * @note If the process is still running, it will return 0 and set `error` to `EBUSY`
+         */
+        uint32_t get_exit_status(uint32_t ppid, int pid, int &exit_status, bool reap = true);
+
+        /**
+         * @brief Make all processes with a certain PPID adopted by PID 1 (init)
+         * @param ppid The parent process ID to adopt processes from
+         * @return 0 on success, or -1 on error
+         * @note This will set the PPID of all processes with the given PPID to 1 (init)
+         * @note This is used when a process exits, and its children need to be adopted
+         */
+        int adopt_processes(uint32_t ppid);
+
         // Warning: don't free the processes!
         const List<Process *> &get_processes() const { return processes; }
     private:

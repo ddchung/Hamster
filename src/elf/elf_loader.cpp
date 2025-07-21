@@ -6,16 +6,13 @@
 #include <cstring>
 #include <elf.h>
 
-// debugging
-#include <cstdio>
-
 namespace Hamster
 {
     namespace
     {
-        int load_elf32(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num)
+        int load_elf32(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk)
         {
-            if (vfs.seek(fd, 0, SEEK_SET) < 0)
+            if (vfs.seek(fd, 0, H_SEEK_SET) < 0)
             {
                 error = EIO;
                 return -1;
@@ -66,7 +63,7 @@ namespace Hamster
             ph_num = ehdr.e_phnum;
 
             // Load program headers
-            if (vfs.seek(fd, ehdr.e_phoff, SEEK_SET) < 0)
+            if (vfs.seek(fd, ehdr.e_phoff, H_SEEK_SET) < 0)
             {
                 error = EIO;
                 return -1;
@@ -76,7 +73,7 @@ namespace Hamster
             {
                 Elf32_Phdr phdr;
                 
-                if (vfs.seek(fd, ehdr.e_phoff + i * ehdr.e_phentsize, SEEK_SET) < 0)
+                if (vfs.seek(fd, ehdr.e_phoff + i * ehdr.e_phentsize, H_SEEK_SET) < 0)
                 {
                     error = EIO;
                     return -1;
@@ -95,14 +92,20 @@ namespace Hamster
                     return -1;
                 }
 
+                brk = 0;
+
                 if (phdr.p_type == PT_LOAD)
                 {
                     // Load segment
-                    if (vfs.seek(fd, phdr.p_offset, SEEK_SET) < 0)
+                    if (vfs.seek(fd, phdr.p_offset, H_SEEK_SET) < 0)
                     {
                         error = EIO;
                         return -1;
                     }
+
+                    uint64_t top = phdr.p_vaddr + phdr.p_memsz;
+                    if (top > brk)
+                        brk = top;
 
                     static uint8_t buf[64];
                     size_t bytes_to_read = phdr.p_filesz;
@@ -131,16 +134,18 @@ namespace Hamster
                 }
             }
 
+            brk = (brk + (HAMSTER_PAGE_SIZE - 1)) & ~((uint64_t)HAMSTER_PAGE_SIZE - 1);
+
             // done loading
             return 0;
         }
     } // namespace
     
 
-    int load_elf(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num)
+    int load_elf(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk)
     {
         // Prepare file
-        if (vfs.seek(fd, 0, SEEK_SET) < 0)
+        if (vfs.seek(fd, 0, H_SEEK_SET) < 0)
         {
             error = EIO;
             return -1;
@@ -164,7 +169,7 @@ namespace Hamster
 
         if (e_ident[EI_CLASS] == ELFCLASS32)
         {
-            return load_elf32(fd, mem_space, entry_point, ph_num);
+            return load_elf32(fd, mem_space, entry_point, ph_num, brk);
         }
         else
         {

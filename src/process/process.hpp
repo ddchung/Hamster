@@ -29,11 +29,12 @@ namespace Hamster
          * @param argv Arguments to pass to the program. Note that by convention, the first argument is
          *      * the program name
          * @param envp Environment variables to pass to the program
+         * @param dirfd Path is relative to this, or if not set, to the root directory
          * @warning This will kill all threads and overwrite the memory space, and create
          *        * a single new thread with the entry point of the ELF file
          * @note If `fds` is empty, it will open `/dev/console` 3 times for stdin, stdout, and stderr
          */
-        int load_elf(const char *path, const char *const *argv = 0, const char *const *envp = 0);
+        int load_elf(const char *path, const char *const *argv = 0, const char *const *envp = 0, int dirfd = -1);
         
         MemorySpace memory_space;
         UnorderedMap<uint32_t, size_t> reserved_mem; // For `lr` and `sc` instructions
@@ -42,15 +43,19 @@ namespace Hamster
 
         String cwd;
 
-        uint32_t pid;
-        uint32_t ppid;
-        uint32_t pgid;
-        uint32_t sid;
-        uint32_t uid;
-        uint32_t gid;
-        uint32_t euid;
-        uint32_t egid;
+        uint32_t pid = 0;
+        uint32_t ppid = 0;
+        uint32_t pgid = 0;
+        uint32_t sid = 0;
+        uint32_t uid = 0;
+        uint32_t gid = 0;
+        uint32_t euid = 0;
+        uint32_t egid = 0;
 
-        uint8_t exit_code;
+        int exit_status = 0;
+
+        uint32_t brk = 0;
     };
+
+    extern UnorderedMap<int, unsigned int> fd_refcount;
 } // namespace Hamster

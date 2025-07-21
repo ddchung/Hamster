@@ -357,17 +357,12 @@ namespace Hamster
     }
 
     Thread::Thread(Thread &&other)
-        : state(other.state), process(other.process),
-          pause_callbacks(std::move(other.pause_callbacks)),
-          id(other.id),
-          x{0}, f{0.0}, fcsr(other.fcsr), pc(other.pc),
-          pending_signal(other.pending_signal), signal_mask(other.signal_mask)
+        : Thread(other.process, other.id)
     {
-        std::memcpy(x, other.x, sizeof(x));
-        std::memcpy(f, other.f, sizeof(f));
-        other.process = nullptr;
-        other.state = ThreadState::ENDED;
-        other.id = 0;
+        Thread tmp{other.process, other.id};
+        tmp = std::move(other);
+        other = std::move(*this);
+        *this = std::move(tmp);
     }
 
     Thread &Thread::operator=(Thread &&other)
@@ -410,7 +405,7 @@ namespace Hamster
         execute(inst);
     }
 
-    void Thread::pause(const std::function<void(Thread &)> &callback)
+    void Thread::pause(void (*callback)(Thread&))
     {
         pause_callbacks.push_back(callback);
     }
@@ -422,17 +417,15 @@ namespace Hamster
         pause_callbacks.pop_back();
     }
 
-    const std::function<void(Thread &)> &Thread::get_current_pause_callback() const
+    void (* Thread::get_current_pause_callback())(Thread&) const
     {
-        static std::function<void(Thread &)> null_callback;
         if (pause_callbacks.empty())
-            return null_callback;
+            return nullptr;
         return pause_callbacks.back();
     }
 
     void Thread::signal(int signal)
     {
-        printf("Process %u Thread %zu recieved signal %d at PC 0x%08x\n", process->pid, id, signal, pc);
         pending_signal = signal;
     }
 
