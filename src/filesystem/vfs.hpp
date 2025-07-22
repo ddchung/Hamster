@@ -400,48 +400,44 @@ namespace Hamster
         int symlinkat(int dir, const char *path, const char *target);
 
         /**
-         * @brief Create a special file at a given path
-         * @param path The path to the special file to be created
-         * @param driver The thing that will handle operations on the special file
+         * @brief Create a special file
+         * @param path The path to the new special file
          * @param flags The flags to open the special file with
+         * @param id The ID of the special file
          * @param mode The mode to create the special file with
          * @return A file descriptor on success, or on error return -1 and set `error`
-         * @warning This takes ownership of `driver`, and will deallocate it later
          */
-        int mksfile(const char *path, int flags, BaseSpecialDriver *driver, int mode);
-
-        /**
-         * @brief Create a special file at a given path, without opening a file descriptor
-         * @param path The path to the special file to be created
-         * @param driver The thing that will handle operations on the special file
-         * @param mode The mode to create the special file with
-         * @return 0 on success, or on error return -1 and set `error`
-         * @warning This takes ownership of `driver`, and will deallocate it later
-         */
-        int mksfile(const char *path, BaseSpecialDriver *driver, int mode);
+        int mknod(const char *path, int flags, DeviceID id, int mode);
 
         /**
          * @brief Create a special file at a given path relative to a directory
          * @param dir The file descriptor of the directory to create the special file in
-         * @param path The path to the special file to be created, starting from the directory
+         * @param path The path to the new special file, starting from the directory
          * @param flags The flags to open the special file with
-         * @param driver The thing that will handle operations on the special file
+         * @param id The ID of the special file
          * @param mode The mode to create the special file with
          * @return A file descriptor on success, or on error return -1 and set `error`
-         * @warning This takes ownership of `driver`, and will deallocate it later
          */
-        int mksfileat(int dir, const char *path, int flags, BaseSpecialDriver *driver, int mode);
+        int mknodat(int dir, const char *path, int flags, DeviceID id, int mode);
 
         /**
          * @brief Create a special file at a given path relative to a directory, without opening a file descriptor
          * @param dir The file descriptor of the directory to create the special file in
-         * @param path The path to the special file to be created, starting from the directory
-         * @param driver The thing that will handle operations on the special file
+         * @param path The path to the new special file, starting from the directory
+         * @param id The ID of the special file
          * @param mode The mode to create the special file with
          * @return 0 on success, or on error return -1 and set `error`
-         * @warning This takes ownership of `driver`, and will deallocate it later
          */
-        int mksfileat(int dir, const char *path, BaseSpecialDriver *driver, int mode);
+        int mknodat(int dir, const char *path, DeviceID id, int mode);
+
+        /**
+         * @brief Create a special file at a given path, without opening a file descriptor
+         * @param path The path to the new special file
+         * @param id The ID of the special file
+         * @param mode The mode to create the special file with
+         * @return 0 on success, or on error return -1 and set `error`
+         */
+        int mknod(const char *path, DeviceID id, int mode);
 
         /**
          * @brief Perform an ioctl operation on a special device

@@ -1,25 +1,23 @@
 #pragma once
 #include <filesystem/base_file.hpp>
-#include <memory/stl_sequential.hpp>
+#include <memory/stl_map.hpp>
 #include <cstring>
 #include <errno/errno.h>
 
 namespace Hamster {
 class MountPoint {
 public:
-    MountPoint(const char *path, BaseFilesystem *fs);
+    MountPoint(BaseFilesystem *fs);
     MountPoint(const MountPoint &) = delete;
     MountPoint &operator=(const MountPoint &) = delete;
     MountPoint(MountPoint &&other);
     MountPoint &operator=(MountPoint &&other);
     ~MountPoint();
-    char *path;
     BaseFilesystem *fs;
-};
+    uint32_t children;
 
-struct RelativePath {
-    MountPoint *mount;
-    const char *path;
+    // Weak pointer
+    MountPoint *parent;
 };
 
 class Mounts {
@@ -35,9 +33,9 @@ public:
     int mount(const char *path, BaseFilesystem *fs);
     int mount_root(BaseFilesystem *fs);
     int unmount(const char *path);
-    static constexpr uint32_t FLAG_MOUNTPOINT = 1 << 0;
-    static constexpr uint32_t MOUNT_ID_MASK = 0xFFFF << 16;
+    int unmount_root();
 private:
-    Vector<MountPoint *> mounts;
+    UnorderedMap<int, MountPoint> mounts;
+    MountPoint *root_mount;
 };
 } // namespace Hamster

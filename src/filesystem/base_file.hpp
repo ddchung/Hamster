@@ -23,6 +23,14 @@ namespace Hamster
         Special,
     };
 
+    struct DeviceID
+    {
+        uint32_t major;
+        uint32_t minor;
+
+        bool operator==(const DeviceID &other) const = default;
+    };
+
     class BaseFilesystem;
 
     class BaseFile
@@ -56,8 +64,6 @@ namespace Hamster
          * @note This can, but is *not* requried to be implemented by returning the inode number
          */
         virtual int get_id() const = 0;
-        // Note that for get_id, **FOR NOW** it is almost ok to return random value each time, as it is only used
-        // right now to check for looping symlinks. Doing the rand thing will effectively disable that check.
 
         /**
          * @brief Stat the file.
@@ -116,14 +122,6 @@ namespace Hamster
          * @return 0 on success, or on error return -1 and set `error`
          */
         virtual int set_flags(int flags) = 0;
-
-        /**
-         * @brief Used by the VFS to store some flags
-         * @warning Do not touch this, it is used by the VFS
-         * @note This is not a part of the public API
-         */
-        virtual int set_vfs_flags(uint32_t flags) = 0;
-        virtual uint32_t get_vfs_flags() = 0;
     };
 
     class BaseRegularFile : public BaseFile
@@ -187,9 +185,9 @@ namespace Hamster
 
         /**
          * @brief Get the Device ID of the special file.
-         * @return The Device ID of the special file, or on error return -1 and set `error`
+         * @return The Device ID of the special file, or on error return {0, 0} and set `error`
          */
-        virtual int get_device_id() = 0;
+        virtual DeviceID get_device_id() = 0;
 
         // Don't declare `get_handle` and `set_handle` as virtual, so that base classes cannot override them
 
@@ -309,14 +307,14 @@ namespace Hamster
          * @brief Make a special file in the directory.
          * @param name The name of the special file
          * @param flags The flags to open the special file with
-         * @param type The ID of the special file
+         * @param id The ID of the special file
          * @param mode The mode to create the special file with
          * @return A newly allocated `BaseSpecialFile` that operates on the new special file, or on error, it returns nullptr and sets `error`
          * @note Be sure to free the file
          * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
          * @note This is NOT equivelant to POSIX `mknod`, as this just makes a stub special file that can only be used to identify the file type
          */
-        virtual BaseSpecialFile *mksfile(const char *name, int flags, int type, int mode) = 0;
+        virtual BaseSpecialFile *mksfile(const char *name, int flags, DeviceID id, int mode) = 0;
 
         /**
          * @brief Create a hard-link to another file on this filesystem
@@ -371,16 +369,6 @@ namespace Hamster
 
     struct IoctlArg
     {
-        IoctlArg(int i = 0)
-            : i(i), p(nullptr)
-        {
-        }
-
-        IoctlArg(void *p)
-            : i(0), p(p)
-        {
-        }
-        
         int i;
         void *p;
     };
@@ -434,7 +422,7 @@ namespace Hamster
          * @return It depends on the request, but it is guaranteed to return -1 on error and set `error`, but otherwise
          *       * it depends.
          */
-        virtual int ioctl(int request, IoctlArg arg = IoctlArg()) = 0;
+        virtual int ioctl(int request, IoctlArg arg = {}) = 0;
     };
 
     class BaseCharacterDeviceHandle : public BaseSpecialDriverHandle

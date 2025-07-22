@@ -1,5 +1,6 @@
 #include <filesystem/vfs_mounts.hpp>
 #include <memory/allocator.hpp>
+#include <memory/stl_sequential.hpp>
 #include <cstring>
 #include <errno/errno.h>
 #include <cassert>
@@ -7,45 +8,54 @@
 namespace Hamster
 {
 
-    MountPoint::MountPoint(const char *path, BaseFilesystem *fs)
-        : path(alloc<char>(strlen(path) + 1)), fs(fs)
+    MountPoint::MountPoint(BaseFilesystem *fs)
+        : fs(fs), children(0), parent(0)
     {
-        strcpy(this->path, path);
     }
     MountPoint::MountPoint(MountPoint &&other)
-        : path(other.path), fs(other.fs)
+        : fs(other.fs), children(other.children), parent(other.parent)
     {
-        other.path = nullptr;
         other.fs = nullptr;
+        other.children = 0;
     }
     MountPoint &MountPoint::operator=(MountPoint &&other)
     {
         if (this == &other)
             return *this;
-        dealloc(path);
         dealloc(fs);
-        path = other.path;
         fs = other.fs;
-        other.path = nullptr;
+        children = other.children;
+        parent = other.parent;
+        other.children = 0;
+        other.parent = nullptr;
         other.fs = nullptr;
         return *this;
     }
     MountPoint::~MountPoint()
     {
-        dealloc(path);
         dealloc(fs);
-        path = nullptr;
         fs = nullptr;
     }
 
-    Mounts::Mounts() = default;
-    Mounts::Mounts(Mounts &&other) : mounts(std::move(other.mounts)) { other.mounts.clear(); }
+    Mounts::Mounts()
+        : root_mount(nullptr)
+    {
+    }
+
+    Mounts::Mounts(Mounts &&other) 
+        : mounts(std::move(other.mounts)), root_mount(other.root_mount)
+    {
+        other.mounts.clear();
+        other.root_mount = nullptr;
+    }
+
     Mounts &Mounts::operator=(Mounts &&other)
     {
         if (this == &other)
             return *this;
-        for (MountPoint *mp : mounts)
-            dealloc(mp);
+        dealloc(root_mount);
+        root_mount = other.root_mount;
+        other.root_mount = nullptr;
         mounts.clear();
         mounts = std::move(other.mounts);
         other.mounts.clear();
@@ -53,8 +63,8 @@ namespace Hamster
     }
     Mounts::~Mounts()
     {
-        for (MountPoint *mp : mounts)
-            dealloc(mp);
+        dealloc(root_mount);
+        root_mount = nullptr;
         mounts.clear();
     }
 
@@ -62,13 +72,22 @@ namespace Hamster
     {
         if (!file || file->type() != FileType::Directory)
             return nullptr;
-        uint16_t mount_id = (file->get_vfs_flags() & MOUNT_ID_MASK) >> 16;
-        if (mount_id >= mounts.size())
+        int id = file->get_id();
+        auto it = mounts.find(id);
+        if (it == mounts.end())
+        {
+            // Not a mount point
+            return (BaseDirectory*)file;
+        }
+        MountPoint &mount = it->second;
+        if (!mount.fs)
+        {
+            error = ENOENT;
+            dealloc(file);
             return nullptr;
-        MountPoint *mount = mounts[mount_id];
-        if (!mount)
-            return nullptr;
-        BaseDirectory *dir = mount->fs->open_root(file->get_flags());
+        }
+
+        BaseDirectory *dir = mount.fs->open_root(file->get_flags());
         dealloc(file);
         return dir;
     }
@@ -83,23 +102,12 @@ namespace Hamster
         }
         if (!dir)
         {
-            MountPoint *root_mnt = nullptr;
-            for (MountPoint *mp : mounts)
-            {
-                if (!mp)
-                    continue;
-                if (strcmp(mp->path, "/") == 0 || strcmp(mp->path, "") == 0)
-                {
-                    root_mnt = mp;
-                    break;
-                }
-            }
-            if (!root_mnt)
+            if (!root_mount)
             {
                 error = ENOENT;
                 return nullptr;
             }
-            dir = root_mnt->fs->open_root(flags);
+            dir = root_mount->fs->open_root(flags);
             if (!dir)
                 return nullptr;
         }
@@ -120,9 +128,7 @@ namespace Hamster
                 error = ENOTDIR;
                 return nullptr;
             }
-            if (file->type() == FileType::Directory && file->get_vfs_flags() & FLAG_MOUNTPOINT)
-                file = resolve_mount(file);
-            return file;
+            return file->type() == FileType::Directory ? resolve_mount(file) : file;
         }
         else
         {
@@ -150,16 +156,20 @@ namespace Hamster
                     error = ENOENT;
                     return nullptr;
                 }
-                if (ndir->get_vfs_flags() & FLAG_MOUNTPOINT)
-                    ndir = resolve_mount(ndir);
+                ndir = resolve_mount(ndir);
                 BaseFile *file = lopen(next, flags, mode, ndir);
                 return file;
             }
             case FileType::Directory:
             {
                 BaseDirectory *next_dir = (BaseDirectory *)next_file;
-                if (next_dir->get_vfs_flags() & FLAG_MOUNTPOINT)
-                    next_dir = resolve_mount(next_dir);
+                next_dir = resolve_mount(next_dir);
+                if (!next_dir)
+                {
+                    dealloc(next_file);
+                    error = ENOENT;
+                    return nullptr;
+                }
                 BaseFile *file = lopen(next, flags, mode, next_dir);
                 return file;
             }
@@ -191,27 +201,47 @@ namespace Hamster
         if (!file)
             return -1;
         assert(file->type() == FileType::Directory);
-        uint32_t flags = file->get_vfs_flags();
-        if (flags & FLAG_MOUNTPOINT)
+
+        int id = file->get_id();
+        if (id == -1)
         {
             dealloc(file);
-            error = EBUSY;
             return -1;
         }
-        uint16_t mount_id = mounts.size();
-        for (uint16_t i = 0; i < mounts.size(); ++i)
+
+        auto it = mounts.find(id);
+        if (it != mounts.end())
         {
-            if (mounts[i] == nullptr)
-            {
-                mount_id = i;
-                break;
-            }
+            error = EBUSY;
+            dealloc(file);
+            return -1;
         }
-        if (mount_id >= mounts.size())
-            mounts.resize(mount_id + 1);
-        MountPoint *mount = alloc<MountPoint>(1, path, fs);
-        mounts[mount_id] = mount;
-        file->set_vfs_flags(flags | FLAG_MOUNTPOINT | (mount_id << 16));
+
+        mounts.emplace(id, MountPoint(fs));
+
+        // Increment the children count of the parent mount point
+        BaseFilesystem *parent_fs = file->get_filesystem();
+        if (parent_fs)
+        {
+            BaseDirectory *parent_dir = parent_fs->open_root(file->get_flags());
+            if (parent_dir)
+            {
+                int pid = parent_dir->get_id();
+
+                auto pit = mounts.find(pid);
+                if (pit != mounts.end())
+                {
+                    MountPoint &parent_mount = pit->second;
+                    parent_mount.children++;
+
+                    it = mounts.find(id);
+                    assert(it != mounts.end());
+                    it->second.parent = &parent_mount;
+                }
+            }
+            dealloc(parent_dir);
+        }
+
         dealloc(file);
         return 0;
     }
@@ -223,22 +253,13 @@ namespace Hamster
             error = EINVAL;
             return -1;
         }
-        for (auto &mp : mounts)
+        if (root_mount)
         {
-            if (mp)
-            {
-                error = EBUSY;
-                return -1;
-            }
+            error = EBUSY;
+            return -1;
         }
         mounts.clear();
-        mounts.push_back(alloc<MountPoint>(1, "/", fs));
-        BaseFile *file = lopen("/", OPEN_RDONLY | OPEN_DIRECTORY, 0);
-        if (!file)
-            return -1;
-        uint32_t flags = file->get_vfs_flags();
-        file->set_vfs_flags(flags | FLAG_MOUNTPOINT | (0 << 16));
-        dealloc(file);
+        root_mount = alloc<MountPoint>(1, fs);
         return 0;
     }
 
@@ -252,24 +273,51 @@ namespace Hamster
         BaseFile *file = lopen(path, OPEN_RDONLY | OPEN_DIRECTORY, 0);
         if (!file)
             return -1;
-        uint32_t flags = file->get_vfs_flags();
-        if (!(flags & FLAG_MOUNTPOINT))
+        assert(file->type() == FileType::Directory);
+        int id = file->get_id();
+        dealloc(file);
+        if (id == -1)
         {
-            dealloc(file);
-            error = ENOTDIR;
             return -1;
         }
-        uint16_t mount_id = (flags & MOUNT_ID_MASK) >> 16;
-        if (mount_id >= mounts.size() || mounts[mount_id] == nullptr)
+
+        auto it = mounts.find(id);
+        if (it == mounts.end())
         {
-            dealloc(file);
             error = ENOENT;
             return -1;
         }
-        file->set_vfs_flags(flags & ~FLAG_MOUNTPOINT & ~MOUNT_ID_MASK);
-        dealloc(mounts[mount_id]);
-        mounts[mount_id] = nullptr;
-        dealloc(file);
+
+        if (it->second.children > 0)
+        {
+            error = EBUSY;
+            return -1;
+        }
+
+        it->second.parent->children--;
+
+        mounts.erase(id);
+
+        return 0;
+    }
+
+    int Mounts::unmount_root()
+    {
+        if (!root_mount)
+        {
+            error = ENOENT;
+            return -1;
+        }
+
+        if (root_mount->children > 0)
+        {
+            error = EBUSY;
+            return -1;
+        }
+
+        dealloc(root_mount);
+        root_mount = nullptr;
+
         return 0;
     }
 

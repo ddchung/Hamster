@@ -30,13 +30,12 @@ namespace Hamster
             RamFsNode &operator=(const RamFsNode &) = delete;
 
             RamFsNode(int mode, int uid, int gid)
-                : mode(mode), uid(uid), gid(gid), vfs_flags(0), refcount(1), filesystem(nullptr)
+                : mode(mode), uid(uid), gid(gid), refcount(1), filesystem(nullptr)
             {
             }
 
             int mode;
             int uid, gid;
-            uint32_t vfs_flags;
             uint32_t refcount;
             RamFs *filesystem;
         };
@@ -59,7 +58,7 @@ namespace Hamster
 
             using RamFsNode::RamFsNode;
 
-            int device_id = -1;
+            DeviceID device_id;
         };
 
         class RamFsSymlinkNode : public RamFsNode
@@ -201,7 +200,7 @@ namespace Hamster
                 else if (node->type() == FileType::Special)
                 {
                     auto *special_node = static_cast<RamFsSpecialNode *>(node);
-                    buf->rdev = special_node->device_id;
+                    buf->rdev = special_node->device_id.major << 20 | special_node->device_id.minor & 0xFFFFF;
                 }
                 else
                 {
@@ -292,29 +291,6 @@ namespace Hamster
                 return 0;
             }
 
-            int set_vfs_flags(uint32_t flags)
-            {
-                if (!node)
-                {
-                    error = EBADF;
-                    return -1;
-                }
-
-                node->vfs_flags = flags;
-                return 0;
-            }
-
-            uint32_t get_vfs_flags()
-            {
-                if (!node)
-                {
-                    error = EBADF;
-                    return 0;
-                }
-
-                return node->vfs_flags;
-            }
-
             RamFsNode *get_node()
             {
                 return node;
@@ -345,8 +321,6 @@ namespace Hamster
             int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
             int set_flags(int flags) override { return RamFsNodeHandle::set_flags(flags); }
-            int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
-            uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
 
             RamFsRegularHandle *clone() override
             {
@@ -557,8 +531,6 @@ namespace Hamster
             int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
             int set_flags(int flags) override { return RamFsNodeHandle::set_flags(flags); }
-            int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
-            uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
 
             RamFsSpecialHandle *clone() override
             {
@@ -569,11 +541,11 @@ namespace Hamster
                 return alloc<RamFsSpecialHandle>(1, special_node, flags);
             }
 
-            int get_device_id() override
+            DeviceID get_device_id() override
             {
                 auto *special_node = get_node();
                 if (!special_node)
-                    return -1;
+                    return {0, 0};
 
                 return special_node->device_id;
             }
@@ -615,8 +587,6 @@ namespace Hamster
             int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
             int set_flags(int flags) override { return RamFsNodeHandle::set_flags(flags); }
-            int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
-            uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
 
             RamFsSymlinkHandle *clone() override
             {
@@ -685,8 +655,6 @@ namespace Hamster
             int chmod(int mode) override { return RamFsNodeHandle::chmod(mode); }
             int chown(int uid, int gid) override { return RamFsNodeHandle::chown(uid, gid); }
             int set_flags(int flags) override { return RamFsNodeHandle::set_flags(flags); }
-            int set_vfs_flags(uint32_t flags) override { return RamFsNodeHandle::set_vfs_flags(flags); }
-            uint32_t get_vfs_flags() override { return RamFsNodeHandle::get_vfs_flags(); }
 
             RamFsDirectoryHandle *clone() override
             {
@@ -925,19 +893,13 @@ namespace Hamster
                 return alloc<RamFsSymlinkHandle>(1, new_node, flags);
             }
 
-            BaseSpecialFile *mksfile(const char *name, int flags, int devid, int mode) override
+            BaseSpecialFile *mksfile(const char *name, int flags, DeviceID devid, int mode) override
             {
                 auto *dir_node = get_node();
                 if (!dir_node)
                     return nullptr;
 
                 if (strchr(name, '/'))
-                {
-                    error = EINVAL;
-                    return nullptr;
-                }
-
-                if (devid < 0)
                 {
                     error = EINVAL;
                     return nullptr;
