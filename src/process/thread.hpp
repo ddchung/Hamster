@@ -3,7 +3,6 @@
 #pragma once
 
 #include <memory/stl_sequential.hpp>
-#include <functional>
 #include <cstddef>
 #include <cstdint>
 
@@ -39,9 +38,6 @@ namespace Hamster
         uint32_t *get_regs() { return x; }
         double *get_fregs() { return f; }
 
-        int get_error_code() const { return error_code; }
-        void set_error_code(int code) { error_code = code; }
-
         int get_signal_mask() const { return signal_mask; }
         void set_signal_mask(int mask) { signal_mask = mask; }
 
@@ -61,14 +57,14 @@ namespace Hamster
          *     * and instead of resuming when this callback is done, it will continue pausing with the previous
          *     * callback. Note that to unpause from the callback, you call `resume()` on the thread.
          */
-        void pause(const std::function<void(Thread &)> &callback);
+        void pause(void (*callback)(Thread&));
 
         /**
          * @brief Get the current pause callback, if any
          * @return The current pause callback, or nullptr if there is none
          * @note This will not remove the callback, just return it
          */
-        const std::function<void(Thread &)> &get_current_pause_callback() const;
+        void (*get_current_pause_callback())(Thread&) const;
 
         /**
          * @brief Check if the thread is paused
@@ -92,7 +88,7 @@ namespace Hamster
     private:
         ThreadState state;
         Process *process;
-        Deque<std::function<void(Thread &)>> pause_callbacks;
+        Deque<void (*)(Thread&)> pause_callbacks;
         size_t id;
 
         uint32_t x[32];
@@ -102,8 +98,6 @@ namespace Hamster
 
         int pending_signal;
         int signal_mask;
-
-        int error_code;
 
         // Minimum timing implementation
         uint64_t tick_count;

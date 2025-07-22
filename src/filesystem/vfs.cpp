@@ -1,6 +1,9 @@
 // Hamster VFS Implementation
 
 #include <filesystem/vfs.hpp>
+#include <filesystem/vfs_mounts.hpp>
+#include <filesystem/vfs_fdman.hpp>
+#include <filesystem/device_manager.hpp>
 #include <memory/allocator.hpp>
 #include <memory/stl_sequential.hpp>
 #include <memory/stl_map.hpp>
@@ -9,612 +12,10 @@
 
 namespace Hamster
 {
-    /* Mounts */
-    namespace
-    {
-        class MountPoint
-        {
-        public:
-            MountPoint(const char *path, BaseFilesystem *fs)
-                : path(alloc<char>(strlen(path) + 1)), fs(fs)
-            {
-                strcpy(this->path, path);
-            }
-
-            MountPoint(const MountPoint &) = delete;
-            MountPoint &operator=(const MountPoint &) = delete;
-
-            MountPoint(MountPoint &&other)
-                : path(other.path), fs(other.fs)
-            {
-                other.path = nullptr;
-                other.fs = nullptr;
-            }
-
-            MountPoint &operator=(MountPoint &&other)
-            {
-                if (this == &other)
-                    return *this;
-                dealloc(path);
-                dealloc(fs);
-                path = other.path;
-                fs = other.fs;
-                other.path = nullptr;
-                other.fs = nullptr;
-                return *this;
-            }
-
-            ~MountPoint()
-            {
-                dealloc(path);
-                dealloc(fs);
-
-                path = nullptr;
-                fs = nullptr;
-            }
-
-            char *path;
-            BaseFilesystem *fs;
-        };
-
-        struct RelativePath
-        {
-            MountPoint *mount;
-            const char *path;
-        };
-
-        class Mounts
-        {
-        public:
-            Mounts() = default;
-
-            Mounts(const Mounts &) = delete;
-            Mounts &operator=(const Mounts &) = delete;
-
-            Mounts(Mounts &&other)
-                : mounts(std::move(other.mounts))
-            {
-                other.mounts.clear();
-            }
-            Mounts &operator=(Mounts &&other)
-            {
-                if (this == &other)
-                    return *this;
-                for (MountPoint *mp : mounts)
-                {
-                    dealloc(mp);
-                }
-                mounts.clear();
-                mounts = std::move(other.mounts);
-                other.mounts.clear();
-                return *this;
-            }
-
-            ~Mounts()
-            {
-                for (MountPoint *mp : mounts)
-                {
-                    dealloc(mp);
-                }
-                mounts.clear();
-            }
-
-            // Takes ownership of `file`
-            BaseDirectory *resolve_mount(BaseFile *file)
-            {
-                if (!file || file->type() != FileType::Directory)
-                    return nullptr;
-
-                uint16_t mount_id = (file->get_vfs_flags() & MOUNT_ID_MASK) >> 16;
-                if (mount_id >= mounts.size())
-                    return nullptr;
-                MountPoint *mount = mounts[mount_id];
-                if (!mount)
-                    return nullptr;
-                BaseDirectory *dir = mount->fs->open_root(file->get_flags());
-                dealloc(file);
-                return dir;
-            }
-
-            // This will follow all symlinks except for the last one
-            // This takes ownership of `dir`
-            BaseFile *lopen(const char *path, int flags, int mode, BaseDirectory *dir = nullptr)
-            {
-                if (!path)
-                    return nullptr;
-
-                if (!dir)
-                {
-                    // Open the root directory
-                    MountPoint *root_mnt = nullptr;
-                    for (MountPoint *mp : mounts)
-                    {
-                        if (!mp)
-                            continue;
-                        if (strcmp(mp->path, "/") == 0 || strcmp(mp->path, "") == 0)
-                        {
-                            root_mnt = mp;
-                            break;
-                        }
-                    }
-
-                    if (!root_mnt)
-                    {
-                        error = ENOENT;
-                        return nullptr;
-                    }
-
-                    dir = root_mnt->fs->open_root(flags);
-                    if (!dir)
-                        return nullptr;
-                }
-
-                while (*path == '/')
-                    ++path;
-
-                if (*path == '\0')
-                    return dir;
-
-                if (path[0] == '.' && (path[1] == '/' || path[1] == '\0'))
-                    return dir;
-
-                if (path[0] == '.' && path[1] == '.' && (path[2] == '/' || path[2] == '\0'))
-                {
-                    dealloc(dir);
-                    // '..' will fail at root, but not in the middle of a path because
-                    // of the check below
-                    error = ENOENT;
-                    return nullptr;
-                }
-
-                const char *next = strchr(path, '/');
-
-                // 'blah/..' will just return the current directory
-                if (next && next[0] == '.' && next[1] == '.' && (next[2] == '/' || next[2] == '\0'))
-                    return dir;
-
-                if (!next)
-                {
-                    BaseFile *file = dir->get(path, flags, mode);
-                    dealloc(dir);
-                    if (!file)
-                        return nullptr;
-
-                    if (file->type() != FileType::Directory && (flags & O_DIRECTORY))
-                    {
-                        dealloc(file);
-                        error = ENOTDIR;
-                        return nullptr;
-                    }
-
-                    if (file->type() == FileType::Directory && file->get_vfs_flags() & FLAG_MOUNTPOINT)
-                    {
-                        // mountpoint
-                        file = resolve_mount(file);
-                    }
-                    return file;
-                }
-                else
-                {
-                    String next_name(path, next - path);
-
-                    BaseFile *next_file = dir->get(next_name.c_str(), (flags & ~O_CREAT & ~O_EXCL));
-                    dealloc(dir);
-                    if (!next_file)
-                        return nullptr;
-
-                    switch (next_file->type())
-                    {
-                    case FileType::Symlink:
-                    {
-                        BaseSymlink *link = (BaseSymlink *)next_file;
-                        char *target = link->get_target();
-                        dealloc(link);
-                        if (!target)
-                        {
-                            error = ENOENT;
-                            return nullptr;
-                        }
-
-                        BaseFile *f = lopen(target, flags, mode);
-                        dealloc(target);
-                        return f;
-                    }
-                    case FileType::Directory:
-                    {
-                        BaseDirectory *next_dir = (BaseDirectory *)next_file;
-
-                        if (next_dir->get_vfs_flags() & FLAG_MOUNTPOINT)
-                        {
-                            next_dir = resolve_mount(next_dir);
-                        }
-
-                        BaseFile *file = lopen(next, flags, mode, next_dir);
-                        return file;
-                    }
-                    default:
-                    {
-                        dealloc(next_file);
-                        error = ENOTDIR;
-                        return nullptr;
-                    }
-                    }
-
-                    // unreachable
-                    dealloc(next_file);
-                    return nullptr;
-                }
-            }
-
-            int mount(const char *path, BaseFilesystem *fs)
-            {
-                if (!path || !fs)
-                {
-                    error = EINVAL;
-                    return -1;
-                }
-
-                // too many mounts
-                if (mounts.size() >= 0xFFFF)
-                {
-                    error = ENOSPC;
-                    return -1;
-                }
-
-                BaseFile *file = lopen(path, O_RDONLY | O_DIRECTORY, 0);
-                if (!file)
-                    return -1;
-                assert(file->type() == FileType::Directory);
-
-                uint32_t flags = file->get_vfs_flags();
-                if (flags & FLAG_MOUNTPOINT)
-                {
-                    dealloc(file);
-                    error = EBUSY;
-                    return -1;
-                }
-
-                // Get the first available slot
-                uint16_t mount_id = mounts.size();
-                for (uint16_t i = 0; i < mounts.size(); ++i)
-                {
-                    if (mounts[i] == nullptr)
-                    {
-                        mount_id = i;
-                        break;
-                    }
-                }
-
-                if (mount_id >= mounts.size())
-                {
-                    mounts.resize(mount_id + 1);
-                }
-
-                // Mount the filesystem
-                MountPoint *mount = alloc<MountPoint>(1, path, fs);
-                mounts[mount_id] = mount;
-
-                // Set flags
-                file->set_vfs_flags(flags | FLAG_MOUNTPOINT | (mount_id << 16));
-
-                // OK
-                dealloc(file);
-                return 0;
-            }
-
-            int mount_root(BaseFilesystem *fs)
-            {
-                if (!fs)
-                {
-                    error = EINVAL;
-                    return -1;
-                }
-
-                for (auto &mp : mounts)
-                {
-                    if (mp)
-                    {
-                        error = EBUSY;
-                        return -1;
-                    }
-                }
-
-                mounts.push_back(alloc<MountPoint>(1, "/", fs));
-
-                // set the mountpoint flag on the root
-                BaseFile *file = lopen("/", O_RDONLY | O_DIRECTORY, 0);
-                if (!file)
-                    return -1;
-                uint32_t flags = file->get_vfs_flags();
-                file->set_vfs_flags(flags | FLAG_MOUNTPOINT | (0 << 16));
-                dealloc(file);
-
-                return 0;
-            }
-
-            int unmount(const char *path)
-            {
-                if (!path)
-                {
-                    error = EINVAL;
-                    return -1;
-                }
-
-                BaseFile *file = lopen(path, O_RDONLY | O_DIRECTORY, 0);
-                if (!file)
-                    return -1;
-
-                uint32_t flags = file->get_vfs_flags();
-                if (!(flags & FLAG_MOUNTPOINT))
-                {
-                    dealloc(file);
-                    error = ENOTDIR;
-                    return -1;
-                }
-
-                uint16_t mount_id = (flags & MOUNT_ID_MASK) >> 16;
-                if (mount_id >= mounts.size() || mounts[mount_id] == nullptr)
-                {
-                    dealloc(file);
-                    error = ENOENT;
-                    return -1;
-                }
-
-                // Clear flags
-                file->set_vfs_flags(flags & ~FLAG_MOUNTPOINT & ~MOUNT_ID_MASK);
-
-                // Unmount the filesystem
-                dealloc(mounts[mount_id]);
-                mounts[mount_id] = nullptr;
-
-                // OK
-                dealloc(file);
-                return 0;
-            }
-
-            // Set this to identify as a mountpoint
-            static constexpr uint32_t FLAG_MOUNTPOINT = 1 << 0;
-
-            // Upper 16 bits are the mount id
-            static constexpr uint32_t MOUNT_ID_MASK = 0xFFFF << 16;
-
-        private:
-            Vector<MountPoint *> mounts;
-        };
-    } // namespace
-
-    /* File Descriptor Manager */
-    namespace
-    {
-        class FDManager
-        {
-            struct Entry
-            {
-                BaseFile *file;
-            };
-
-        public:
-            FDManager() = default;
-            FDManager(const FDManager &) = delete;
-            FDManager &operator=(const FDManager &) = delete;
-            ~FDManager()
-            {
-                close_all();
-            }
-
-            FDManager(FDManager &&other)
-            {
-                fds = std::move(other.fds);
-                other.fds = Vector<Entry>();
-            }
-
-            FDManager &operator=(FDManager &&other)
-            {
-                if (this == &other)
-                    return *this;
-                std::swap(fds, other.fds);
-                return *this;
-            }
-
-            // Takes ownership of file
-            int add_fd(BaseFile *file)
-            {
-                if (file == nullptr)
-                    return -1;
-
-                int fd = -1;
-                for (int i = 0; i < (int)fds.size(); ++i)
-                {
-                    if (fds[i].file == nullptr)
-                    {
-                        fd = i;
-                        break;
-                    }
-                }
-                if (fd == -1)
-                {
-                    fd = fds.size();
-                    fds.push_back(Entry{nullptr});
-                }
-                fds[fd].file = file;
-
-                return fd;
-            }
-
-            int remove_fd(int fd)
-            {
-                if (fd < 0 || fd >= (int)fds.size())
-                {
-                    error = EBADF;
-                    return -1;
-                }
-
-                if (fds[fd].file == nullptr)
-                {
-                    error = EBADF;
-                    return -1;
-                }
-
-                auto &file = fds[fd].file;
-                if (file->type() == FileType::Special)
-                {
-                    BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
-                    BaseSpecialDriverHandle *handle = sp_file->get_handle();
-                    dealloc(handle);
-                    sp_file->set_handle(nullptr);
-                }
-
-                dealloc(file);
-                file = nullptr;
-
-                return 0;
-            }
-
-            BaseFile *get_fd(int fd)
-            {
-                if (fd < 0 || fd >= (int)fds.size())
-                {
-                    error = EBADF;
-                    return nullptr;
-                }
-
-                if (fds[fd].file == nullptr)
-                {
-                    error = EBADF;
-                    return nullptr;
-                }
-
-                return fds[fd].file;
-            }
-
-            void close_all()
-            {
-                for (auto &fd : fds)
-                {
-                    dealloc(fd.file);
-                    fd.file = nullptr;
-                }
-                fds.clear();
-            }
-
-        private:
-            Vector<Entry> fds;
-        };
-    } // namespace
-
-    /* Special File Driver Manager */
-
-    namespace
-    {
-        class SpecialDriverManager
-        {
-        public:
-            SpecialDriverManager() = default;
-            SpecialDriverManager(const SpecialDriverManager &) = delete;
-            SpecialDriverManager &operator=(const SpecialDriverManager &) = delete;
-
-            SpecialDriverManager(SpecialDriverManager &&other)
-                : drivers(std::move(other.drivers))
-            {
-                other.drivers = Vector<BaseSpecialDriver *>();
-            }
-
-            SpecialDriverManager &operator=(SpecialDriverManager &&other)
-            {
-                if (this == &other)
-                    return *this;
-                std::swap(drivers, other.drivers);
-                return *this;
-            }
-
-            ~SpecialDriverManager()
-            {
-                remove_all_drivers();
-            }
-
-            int remove_all_drivers()
-            {
-                for (BaseSpecialDriver *driver : drivers)
-                {
-                    dealloc(driver);
-                }
-                drivers.clear();
-                return 0;
-            }
-
-            int add_driver(BaseSpecialDriver *driver)
-            {
-                if (!driver)
-                {
-                    error = EINVAL;
-                    return -1;
-                }
-
-                // Find the first available slot
-                int id = -1;
-                for (int i = 0; i < (int)drivers.size(); ++i)
-                {
-                    if (drivers[i] == nullptr)
-                    {
-                        id = i;
-                        break;
-                    }
-                }
-                if (id == -1)
-                {
-                    id = drivers.size();
-                    drivers.push_back(nullptr);
-                }
-                drivers[id] = driver;
-                return id;
-            }
-
-            int remove_driver(int id)
-            {
-                if (id < 0 || id >= (int)drivers.size())
-                {
-                    error = EINVAL;
-                    return -1;
-                }
-
-                if (drivers[id] == nullptr)
-                {
-                    error = EINVAL;
-                    return -1;
-                }
-
-                dealloc(drivers[id]);
-                drivers[id] = nullptr;
-
-                return 0;
-            }
-
-            BaseSpecialDriver *get_driver(int id)
-            {
-                if (id < 0 || id >= (int)drivers.size())
-                {
-                    error = EINVAL;
-                    return nullptr;
-                }
-
-                if (drivers[id] == nullptr)
-                {
-                    error = EINVAL;
-                    return nullptr;
-                }
-
-                return drivers[id];
-            }
-
-        private:
-            Vector<BaseSpecialDriver *> drivers;
-        };
-    } // namespace
-
     /* Special File Helpers */
     namespace
     {
-        int open_special_handle(BaseSpecialFile *file, SpecialDriverManager &sp_mgr) 
+        int open_special_handle(BaseSpecialFile *file) 
         {
             if (!file)
             {
@@ -623,12 +24,8 @@ namespace Hamster
             }
 
             dealloc(file->get_handle());
-            BaseSpecialDriver *driver = sp_mgr.get_driver(file->get_device_id());
 
-            if (!driver)
-                return -1;
-
-            BaseSpecialDriverHandle *handle = driver->create_handle(file->get_flags());
+            auto handle = device_manager.create_handle(file->get_device_id(), file->get_flags());
             if (!handle)
             {
                 error = EIO;
@@ -639,7 +36,7 @@ namespace Hamster
             return 0;
         }
 
-        BaseSpecialDriverHandle *get_special_handle(BaseSpecialFile *file, SpecialDriverManager &sp_mgr)
+        BaseSpecialDriverHandle *get_special_handle(BaseSpecialFile *file)
         {
             if (!file)
             {
@@ -650,7 +47,7 @@ namespace Hamster
             BaseSpecialDriverHandle *handle = file->get_handle();
             if (!handle)
             {
-                if (open_special_handle(file, sp_mgr) < 0)
+                if (open_special_handle(file) < 0)
                     return nullptr;
                 handle = file->get_handle();
             }
@@ -658,7 +55,6 @@ namespace Hamster
             return handle;
         }
     } // namespace
-    
 
     class VFSData
     {
@@ -672,7 +68,6 @@ namespace Hamster
 
         Mounts mounts;
         FDManager fd_manager;
-        SpecialDriverManager special_driver_manager;
     };
 
     VFS::VFS()
@@ -709,7 +104,8 @@ namespace Hamster
 
     int VFS::unmount(const char *path)
     {
-        return data->mounts.unmount(path);
+        return strcmp(path, "/") != 0 ? data->mounts.unmount(path)
+                                      : data->mounts.unmount_root();
     }
 
     int VFS::open(const char *path, int flags, int mode)
@@ -720,7 +116,7 @@ namespace Hamster
 
         if (file->type() == FileType::Symlink)
         {
-            if (flags & O_NOFOLLOW)
+            if (flags & OPEN_NOFOLLOW)
             {
                 dealloc(file);
                 error = ELOOP;
@@ -728,6 +124,7 @@ namespace Hamster
             }
             BaseSymlink *link = (BaseSymlink *)file;
             char *target = link->get_target();
+            int id = link->get_id();
             dealloc(link);
 
             if (!target)
@@ -736,9 +133,16 @@ namespace Hamster
                 return -1;
             }
 
-            int fd = open(target, flags, mode);
+            file = data->mounts.lopen(target, flags, mode);
             dealloc(target);
-            return fd;
+            if (!file)
+                return -1;
+            if (file->get_id() == id)
+            {
+                dealloc(file);
+                error = ELOOP; // Loop detected
+                return -1;
+            }
         }
 
         int fd = data->fd_manager.add_fd(file);
@@ -756,17 +160,7 @@ namespace Hamster
         return data->fd_manager.remove_fd(fd);
     }
 
-    int VFS::rename(int fd, const char *new_name)
-    {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
-            return -1;
-
-        int ret = file->rename(new_name);
-        return ret;
-    }
-
-    int VFS::rename(const char *old_path, const char *new_path)
+    int VFS::renameat(int old_dfd, const char *old_path, int new_dfd, const char *new_path)
     {
         if (!old_path || !new_path)
         {
@@ -774,171 +168,471 @@ namespace Hamster
             return -1;
         }
 
-        BaseFile *old_file = data->mounts.lopen(old_path, O_RDONLY, 0);
+        const char *last_old = strrchr(old_path, '/');
+        const char *last_new = strrchr(new_path, '/');
+        const char *old_name, *new_name;
+
+        BaseFile *f = data->fd_manager.get_fd(old_dfd);
+        if (!f || f->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return -1;
+        }
+        BaseDirectory *old_dir = (BaseDirectory*)f;
+        f = data->fd_manager.get_fd(new_dfd);
+        if (!f || f->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return -1;
+        }
+        BaseDirectory *new_dir = (BaseDirectory*)f;
+
+        old_dir = (BaseDirectory*)old_dir->clone();
+        new_dir = (BaseDirectory*)new_dir->clone();
+        if (!old_dir || !new_dir)
+        {
+            dealloc(old_dir);
+            dealloc(new_dir);
+            return -1;
+        }
+
+        if (last_old)
+        {
+            old_name = last_old + 1;
+            String old_dir_name{old_path, (size_t)(last_old - old_path)};
+            old_dir = (BaseDirectory*)data->mounts.lopen(old_dir_name.c_str(), OPEN_RDONLY | OPEN_DIRECTORY, 0, old_dir);
+        }
+        else
+        {
+            old_name = old_path;
+            old_dir = (BaseDirectory*)data->mounts.lopen("/", OPEN_RDONLY | OPEN_DIRECTORY, 0, old_dir);
+        }
+
+        if (last_new)
+        {
+            new_name = last_new + 1;
+            new_dir = (BaseDirectory*)data->mounts.lopen(String{new_path, (size_t)(last_new - new_path)}.c_str(), OPEN_WRONLY | OPEN_DIRECTORY, 0, new_dir);
+        }
+        else
+        {
+            new_name = new_path;
+            new_dir = (BaseDirectory*)data->mounts.lopen("/", OPEN_WRONLY | OPEN_DIRECTORY, 0, new_dir);
+        }
+
+        if (!old_dir || !new_dir)
+        {
+            dealloc(old_dir);
+            dealloc(new_dir);
+
+            return -1;
+        }
+
+        assert(old_name && new_name);
+
+        BaseFile *old_file = old_dir->get(old_name, OPEN_RDONLY, 0);
         if (!old_file)
-            return -1;
-
-        // Ensure that the new path does not exist
-        BaseFile *new_file = data->mounts.lopen(new_path, O_WRONLY | O_CREAT | O_EXCL, 0);
-        if (!new_file)
         {
-            dealloc(old_file);
+            dealloc(old_dir);
+            dealloc(new_dir);
+            error = ENOENT;
             return -1;
         }
-        new_file->remove();
-        dealloc(new_file);
-        new_file = nullptr;
 
-        switch (old_file->type())
+        if (old_file->get_filesystem() != new_dir->get_filesystem())
         {
-        case FileType::Regular:
-        {
-            BaseRegularFile *old_reg_file = (BaseRegularFile *)old_file;
-            BaseRegularFile *new_reg_file =
-                (BaseRegularFile *)data->mounts.lopen(
-                    new_path, O_WRONLY | O_CREAT | O_EXCL,
-                    old_file->get_mode());
-            if (!new_reg_file)
-            {
-                dealloc(old_file);
-                return -1;
-            }
-
-            // Copy contents
-            static constexpr size_t BUF_SIZE = 512;
-            static uint8_t buf[BUF_SIZE];
-            ssize_t bytes_read;
-            while ((bytes_read = old_reg_file->read(buf, BUF_SIZE)) > 0)
-            {
-                new_reg_file->write(buf, bytes_read);
-            }
-
-            if (bytes_read >= 0)
-                old_file->remove();
-            dealloc(old_reg_file);
-            dealloc(new_reg_file);
-            return bytes_read >= 0 ? 0 : -1;
-        }
-        case FileType::Symlink:
-        {
-            BaseSymlink *old_symlink = (BaseSymlink *)old_file;
-            char *target = old_symlink->get_target();
-
-            if (!target)
-            {
-                dealloc(old_symlink);
-                return -1;
-            }
-
-            int ret = symlink(new_path, target);
-            dealloc(target);
-            if (ret == 0)
-                old_symlink->remove();
-            dealloc(old_symlink);
-            return ret;
-        }
-        case FileType::Special:
-        {
-            BaseSpecialFile *old_special_file = (BaseSpecialFile *)old_file;
-            int dev_id = old_special_file->get_device_id();
-
-            const char *last_slash = strrchr(new_path, '/');
-            if (!last_slash)
-            {
-                dealloc(old_special_file);
-
-                error = ENOENT;
-                return -1;
-            }
-            String new_parent(last_slash, last_slash - new_path);
-            BaseDirectory *new_parent_file = (BaseDirectory *)data->mounts.lopen(new_parent.c_str(), O_RDWR | O_DIRECTORY, 0);
-            if (!new_parent_file)
-            {
-                dealloc(old_special_file);
-
-                error = ENOENT;
-                return -1;
-            }
-
-            BaseSpecialFile *new_special_file = new_parent_file->mksfile(
-                last_slash + 1, O_RDWR, dev_id, old_special_file->get_mode());
-            if (new_special_file)
-            {
-                old_special_file->remove();
-                dealloc(old_special_file);
-                dealloc(new_special_file);
-            }
-            dealloc(new_parent_file);
-            return new_special_file ? 0 : -1;
-        }
-        case FileType::Directory:
-        {
-            // TODO: Recursive move
-            error = ENOTSUP;
             dealloc(old_file);
+            dealloc(old_dir);
+            dealloc(new_dir);
+            error = EXDEV; // Cross-device link
             return -1;
         }
-        default:
+
+        int ret = new_dir->link(old_file, new_name);
+
+        if (ret < 0)
+        {
             dealloc(old_file);
+            dealloc(old_dir);
+            dealloc(new_dir);
+            return -1;
+        }
+
+        ret = old_dir->remove(old_name);
+        dealloc(old_file);
+        dealloc(old_dir);
+        dealloc(new_dir);
+        return ret;
+    }
+
+    int VFS::rename(const char *old_path, const char *new_path)
+    {
+        int rootfd = open("/", OPEN_RDONLY | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return -1;
+
+        int ret = renameat(rootfd, old_path, rootfd, new_path);
+        close(rootfd);
+        return ret;
+    }
+
+    int VFS::removeat(int dfd, const char *path)
+    {
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file)
+        {
+            error = EBADF;
+            return -1;
+        }
+        
+        if (file->type() != FileType::Directory)
+        {
+            error = ENOTDIR;
+            return -1;
+        }
+
+        BaseDirectory *dir = (BaseDirectory *)file->clone();
+        if (!dir)
+            return -1;
+        
+        const char *last = strrchr(path, '/');
+        if (!last)
+        {
             error = EINVAL;
             return -1;
         }
+
+        String dir_name{path, (size_t)(last - path)};
+        dir = (BaseDirectory*)data->mounts.lopen(dir_name.c_str(), OPEN_WRONLY, 0, dir);
+
+        if (!dir)
+            return -1;
+
+        int res = dir->remove(last + 1);
+        dealloc(dir);
+        return res;
     }
 
-    int VFS::remove(int fd)
+    int VFS::remove(const char *path)
+    {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        int rootfd = open("/", OPEN_RDWR | OPEN_DIRECTORY);
+        int res = removeat(rootfd, path);
+        close(rootfd);
+
+        return res;
+    }
+
+    int VFS::stat(int fd, sys_stat *buf)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
         if (!file)
             return -1;
 
-        int devid = -1;
+        int ret = file->stat(buf);
 
         if (file->type() == FileType::Special)
         {
-            devid = ((BaseSpecialFile *)file)->get_device_id();
-            if (devid < 0)
+            // Get the special file handle
+            BaseSpecialDriverHandle *handle = get_special_handle((BaseSpecialFile *)file);
+            if (!handle)
+            {
+                error = EBADF;
                 return -1;
+            }
+
+            buf->mode &= ~STAT_IFMT; // Clear the file type bits
+
+            switch (handle->special_type())
+            {
+                case SpecialFileType::CharacterDevice:
+                    buf->mode |= STAT_IFCHR;
+                    break;
+                case SpecialFileType::BlockDevice:
+                    buf->mode |= STAT_IFBLK;
+                    break;
+                case SpecialFileType::Socket:
+                    buf->mode |= STAT_IFSOCK;
+                    break;
+                case SpecialFileType::Fifo:
+                    buf->mode |= STAT_IFIFO;
+                    break;
+                default:
+                    // Do nothing for other types
+                    break;
+            }
         }
 
-        int ret = file->remove();
+        return ret;
+    }
+
+    int VFS::statat(int dfd, const char *path, sys_stat *buf)
+    {
+        int fd = openat(dfd, path, OPEN_RDONLY);
+        if (fd < 0)
+            return -1;
+        int res = stat(fd, buf);
+        close(fd);
+        return res;
+    }
+
+    int VFS::stat(const char *path, sys_stat *buf)
+    {
+        int fd = open(path, OPEN_RDONLY);
+        if (fd < 0)
+            return -1;
+        int res = stat(fd, buf);
+        close(fd);
+        return res;
+    }
+
+    int VFS::lstatat(int dfd, const char *path, sys_stat *buf)
+    {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        const char *last = strrchr(path, '/');
+        BaseFile *file = nullptr;
+        if (last)
+        {
+            String dir_name{path, (size_t)(last - path)};
+
+            int parent_fd = openat(dfd, dir_name.c_str(), OPEN_RDONLY | OPEN_DIRECTORY);
+            if (parent_fd < 0)
+                return -1;
+            
+            BaseDirectory *parent_dir = (BaseDirectory *)data->fd_manager.get_fd(parent_fd);
+            
+            assert(parent_dir);
+
+            file = parent_dir->get(last + 1, OPEN_RDONLY, 0);
+            close(parent_fd);
+        }
+        else
+        {
+            BaseDirectory *parent_dir = (BaseDirectory *)data->fd_manager.get_fd(dfd);
+            if (!parent_dir)
+            {
+                error = EBADF;
+                return -1;
+            }
+
+            file = parent_dir->get(path, OPEN_RDONLY, 0);
+        }
+
+        if (!file)
+        {
+            return -1;
+        }
+
+        int ret = file->stat(buf);
+
         if (ret < 0)
-            return ret;
+        {
+            dealloc(file);
+            return -1;
+        }
 
         if (file->type() == FileType::Special)
-            return data->special_driver_manager.remove_driver(devid);
-        return ret;
-    }
+        {
+            // Get the special file handle
+            BaseSpecialDriverHandle *handle = get_special_handle((BaseSpecialFile *)file);
+            if (!handle)
+            {
+                dealloc(file);
+                error = EBADF;
+                return -1;
+            }
 
-    int VFS::unlink(const char *path)
-    {
-        BaseFile *file = data->mounts.lopen(path, O_WRONLY, 0);
-        if (!file)
-            return -1;
+            buf->mode &= ~STAT_IFMT; // Clear the file type bits
 
-        int ret = file->remove();
+            switch (handle->special_type())
+            {
+                case SpecialFileType::CharacterDevice:
+                    buf->mode |= STAT_IFCHR;
+                    break;
+                case SpecialFileType::BlockDevice:
+                    buf->mode |= STAT_IFBLK;
+                    break;
+                case SpecialFileType::Socket:
+                    buf->mode |= STAT_IFSOCK;
+                    break;
+                case SpecialFileType::Fifo:
+                    buf->mode |= STAT_IFIFO;
+                    break;
+                default:
+                    // Do nothing for other types
+                    break;
+            }
+
+            dealloc(handle);
+        }
+
         dealloc(file);
+
         return ret;
     }
 
-    int VFS::stat(int fd, struct ::stat *buf)
+    int VFS::lstat(const char *path, sys_stat *buf)
     {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
+        if (!path)
+        {
+            error = EINVAL;
             return -1;
+        }
 
-        int ret = file->stat(buf);
-        return ret;
+        int rootfd = open("/", OPEN_RDWR | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return -1;
+        int res = lstatat(rootfd, path, buf);
+        close(rootfd);
+
+        return res;
     }
 
-    int VFS::lstat(const char *path, struct ::stat *buf)
+    int VFS::linkat(int target_dfd, const char *target_path, int dfd, const char *path)
     {
-        BaseFile *file = data->mounts.lopen(path, O_RDONLY, 0);
+        if (target_dfd < 0 || dfd < 0)
+        {
+            error = EBADF;
+            return -1;
+        }
+
+        if (!target_path || !path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        BaseFile *file = data->fd_manager.get_fd(dfd);
         if (!file)
+        {
+            error = EBADF;
+            return -1;
+        }
+        
+        if (file->type() != FileType::Directory)
+        {
+            error = ENOTDIR;
+            return -1;
+        }
+
+        BaseFile *file2 = data->fd_manager.get_fd(target_dfd);
+        if (!file2)
+        {
+            error = EBADF;
+            return -1;
+        }
+        
+        if (file2->type() != FileType::Directory)
+        {
+            error = ENOTDIR;
+            return -1;
+        }
+        
+        BaseDirectory *dir = (BaseDirectory*)file->clone();
+        BaseDirectory *target_dir = (BaseDirectory*)file2->clone();
+
+        if (!dir || !target_dir)
+        {
+            dealloc(dir);
+            dealloc(target_dir);
+            return -1;
+        }
+
+        const char *last = strrchr(path, '/');
+        const char *name = last ? last + 1 : path;
+        char *dirname;
+
+        if (last)
+        {
+            dirname = alloc<char>(last - path + 1);
+            strncpy(dirname, path, last - path);
+            dirname[last - path] = '\0';
+        }
+        else
+        {
+            dirname = alloc<char>(2);
+            dirname[0] = '/';
+            dirname[1] = '\0';
+        }
+
+        BaseDirectory *parent_dir = (BaseDirectory*)data->mounts.lopen(dirname, OPEN_RDWR | OPEN_DIRECTORY, 0, target_dir);
+        dealloc(dirname);
+        BaseFile *target_file = data->mounts.lopen(target_path, OPEN_RDONLY, 0, dir);
+
+        if (!parent_dir || !target_file)
+        {
+            dealloc(parent_dir);
+            dealloc(target_file);
+            return -1;
+        }
+
+        if (target_file->type() == FileType::Symlink)
+        {
+            BaseSymlink *link = (BaseSymlink *)target_file;
+            char *target = link->get_target();
+            dealloc(link);
+
+            if (!target)
+            {
+                dealloc(parent_dir);
+                error = ENOENT;
+                return -1;
+            }
+
+            // Note: do not specify dir in this one, as symlinks are absolute and should
+            // be relative to the root directory
+            target_file = data->mounts.lopen(target, OPEN_RDONLY, 0);
+            dealloc(target);
+
+            if (!target_file)
+            {
+                dealloc(parent_dir);
+                error = ENOENT;
+                return -1;
+            }
+        }
+
+        int res;
+
+        if (target_file->type() != FileType::Directory)
+            res = parent_dir->link(target_file, name);
+        else
+        {
+            error = EPERM;
+            res = -1;
+        }
+
+        dealloc(parent_dir);
+        dealloc(target_file);
+        
+        return res;
+    }
+
+    int VFS::link(const char *target, const char *path)
+    {
+        if (!target || !path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        int rootfd = open("/", OPEN_RDWR | OPEN_DIRECTORY);
+        if (rootfd < 0)
             return -1;
 
-        int ret = file->stat(buf);
-        dealloc(file);
-        return ret;
+        int res = linkat(rootfd, target, rootfd, path);
+        close(rootfd);
+
+        return res;
     }
 
     int VFS::get_mode(int fd)
@@ -1001,16 +695,6 @@ namespace Hamster
         return ret;
     }
 
-    char *VFS::basename(int fd)
-    {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
-            return nullptr;
-
-        char *ret = file->basename();
-        return ret;
-    }
-
     ssize_t VFS::read(int fd, void *buf, size_t size)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
@@ -1023,7 +707,7 @@ namespace Hamster
             return ((BaseRegularFile *)file)->read((uint8_t*)buf, size);
         case FileType::Special:
         {
-            auto handle = get_special_handle((BaseSpecialFile *)file, data->special_driver_manager);
+            auto handle = get_special_handle((BaseSpecialFile *)file);
             if (!handle)
                 return -1;
             return handle->read((uint8_t*)buf, size);
@@ -1046,7 +730,7 @@ namespace Hamster
             return ((BaseRegularFile *)file)->write((const uint8_t*)buf, size);
         case FileType::Special:
         {
-            auto handle = get_special_handle((BaseSpecialFile *)file, data->special_driver_manager);
+            auto handle = get_special_handle((BaseSpecialFile *)file);
             if (!handle)
                 return -1;
             return handle->write((const uint8_t*)buf, size);
@@ -1069,7 +753,7 @@ namespace Hamster
             return ((BaseRegularFile *)file)->seek(offset, whence);
         case FileType::Special:
         {
-            auto handle = get_special_handle((BaseSpecialFile *)file, data->special_driver_manager);
+            auto handle = get_special_handle((BaseSpecialFile *)file);
             if (!handle)
                 return -1;
             if (handle->special_type() != SpecialFileType::BlockDevice)
@@ -1079,8 +763,11 @@ namespace Hamster
             }
             return ((BaseBlockDeviceHandle *)handle)->seek(offset, whence);
         }
+        case FileType::Directory:
+            // Seeking in directories changes the offset for list()
+            return ((BaseDirectory *)file)->seek(offset, whence);
         default:
-            error = EISDIR;
+            error = ESPIPE;
             return -1;
         }
     }
@@ -1097,7 +784,7 @@ namespace Hamster
             return ((BaseRegularFile *)file)->tell();
         case FileType::Special:
         {
-            auto handle = get_special_handle((BaseSpecialFile *)file, data->special_driver_manager);
+            auto handle = get_special_handle((BaseSpecialFile *)file);
             if (!handle)
                 return -1;
             if (handle->special_type() != SpecialFileType::BlockDevice)
@@ -1140,7 +827,7 @@ namespace Hamster
             return ((BaseRegularFile *)file)->size();
         case FileType::Special:
         {
-            auto handle = get_special_handle((BaseSpecialFile *)file, data->special_driver_manager);
+            auto handle = get_special_handle((BaseSpecialFile *)file);
             if (!handle)
                 return -1;
             if (handle->special_type() != SpecialFileType::BlockDevice)
@@ -1156,9 +843,20 @@ namespace Hamster
         }
     }
 
-    char *VFS::get_target(const char *path)
+    char *VFS::get_targetat(int dfd, const char *path)
     {
-        BaseFile *file = data->mounts.lopen(path, O_RDONLY, 0);
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file || file->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return nullptr;
+        }   
+
+        BaseDirectory *dir = (BaseDirectory *)file->clone();
+        if (!dir)
+            return nullptr;
+
+        file = data->mounts.lopen(path, OPEN_RDONLY, 0, dir);
         if (!file)
             return nullptr;
 
@@ -1174,7 +872,17 @@ namespace Hamster
         return ret;
     }
 
-    int VFS::set_target(const char *path, const char *target)
+    char *VFS::get_target(const char *path)
+    {
+        int rootfd = open("/", OPEN_RDONLY | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return nullptr;
+        char *ret = get_targetat(rootfd, path);
+        close(rootfd);
+        return ret;
+    }
+
+    int VFS::set_targetat(int dfd, const char *path, const char *target)
     {
         if (!path || !target)
         {
@@ -1182,7 +890,18 @@ namespace Hamster
             return -1;
         }
 
-        BaseFile *file = data->mounts.lopen(path, O_WRONLY, 0);
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file || file->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return -1;
+        }   
+
+        BaseDirectory *dir = (BaseDirectory *)file->clone();
+        if (!dir)
+            return -1;
+
+        file = data->mounts.lopen(path, OPEN_WRONLY, 0, dir);
         if (!file)
             return -1;
 
@@ -1198,7 +917,24 @@ namespace Hamster
         return ret;
     }
 
-    char *const *VFS::list(int fd)
+    int VFS::set_target(const char *path, const char *target)
+    {
+        if (!path || !target)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        int rootfd = open("/", OPEN_RDONLY | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return -1;
+
+        int ret = set_targetat(rootfd, path, target);
+        close(rootfd);
+        return ret;
+    }
+
+    char *const *VFS::list(int fd, size_t count /* = SIZE_MAX */)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
         if (!file)
@@ -1211,7 +947,7 @@ namespace Hamster
             return nullptr;
         }
 
-        char *const *ret = ((BaseDirectory *)file)->list();
+        char *const *ret = ((BaseDirectory *)file)->list(count);
         return ret;
     }
 
@@ -1220,6 +956,16 @@ namespace Hamster
         BaseFile *file = data->fd_manager.get_fd(dir);
         if (!file)
             return -1;
+        
+        if (path[0] == '\0')
+        {
+            int fd = dup(dir);
+            if (fd < 0) return -1;
+
+            BaseFile *fdfile = data->fd_manager.get_fd(fd);
+            fdfile->set_flags(flags);
+            return fd;
+        }
 
         if (file->type() != FileType::Directory)
         {
@@ -1238,7 +984,7 @@ namespace Hamster
 
         if (new_file->type() == FileType::Symlink)
         {
-            if (flags & O_NOFOLLOW)
+            if (flags & OPEN_NOFOLLOW)
             {
                 dealloc(new_file);
                 error = ELOOP;
@@ -1246,6 +992,7 @@ namespace Hamster
             }
             BaseSymlink *link = (BaseSymlink *)new_file;
             char *target = link->get_target();
+            int id = link->get_id();
             dealloc(link);
 
             if (!target)
@@ -1254,9 +1001,24 @@ namespace Hamster
                 return -1;
             }
 
-            int fd = openat(dir, target, flags, mode);
+            //re-clone the file
+            cloned_file = file->clone();
+            if (!cloned_file)
+            {
+                dealloc(target);
+                return -1;
+            }
+
+            new_file = data->mounts.lopen(target, flags, mode, (BaseDirectory*)cloned_file);
             dealloc(target);
-            return fd;
+            if (!new_file)
+                return -1;
+            if (new_file->get_id() == id)
+            {
+                dealloc(new_file);
+                error = ELOOP; // Loop detected
+                return -1;
+            }
         }
 
         int fd = data->fd_manager.add_fd(new_file);
@@ -1270,22 +1032,22 @@ namespace Hamster
 
     int VFS::mkfile(const char *path, int flags, int mode)
     {
-        return open(path, flags | O_CREAT | O_EXCL, mode);
+        return open(path, flags | OPEN_CREAT | OPEN_EXCL, mode);
     }
 
     int VFS::mkfileat(int dir, const char *path, int flags, int mode)
     {
-        return openat(dir, path, flags | O_CREAT | O_EXCL, mode);
+        return openat(dir, path, flags | OPEN_CREAT | OPEN_EXCL, mode);
     }
 
     int VFS::mkdir(const char *path, int flags, int mode)
     {
-        return open(path, flags | O_CREAT | O_EXCL | O_DIRECTORY, mode);
+        return open(path, flags | OPEN_CREAT | OPEN_EXCL | OPEN_DIRECTORY, mode);
     }
 
     int VFS::mkdirat(int dir, const char *path, int flags, int mode)
     {
-        return openat(dir, path, flags | O_CREAT | O_EXCL | O_DIRECTORY, mode);
+        return openat(dir, path, flags | OPEN_CREAT | OPEN_EXCL | OPEN_DIRECTORY, mode);
     }
 
     int VFS::symlink(const char *path, const char *target)
@@ -1305,7 +1067,7 @@ namespace Hamster
 
         String parent_path(path, last - path);
 
-        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0);
+        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), OPEN_RDONLY | OPEN_DIRECTORY, 0);
         if (!parent)
             return -1;
         assert(parent->type() == FileType::Directory);
@@ -1338,27 +1100,32 @@ namespace Hamster
         assert(cloned_file->type() == FileType::Directory);
 
         const char *last = strrchr(path, '/');
-        if (!last)
+        if (last)
         {
-            error = EINVAL;
-            return -1;
+            String parent_path(path, last - path);
+
+            BaseFile *parent = data->mounts.lopen(parent_path.c_str(), OPEN_RDONLY | OPEN_DIRECTORY, 0, (BaseDirectory *)cloned_file);
+            if (!parent)
+                return -1;
+            assert(parent->type() == FileType::Directory);
+            auto sym = ((BaseDirectory *)parent)->mksym(last + 1, target);
+            dealloc(parent);
+            dealloc(sym);
+            return sym == nullptr ? -1 : 0;
         }
-
-        String parent_path(path, last - path);
-
-        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0, (BaseDirectory *)cloned_file);
-        if (!parent)
-            return -1;
-        assert(parent->type() == FileType::Directory);
-        auto sym = ((BaseDirectory *)parent)->mksym(last + 1, target);
-        dealloc(parent);
-        dealloc(sym);
-        return sym == nullptr ? -1 : 0;
+        else
+        {
+            // No parent, create a symlink in the directory itself
+            auto sym = ((BaseDirectory *)cloned_file)->mksym(path, target);
+            dealloc(cloned_file);
+            dealloc(sym);
+            return sym == nullptr ? -1 : 0;
+        }
     }
 
-    int VFS::mksfile(const char *path, int flags, BaseSpecialDriver *driver, int mode)
+    int VFS::mknod(const char *path, int flags, DeviceID id, int mode)
     {
-        if (!path || !driver)
+        if (!path)
         {
             error = EINVAL;
             return -1;
@@ -1373,7 +1140,7 @@ namespace Hamster
 
         String parent_path(path, last - path);
 
-        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0);
+        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), OPEN_RDONLY | OPEN_DIRECTORY, 0);
         if (!parent)
         {
             return -1;
@@ -1381,20 +1148,11 @@ namespace Hamster
 
         assert(parent->type() == FileType::Directory);
 
-        // Register the driver
-        int driver_id = data->special_driver_manager.add_driver(driver);
-        if (driver_id < 0)
-        {
-            dealloc(parent);
-            return -1;
-        }
-
         // Create the special file
-        BaseSpecialFile *sfile = ((BaseDirectory *)parent)->mksfile(last + 1, flags, driver_id, mode);
+        BaseSpecialFile *sfile = ((BaseDirectory *)parent)->mksfile(last + 1, flags, id, mode);
         dealloc(parent);
         if (!sfile)
         {
-            data->special_driver_manager.remove_driver(driver_id);
             return -1;
         }
 
@@ -1403,16 +1161,15 @@ namespace Hamster
         if (fd < 0)
         {
             dealloc(sfile);
-            data->special_driver_manager.remove_driver(driver_id);
             return -1;
         }
 
         return fd;
     }
 
-    int VFS::mksfileat(int dir_fd, const char *path, int flags, BaseSpecialDriver *driver, int mode)
+    int VFS::mknodat(int dir_fd, const char *path, int flags, DeviceID id, int mode)
     {
-        if (!path || !driver)
+        if (!path)
         {
             error = EINVAL;
             return -1;
@@ -1432,14 +1189,6 @@ namespace Hamster
             return -1;
         assert(cloned_file->type() == FileType::Directory);
 
-        // Register the driver
-        int driver_id = data->special_driver_manager.add_driver(driver);
-        if (driver_id < 0)
-        {
-            dealloc(cloned_file);
-            return -1;
-        }
-
         // Create the special file
         const char *last = strrchr(path, '/');
         if (!last)
@@ -1451,30 +1200,20 @@ namespace Hamster
 
         String parent_path(path, last - path);
 
-        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), O_RDONLY | O_DIRECTORY, 0, (BaseDirectory *)cloned_file);
+        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), OPEN_RDONLY | OPEN_DIRECTORY, 0, (BaseDirectory *)cloned_file);
         if (!parent)
             return -1;
 
         assert(parent->type() == FileType::Directory);
-        auto sfile = ((BaseDirectory *)parent)->mksfile(last + 1, flags, driver_id, mode);
+        auto sfile = ((BaseDirectory *)parent)->mksfile(last + 1, flags, id, mode);
         dealloc(parent);
-
-        if (!sfile)
-        {
-            data->special_driver_manager.remove_driver(driver_id);
-            dealloc(cloned_file);
-            return -1;
-        }
 
         // Create the handle
         int fd = data->fd_manager.add_fd(sfile);
 
-        dealloc(cloned_file);
-
         if (fd < 0)
         {
             dealloc(sfile);
-            data->special_driver_manager.remove_driver(driver_id);
             return -1;
         }
 
@@ -1483,7 +1222,7 @@ namespace Hamster
 
     int VFS::mkfile(const char *path, int mode)
     {
-        int fd = mkfile(path, O_RDONLY, mode);
+        int fd = mkfile(path, OPEN_RDONLY, mode);
         if (fd < 0)
         {
             return -1;
@@ -1494,7 +1233,7 @@ namespace Hamster
     
     int VFS::mkfileat(int dir_fd, const char *path, int mode)
     {
-        int fd = mkfileat(dir_fd, path, O_RDONLY, mode);
+        int fd = mkfileat(dir_fd, path, OPEN_RDONLY, mode);
         if (fd < 0)
         {
             return -1;
@@ -1505,7 +1244,7 @@ namespace Hamster
 
     int VFS::mkdir(const char *path, int mode)
     {
-        int fd = mkdir(path, O_RDONLY, mode);
+        int fd = mkdir(path, OPEN_RDONLY, mode);
         if (fd < 0)
         {
             return -1;
@@ -1516,7 +1255,7 @@ namespace Hamster
 
     int VFS::mkdirat(int dir_fd, const char *path, int mode)
     {
-        int fd = mkdirat(dir_fd, path, O_RDONLY, mode);
+        int fd = mkdirat(dir_fd, path, OPEN_RDONLY, mode);
         if (fd < 0)
         {
             return -1;
@@ -1525,9 +1264,9 @@ namespace Hamster
         return 0;
     }
 
-    int VFS::mksfile(const char *path, BaseSpecialDriver *driver, int mode)
+    int VFS::mknod(const char *path, DeviceID id, int mode)
     {
-        int fd = mksfile(path, O_RDONLY, driver, mode);
+        int fd = mknod(path, OPEN_RDONLY, id, mode);
         if (fd < 0)
         {
             return -1;
@@ -1536,9 +1275,9 @@ namespace Hamster
         return 0;
     }
 
-    int VFS::mksfileat(int dir_fd, const char *path, BaseSpecialDriver *driver, int mode)
+    int VFS::mknodat(int dir_fd, const char *path, DeviceID id, int mode)
     {
-        int fd = mksfileat(dir_fd, path, O_RDONLY, driver, mode);
+        int fd = mknodat(dir_fd, path, OPEN_RDONLY, id, mode);
         if (fd < 0)
         {
             return -1;
@@ -1547,29 +1286,62 @@ namespace Hamster
         return 0;
     }
 
-    int VFS::isatty(int fd)
+    int VFS::ioctl(int fd, int req, IoctlArg arg)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
         if (!file)
             return -1;
 
         if (file->type() != FileType::Special)
-            return 0;
+        {
+            error = ENOTTY;
+            return -1;
+        }
         
         BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
         BaseSpecialDriverHandle *handle = sp_file->get_handle();
         if (!handle)
         {
             // Try to open the handle
-            if (open_special_handle(sp_file, data->special_driver_manager) < 0)
+            if (open_special_handle(sp_file) < 0)
                 return -1;
             handle = sp_file->get_handle();
         }
         if (!handle)
             return -1;
-        if (handle->special_type() != SpecialFileType::CharacterDevice)
-            return 0; // Not a character device
-        BaseCharacterDeviceHandle *char_handle = (BaseCharacterDeviceHandle *)handle;
-        return char_handle->isatty();
+        return handle->ioctl(req, arg);
+    }
+
+    int VFS::dup(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        BaseFile *cloned_file = file->clone();
+        if (!cloned_file)
+        {
+            error = EIO;
+            return -1;
+        }
+
+        int new_fd = data->fd_manager.add_fd(cloned_file);
+        if (new_fd < 0)
+        {
+            dealloc(cloned_file);
+            error = EIO;
+            return -1;
+        }
+
+        return new_fd;
+    }
+
+    int VFS::set_flags(int fd, int flags)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        return file->set_flags(flags);
     }
 } // namespace Hamster

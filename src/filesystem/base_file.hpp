@@ -2,12 +2,10 @@
 
 #pragma once
 
-#include <sys/stat.h>
+#include <abi/structs.hpp>
+#include <abi/values.hpp>
 #include <cstdint>
 #include <cstddef>
-
-// expose some macros
-#include <fcntl.h>
 
 // ssize_t
 #include <unistd.h>
@@ -24,6 +22,16 @@ namespace Hamster
         // and occupy little to no space on disk
         Special,
     };
+
+    struct DeviceID
+    {
+        uint32_t major;
+        uint32_t minor;
+
+        bool operator==(const DeviceID &other) const = default;
+    };
+
+    class BaseFilesystem;
 
     class BaseFile
     {
@@ -43,20 +51,19 @@ namespace Hamster
         virtual BaseFile *clone() = 0;
 
         /**
-         * @brief Rename this file
-         * @param new_name The new name of the file
-         * @return 0 on success, or on error return -1 and set `error`
-         * @note `new_name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
-         * @warning NOT equivelant to POSIX `rename`, as this cannot change the location of the file
+         * @brief Get the owning filesystem
+         * @return A weak pointer to the owning filesystem, or nullptr on error
          */
-        virtual int rename(const char *new_name) = 0;
+        virtual BaseFilesystem *get_filesystem() = 0;
 
         /**
-         * @brief Remove this file
-         * @return 0 on success, or on error return -1 and set `error`
-         * @note Equivelant to POSIX `unlink` on this file
+         * @brief Get an integer identifier for the file, valid on the same filesystem, for the lifetime of the file.
+         * @return An integer identifier for the file, or -1 on error
+         * @note This can be any number, just as long as it's different for each file on the same filesystem.
+         * @note This is used by the VFS to identify files, and it will break if this doesn't return a unique value for each file.
+         * @note This can, but is *not* requried to be implemented by returning the inode number
          */
-        virtual int remove() = 0;
+        virtual int get_id() const = 0;
 
         /**
          * @brief Stat the file.
@@ -64,7 +71,7 @@ namespace Hamster
          * @return 0 on success, or on error return -1 and set `error`
          * @note Only set those fields that are described in POSIX `sys/stat.h`
          */
-        virtual int stat(struct ::stat *buf) = 0;
+        virtual int stat(sys_stat *buf) = 0;
 
         /**
          * @brief Get the mode of the file.
@@ -115,21 +122,6 @@ namespace Hamster
          * @return 0 on success, or on error return -1 and set `error`
          */
         virtual int set_flags(int flags) = 0;
-
-        /**
-         * @brief Get the name of the file.
-         * @return A newly allocated string with the name of the file, or on error, it returns nullptr and sets `error`
-         * @note Be sure to free the string
-         */
-        virtual char *basename() = 0;
-
-        /**
-         * @brief Used by the VFS to store some flags
-         * @warning Do not touch this, it is used by the VFS
-         * @note This is not a part of the public API
-         */
-        virtual int set_vfs_flags(uint32_t flags) = 0;
-        virtual uint32_t get_vfs_flags() = 0;
     };
 
     class BaseRegularFile : public BaseFile
@@ -193,9 +185,9 @@ namespace Hamster
 
         /**
          * @brief Get the Device ID of the special file.
-         * @return The Device ID of the special file, or on error return -1 and set `error`
+         * @return The Device ID of the special file, or on error return {0, 0} and set `error`
          */
-        virtual int get_device_id() = 0;
+        virtual DeviceID get_device_id() = 0;
 
         // Don't declare `get_handle` and `set_handle` as virtual, so that base classes cannot override them
 
@@ -244,24 +236,35 @@ namespace Hamster
         virtual FileType type() const override { return FileType::Directory; }
 
         /**
-         * @brief List the files in the directory.
+         * @brief List the files in the directory, starting from this directory's offset
+         * @param count The number of entries to list, by default, it will list all entries
          * @return A newly allocated array of newly allocated strings, or on error, it returns nullptr and sets `error`
          * @note Be sure to free both dimensions
+         * @note It may return an array with less than `count` entries, if there are not enough files in the directory
          */
-        virtual char * const *list() = 0;
+        virtual char * const *list(size_t count = SIZE_MAX) = 0;
+
+        /**
+         * @brief Change the offset of the directory.
+         * @param offset The new offset
+         * @param whence One of H_SEEK_SET, H_SEEK_CUR, or H_SEEK_END
+         * @return The new offset in the directory, or on error return -1 and set `error`
+         * @note Equivelant to POSIX `lseek` on a directory
+         */
+        virtual int64_t seek(int64_t offset, int whence) = 0;
 
         /**
          * @brief Get a file in the directory.
          * @param name The name of the file
          * @param flags The flags to open the file with
-         * @param mode Potential `mode`, if `flags | O_CREAT`
+         * @param mode Potential `mode`, if `flags | OPEN_CREAT`
          * @return A newly allocated `BaseFile` that operates on the opened file, or on error, it returns nullptr and sets `error`
          * @note Be sure to free the file
          * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
-         * @note If `flags | O_CREAT && flags | O_DIRECTORY`, then the file is created as a directory
-         * @note A directory can with any of the three `O_RDONLY`, `O_WRONLY`, or `O_RDWR` flags, which enables or disables some of these functions
+         * @note If `flags | OPEN_CREAT && flags | OPEN_DIRECTORY`, then the file is created as a directory
+         * @note A directory can with any of the three `OPEN_RDONLY`, `OPEN_WRONLY`, or `OPEN_RDWR` flags, which enables or disables some of these functions
          * @note Other than these, it is equivelant to POSIX `open`
-         * @warning When implementing, you MUST ensure that if `flags | O_DIRECTORY`, then the returned file derives from `BaseDirectory`
+         * @warning When implementing, you MUST ensure that if `flags | OPEN_DIRECTORY`, then the returned file derives from `BaseDirectory`
          */
         virtual BaseFile *get(const char *name, int flags, int mode = 0) = 0;
 
@@ -273,7 +276,7 @@ namespace Hamster
          * @return A newly allocated `BaseRegularFile` that operates on the new file, or on error, it returns nullptr and sets `error`
          * @note Be sure to free the file
          * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
-         * @note Equivelant to `this->get(name, (flags & ~O_DIRECTORY) | O_CREAT, mode)`
+         * @note Equivelant to `this->get(name, (flags & ~OPEN_DIRECTORY) | OPEN_CREAT, mode)`
          */
         virtual BaseRegularFile *mkfile(const char *name, int flags, int mode) = 0;
 
@@ -285,7 +288,7 @@ namespace Hamster
          * @return A newly allocated `BaseDirectory` that operates on the new directory, or on error, it returns nullptr and sets `error`
          * @note Be sure to free the file
          * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
-         * @note Equivelant to `this->get(name, flags | O_CREAT | O_DIRECTORY, mode)`
+         * @note Equivelant to `this->get(name, flags | OPEN_CREAT | OPEN_DIRECTORY, mode)`
          */
         virtual BaseDirectory *mkdir(const char *name, int flags, int mode) = 0;
 
@@ -304,17 +307,24 @@ namespace Hamster
          * @brief Make a special file in the directory.
          * @param name The name of the special file
          * @param flags The flags to open the special file with
-         * @param type The ID of the special file
+         * @param id The ID of the special file
          * @param mode The mode to create the special file with
          * @return A newly allocated `BaseSpecialFile` that operates on the new special file, or on error, it returns nullptr and sets `error`
          * @note Be sure to free the file
          * @note `name` is NOT a path, and cannot contain any slashes. It is relative to this directory.
          * @note This is NOT equivelant to POSIX `mknod`, as this just makes a stub special file that can only be used to identify the file type
          */
-        virtual BaseSpecialFile *mksfile(const char *name, int flags, int type, int mode) = 0;
+        virtual BaseSpecialFile *mksfile(const char *name, int flags, DeviceID id, int mode) = 0;
 
-        using BaseFile::remove;
-        
+        /**
+         * @brief Create a hard-link to another file on this filesystem
+         * @param file The target file
+         * @param name The name of the hard link
+         * @return 0 on success, -1 on error and set `error`
+         * @note If the file is not part of this filesystem, set `errno` to `EXDEV`
+         */
+        virtual int link(BaseFile *file, const char *name) = 0;
+
         /**
          * @brief Remove a file in the directory.
          * @param name The name of the file
@@ -353,7 +363,14 @@ namespace Hamster
     {
         BlockDevice,
         CharacterDevice,
+        Fifo,
         Socket,
+    };
+
+    struct IoctlArg
+    {
+        int i;
+        void *p;
     };
 
     class BaseSpecialDriverHandle
@@ -397,18 +414,27 @@ namespace Hamster
          * @return 0 on success, or on error return -1 and set `error`
          */
         virtual int set_flags(int flags) = 0;
+
+        /**
+         * @brief Perform an ioctl operation on the special file.
+         * @param request The request to perform
+         * @param arg An optional argument for the request, which can be an integer or a pointer, depending on the request
+         * @return It depends on the request, but it is guaranteed to return -1 on error and set `error`, but otherwise
+         *       * it depends.
+         */
+        virtual int ioctl(int request, IoctlArg arg = {}) = 0;
     };
 
     class BaseCharacterDeviceHandle : public BaseSpecialDriverHandle
     {
     public:
         virtual SpecialFileType special_type() override { return SpecialFileType::CharacterDevice; }
+    };
 
-        /**
-         * @brief Check if the device is a TTY device
-         * @return 1 if it is, 0 if it's not, or on error return -1 and set `error`
-         */
-        virtual int isatty() { return 0; }
+    class BaseFifoHandle : public BaseSpecialDriverHandle
+    {
+    public:
+        virtual SpecialFileType special_type() override { return SpecialFileType::Fifo; }
     };
 
     class BaseSocketDeviceHandle : public BaseSpecialDriverHandle
