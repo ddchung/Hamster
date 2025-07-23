@@ -1,7 +1,5 @@
 #include <platform/platform.hpp>
 
-#include <process/process.hpp>
-#include <process/thread.hpp>
 #include <elf/elf_loader.hpp>
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
@@ -50,7 +48,7 @@ int main()
         return -1;
     }
     
-    Hamster::scheduler.make_process_elf("/usr/bin/init");
+    Hamster::scheduler.spawn("/usr/bin/init");
 
     Hamster::_log("Starting userspace...\n");
     Hamster::_log("========== [ BEGIN USERSPACE OUTPUT ] ==========\n");
@@ -59,23 +57,5 @@ int main()
     while (true)
     {
         Hamster::scheduler.tick();
-
-        // Check if there are any processes left
-        bool has_processes = false;
-        for (const auto &process : Hamster::scheduler.get_processes())
-        {
-            if (process && !process->threads.empty())
-            {
-                has_processes = true;
-                break;
-            }
-        }
-
-        if (!has_processes)
-        {
-            Hamster::_log("\n=========== [ END USERSPACE OUTPUT ] ===========\n");
-            Hamster::_log("No more processes left, exiting...\n");
-            break; // Exit the loop if no processes are left
-        }
     }
 }
