@@ -228,4 +228,15 @@ namespace Hamster
     inline bool is_fifo(int mode) { return (mode & STAT_IFMT) == STAT_IFIFO; }
     inline bool is_symbolic_link(int mode) { return (mode & STAT_IFMT) == STAT_IFLNK; }
     inline bool is_socket(int mode) { return (mode & STAT_IFMT) == STAT_IFSOCK; }
+
+    inline uint16_t make_wait_exited(uint8_t exit_code) { return exit_code << 8; }
+    inline uint16_t make_wait_stopped(uint8_t stop_signal) { return (stop_signal << 8) | 0x7f; }
+    inline uint16_t make_wait_continued() { return 0xffff; }
+    inline uint16_t make_wait_terminated(uint8_t term_signal) { return term_signal & 0x7f; }
+    inline uint16_t make_wait_terminated_coredump(uint8_t term_signal) { return (term_signal & 0x7f) | 0x80; }
+    inline bool is_wait_exited(uint16_t status) { return (status & 0x7f) == 0; }
+    inline bool is_wait_stopped(uint16_t status) { return (status & 0xff) == 0x7f; }
+    inline bool is_wait_continued(uint16_t status) { return status == 0xffff; }
+    inline bool is_wait_terminated(uint16_t status) { return (status & 0x7f) != 0 && (status & 0x7f) != 0x7f; }
+    inline bool is_wait_terminated_coredump(uint16_t status) { return is_wait_terminated(status) && (status & 0x80) != 0; }
 } // namespace Hamster
