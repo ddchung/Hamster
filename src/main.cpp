@@ -47,8 +47,6 @@ int main()
         Hamster::_log("Failed to mount root filesystem\n");
         return -1;
     }
-    
-    Hamster::scheduler.spawn("/usr/bin/init");
 
     Hamster::_log("Starting userspace...\n");
     Hamster::_log("========== [ BEGIN USERSPACE OUTPUT ] ==========\n");

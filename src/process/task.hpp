@@ -8,6 +8,7 @@
 #include <memory/stl_map.hpp>
 #include <abi/structs.hpp>
 #include <filesystem/vfs.hpp>
+#include <filesystem/file.hpp>
 #include <cstdint>
 
 namespace Hamster
@@ -20,27 +21,18 @@ namespace Hamster
     };
     
     /**
-     * @brief Create a new task member
+     * @brief Copy a task member
      * @param old The old task member to copy from, or nullptr to create a new one
-     * @param copy If true, the old task member will be copied, otherwise it will be reused and its reference count will be incremented
      * @return A pointer to the new task member
      */
     template <typename T>
-    TaskMember<T> *make_task_member(TaskMember<T> *old = nullptr, bool copy = false)
+    TaskMember<T> *copy_task_member(TaskMember<T> *old = nullptr)
     {
         if (old)
         {
-            if (copy)
-            {
-                auto res = alloc<TaskMember<T>>(1, *old);
-                res->refcount = 1;
-                return res;
-            }
-            else
-            {
-                old->refcount++;
-                return old;
-            }
+            auto res = alloc<TaskMember<T>>(1, *old);
+            res->refcount = 1;
+            return res;
         }
         else
         {
@@ -50,6 +42,40 @@ namespace Hamster
         }
     }
 
+    /**
+     * @brief Reference a task member
+     * @param old The old task member to reference, or nullptr to create a new one
+     * @return A pointer to the new task member
+     * @note This will increment the reference count of the task member
+     */
+    template <typename T>
+    TaskMember<T> *ref_task_member(TaskMember<T> *old = nullptr)
+    {
+        if (old)
+        {
+            old->refcount++;
+            return old;
+        }
+        else
+        {
+            auto res = alloc<TaskMember<T>>(1);
+            res->refcount = 1;
+            return res;
+        }
+    }
+
+    /**
+     * @brief Create a new task member
+     * @return A pointer to the new task member
+     */
+    template <typename T>
+    TaskMember<T> *make_task_member()
+    {
+        auto res = alloc<TaskMember<T>>(1);
+        res->refcount = 1;
+        return res;
+    }
+    
     /**
      * @brief Destroy a pointer to task member
      * @param ptr The pointer to the task member to destroy
@@ -115,13 +141,13 @@ namespace Hamster
     struct FSInfo
     {
         // The starting point of the filesystem, as seen by the process
-        String root_path;
+        String root_path = "/";
 
         // The current working directory of the process
         // This is relative to the absolute root path, not the process root path
-        String cwd_path;
+        String cwd_path = "/";
 
-        int umask;
+        int umask = 0;
     };
     
     class Session
@@ -152,9 +178,27 @@ namespace Hamster
         uint32_t pgid; // Process Group ID
     };
 
-    struct ZombieProcess
+    enum class ProcessStateChangeType : uint8_t
     {
-        uint16_t exit_code; // (code << 8) | (status & 0xFF)
+        EXIT,
+        STOP,
+        CONTINUE,
+        // Abnormal termination, e.g. crash or signal
+        TERMINATE,
+    };
+
+    struct ProcessStateChange
+    {
+        ProcessStateChangeType type;
+
+        union 
+        {
+            // EXIT
+            uint8_t exit_code;
+
+            // STOP, CONTINUE, TERMINATE
+            uint8_t signal;
+        };
     };
 
     class Process
@@ -214,17 +258,17 @@ namespace Hamster
 
         /**
          * @brief Load an ELF executable into the process memory space
-         * @param fd The (vfs) file descriptor of the ELF executable
+         * @param file The ELF executable
          * @param argv The command line arguments for the ELF executable
          * @param envp The environment variables for the ELF executable
          * @return 0 on success, -1 on failure and set `error`
          * @note This will kill all threads, and replace the memory space
          */
-        int exec_elf(int fd, const char *const *argv, const char *const *envp);
+        int exec_elf(File file, const char *const *argv, const char *const *envp);
 
         /**
          * @brief Load an executable into the process memory space
-         * @param fd The (vfs) file descriptor of the executable
+         * @param file The executable
          * @param argv The command line arguments for the executable
          * @param envp The environment variables for the executable
          * @return 0 on success, -1 on failure and set `error`
@@ -232,7 +276,7 @@ namespace Hamster
          * @note This can forward to `load_elf` if the executable is an ELF file, or run an
          *     * interpreter if the executable is a script
          */
-        int exec(int fd, const char *const *argv, const char *const *envp);
+        int exec(File file, const char *const *argv, const char *const *envp);
 
         /**
          * @brief Get a VFS-level file descriptor to use for relative lookup preprocessing
@@ -254,7 +298,7 @@ namespace Hamster
         TaskMember<FSInfo> *fs_info;
         Vector<uint32_t> tasks;
         Deque<sys_siginfo> shared_sig_queue;
-        Map<uint32_t, ZombieProcess> zombies;
+        Map<uint32_t, ProcessStateChange> children_state_changes;
 
         uint32_t pid; // Process ID
         uint32_t ppid; // Parent Process ID
@@ -309,23 +353,23 @@ namespace Hamster
          * @brief Poll a blocking read operation
          * @return -1 on an error, 0 otherwise
          */
-        int poll_read();
+        int poll_read() { return -1; }
 
         /**
          * @brief Poll a blocking write operation
          * @return -1 on an error, 0 otherwise
          */
-        int poll_write();
+        int poll_write() { return -1; }
 
         /**
          * @brief Poll a blocking wait operation
          * @return -1 on an error, 0 otherwise
          */
-        int poll_wait();
+        int poll_wait() { return -1; }
 
         /**
          * @brief Do the exit routine for the task
-         * @param exit_code The exit code of the task, as (code << 8) | (status & 0xFF)
+         * @param exit_code The exit code of the task, constructed with `make_wait_*` functions
          * @return 0 on success, -1 on failure and set `error`
          * @note This can do things like marking the task as dead, possibly sending signals to parent processes, cleaning up
          *     * resources, etc.
@@ -369,6 +413,22 @@ namespace Hamster
          */
         int init_tid(int new_id);
 
+        /**
+         * @brief Send a signal to the task
+         * @param signo The signal number to send
+         * @param uid The user ID of the sender, or 0 if the sender is the kernel
+         * @param pid The process ID of the sender, or 0 if the sender is the kernel
+         * @return 0 on success, -1 on failure and set `error`
+         */
+        int send_signal(int signo, uint32_t uid = 0, uint32_t pid = 0);
+
+        /**
+         * @brief Send a signal to the task, with a signal info structure
+         * @param siginfo The signal info structure to send
+         * @return 0 on success, -1 on failure and set `error`
+         */
+        int send_signal(const sys_siginfo &siginfo);
+
         TaskMember<EmulatorMemory> *memory;
         TaskMember<FDTable> *fd_table;
         TaskMember<Filesystem> *filesystem;
@@ -376,22 +436,22 @@ namespace Hamster
         Deque<sys_siginfo> sig_queue;
         RiscVEmulator emulator;
 
-        uint32_t tid;
-        uint32_t ptid;
+        uint32_t tid = 0;
+        uint32_t ptid = 0;
         
         // Signal bitmask, bits calculated as (1 << (signo - 1))
-        uint32_t sig_mask;
+        uint32_t sig_mask = 0xFFFFFFFF;
         
-        int io_block_fd;
+        int io_block_fd = -1;
 
         // (code << 8) | (status & 0xFF)
-        uint16_t exit_code;
+        uint16_t exit_code = 0;
         
         // Sent to the parent process on exit, if we are the leader of the task group
-        uint8_t exit_signal;
-        BlockingOperation blocking_operation;
-        bool is_paused : 1;
-        bool is_dead : 1;
+        uint8_t exit_signal = 0;
+        BlockingOperation blocking_operation = BlockingOperation::NONE;
+        bool is_paused : 1 = false;
+        bool is_dead : 1 = false;
     };
 } // namespace Hamster
 

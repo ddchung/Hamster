@@ -3,6 +3,7 @@
 #pragma once
 
 #include <process/task.hpp>
+#include <memory/stl_map.hpp>
 
 namespace Hamster
 {
@@ -33,20 +34,20 @@ namespace Hamster
 
         /**
          * @brief Make a new process from an executable
-         * @param path The path to the executable
+         * @param file The executable
          * @param argv The arguments to pass to the new process, nullptr for empty args
          * @param envp The environment variables to pass to the new process, nullptr for empty env
          * This sets the uid, gid, and ppid to 0 on the new process
          * @return 0 on success, -1 on error
          */
-        int spawn(const char *path, const char *const *argv = nullptr, const char *const *envp = nullptr);
+        int spawn(File file, const char *const *argv = nullptr, const char *const *envp = nullptr);
 
         /**
          * @brief For all processes that have PPID = `pid`, set their ppid to 1 (init)
          * @param pid The PID match
          * @note This is used to make init adopt child processes
          */
-        int adopt_children(int pid);
+        int adopt_children(uint32_t pid);
 
         /**
          * @brief Get a process by PID
@@ -55,11 +56,16 @@ namespace Hamster
          * @note This will first check TID `pid` for quick access, but if not found, then
          *     * it will check all threads. If still not found, return nullptr
          */
-        Process *get_process(int pid);
+        Process *get_process(uint32_t pid);
 
     private:
         
         int do_tick(Task &);
+
+        // TID to task
+        Map<uint32_t, Task *> tasks;
+
+        uint32_t next_tid = 1;
     };
 
     extern Scheduler scheduler;

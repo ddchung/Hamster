@@ -6,9 +6,102 @@
 #include <abi/values.hpp>
 #include <cassert>
 #include <utility>
+#include <cstring>
 
 namespace Hamster
 {
+    namespace
+    {
+        // Default signal handlers
+
+        void sighand_nop(Task *, sys_siginfo *, void *)
+        {
+        }
+
+        void sighand_term(Task *task, sys_siginfo *siginfo, void *)
+        {
+            assert(task);
+            assert(siginfo);
+            task->exit(make_wait_terminated(siginfo->signo));
+        }
+
+        void sighand_dump(Task *task, sys_siginfo *siginfo, void *)
+        {
+            assert(task);
+            assert(siginfo);
+            task->exit(make_wait_terminated_coredump(siginfo->signo));
+        }
+
+        void sighand_stop(Task *task, sys_siginfo * siginfo, void *)
+        {
+            assert(task);
+            assert(siginfo);
+            task->is_paused = true;
+
+            Process *parent_process = scheduler.get_process(task->process->obj.ppid);
+
+            if (parent_process)
+            {
+                ProcessStateChange state_change;
+                state_change.type = ProcessStateChangeType::STOP;
+                state_change.signal = siginfo->signo;
+                parent_process->children_state_changes[task->get_pid()] = state_change;
+            }
+        }
+
+        void sighand_cont(Task *task, sys_siginfo *siginfo, void *)
+        {
+            assert(task);
+            assert(siginfo);
+            task->is_paused = false;
+
+            Process *parent_process = scheduler.get_process(task->process->obj.ppid);
+
+            if (parent_process)
+            {
+                ProcessStateChange state_change;
+                state_change.type = ProcessStateChangeType::CONTINUE;
+                state_change.signal = siginfo->signo;
+                parent_process->children_state_changes[task->get_pid()] = state_change;
+            }
+        }
+
+        SignalHandler default_signal_handlers[32] = {
+            {nullptr, nullptr},              // 0 — not used
+            {sighand_term, nullptr},         // 1 — SIGHUP (terminate)
+            {sighand_term, nullptr},         // 2 — SIGINT (terminate)
+            {sighand_term, nullptr},         // 3 — SIGQUIT (terminate + core)
+            {sighand_dump, nullptr},         // 4 — SIGILL (terminate + core)
+            {sighand_dump, nullptr},         // 5 — SIGTRAP (terminate + core)
+            {sighand_dump, nullptr},         // 6 — SIGABRT/SIGIOT (terminate + core)
+            {sighand_dump, nullptr},         // 7 — SIGBUS (terminate + core)
+            {sighand_dump, nullptr},         // 8 — SIGFPE (terminate + core)
+            {sighand_term, nullptr},         // 9 — SIGKILL (terminate, cannot catch/ignore)
+            {sighand_term, nullptr},         // 10 — SIGUSR1 (terminate)
+            {sighand_dump, nullptr},         // 11 — SIGSEGV (terminate + core)
+            {sighand_term, nullptr},         // 12 — SIGUSR2 (terminate)
+            {sighand_term, nullptr},         // 13 — SIGPIPE (terminate)
+            {sighand_term, nullptr},         // 14 — SIGALRM (terminate)
+            {sighand_term, nullptr},         // 15 — SIGTERM (terminate)
+            {sighand_term, nullptr},         // 16 — SIGSTKFLT (terminate)
+            {sighand_nop, nullptr},          // 17 — SIGCHLD (ignore)
+            {sighand_cont, nullptr},         // 18 — SIGCONT (continue, if stopped)
+            {sighand_stop, nullptr},         // 19 — SIGSTOP (stop, cannot catch/ignore)
+            {sighand_stop, nullptr},         // 20 — SIGTSTP (stop)
+            {sighand_stop, nullptr},         // 21 — SIGTTIN (stop)
+            {sighand_stop, nullptr},         // 22 — SIGTTOU (stop)
+            {sighand_nop, nullptr},          // 23 — SIGURG (ignore)
+            {sighand_dump, nullptr},         // 24 — SIGXCPU (terminate + core)
+            {sighand_dump, nullptr},         // 25 — SIGXFSZ (terminate + core)
+            {sighand_term, nullptr},         // 26 — SIGVTALRM (terminate)
+            {sighand_term, nullptr},         // 27 — SIGPROF (terminate)
+            {sighand_nop, nullptr},          // 28 — SIGWINCH (ignore)
+            {sighand_nop, nullptr},          // 29 — SIGIO/SIGPOLL (ignore)
+            {sighand_term, nullptr},         // 30 — SIGPWR (terminate)
+            {sighand_dump, nullptr},         // 31 — SIGSYS (terminate + core)
+        };
+    } // namespace
+
     Task::~Task()
     {
         destroy_task_member(memory);
@@ -86,7 +179,7 @@ namespace Hamster
         std::swap(pg, other.pg);
         std::swap(tasks, other.tasks);
         std::swap(shared_sig_queue, other.shared_sig_queue);
-        std::swap(zombies, other.zombies);
+        std::swap(children_state_changes, other.children_state_changes);
         std::swap(pid, other.pid);
         std::swap(ppid, other.ppid);
         std::swap(uid, other.uid);
@@ -95,6 +188,31 @@ namespace Hamster
         std::swap(egid, other.egid);
 
         return *this;
+    }
+
+    int Process::send_signal(int signo, uint32_t uid, uint32_t pid)
+    {
+        sys_siginfo siginfo = {};
+        siginfo.signo = signo;
+        siginfo.errno_value = 0;
+        siginfo.code = 0; // No specific code for this signal
+        siginfo.fields.kill.uid = uid;
+        siginfo.fields.kill.pid = pid;
+
+        return send_signal(siginfo);
+    }
+
+    int Process::send_signal(const sys_siginfo &siginfo)
+    {
+        shared_sig_queue.push_back(siginfo);
+        return 0;
+    }
+
+    int Process::set_default_signal_handlers()
+    {
+        memcpy(signal_handlers->obj.sig_handlers, default_signal_handlers, sizeof(default_signal_handlers));
+
+        return 0;
     }
 
     ProcessGroup::~ProcessGroup()
@@ -237,9 +355,9 @@ namespace Hamster
 
         new_task->emulator = emulator;
 
-        new_task->memory = make_task_member(memory, !(clone_flags & H_CLONE_VM));
-        new_task->filesystem = make_task_member(filesystem, false);
-        new_task->fd_table = make_task_member(fd_table, !(clone_flags & H_CLONE_FILES));
+        new_task->memory = clone_flags & H_CLONE_VM ? ref_task_member(memory) : copy_task_member(memory);
+        new_task->filesystem = ref_task_member(filesystem);
+        new_task->fd_table = clone_flags & H_CLONE_FILES ? ref_task_member(fd_table) : copy_task_member(fd_table);
         if (!(clone_flags & H_CLONE_FILES))
         {
             for (UserFD &file : new_task->fd_table->obj.fds)
@@ -253,15 +371,15 @@ namespace Hamster
 
         if (clone_flags & H_CLONE_THREAD)
         {
-            new_task->process = make_task_member(process, false);
+            new_task->process = ref_task_member(process);
         }
         else
         {
             new_task->process = make_task_member<Process>();
             Process &proc = new_task->process->obj;
-            proc.pg = make_task_member(process->obj.pg);
-            proc.signal_handlers = make_task_member(process->obj.signal_handlers, !(clone_flags & H_CLONE_SIGHAND));
-            proc.fs_info = make_task_member(process->obj.fs_info, !(clone_flags & H_CLONE_FS));
+            proc.pg = ref_task_member(process->obj.pg);
+            proc.signal_handlers = clone_flags & H_CLONE_SIGHAND ? ref_task_member(process->obj.signal_handlers) : copy_task_member(process->obj.signal_handlers);
+            proc.fs_info = clone_flags & H_CLONE_FS ? ref_task_member(process->obj.fs_info) : copy_task_member(process->obj.fs_info);
             proc.ppid = clone_flags & H_CLONE_PARENT ? process->obj.ppid : process->obj.pid;
             proc.pid = 0;
             proc.tasks.push_back(0);
@@ -316,7 +434,15 @@ namespace Hamster
                 siginfo.errno_value = 0;
                 if ((exit_signal & 0xFF) == H_SIGCHLD)
                 {
-                    siginfo.code = H_CLD_EXITED;
+                    if (is_wait_exited(exit_code))
+                        siginfo.code = H_CLD_EXITED;
+                    else if (is_wait_terminated(exit_code))
+                        siginfo.code = H_CLD_KILLED;
+                    else if (is_wait_terminated_coredump(exit_code))
+                        siginfo.code = H_CLD_DUMPED;
+                    else
+                        siginfo.code = H_CLD_STOPPED;
+
                     siginfo.fields.child.pid = process->obj.pid;
                     siginfo.fields.child.uid = process->obj.uid;
                     siginfo.fields.child.status = exit_code;
@@ -331,6 +457,21 @@ namespace Hamster
                 }
                 parent->send_signal(siginfo);
             }
+
+            ProcessStateChange state_change;
+
+            if (is_wait_exited(exit_code))
+            {
+                state_change.type = ProcessStateChangeType::EXIT;
+                state_change.exit_code = exit_code >> 8;
+            }
+            else
+            {
+                state_change.type = ProcessStateChangeType::TERMINATE;
+                state_change.signal = exit_code & 0x7F;
+            }
+
+            parent->children_state_changes[get_pid()] = state_change;
         }
 
         // Clean up resources
@@ -351,5 +492,25 @@ namespace Hamster
             }
             fd_table->obj.fds.clear();
         }
+
+        return 0;
+    }
+
+    int Task::send_signal(int signo, uint32_t uid, uint32_t pid)
+    {
+        sys_siginfo siginfo;
+        siginfo.signo = signo;
+        siginfo.errno_value = 0;
+        siginfo.code = H_SI_USER;
+        siginfo.fields.kill.pid = pid;
+        siginfo.fields.kill.uid = uid;
+
+        return send_signal(siginfo);
+    }
+
+    int Task::send_signal(const sys_siginfo &siginfo)
+    {
+        sig_queue.push_back(siginfo);
+        return 0;
     }
 } // namespace Hamster
