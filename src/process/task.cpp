@@ -215,6 +215,25 @@ namespace Hamster
         return 0;
     }
 
+    int Process::set_signal_handler(int signo, SignalHandler handler)
+    {
+        if (signo < 0 || signo >= 32)
+        {
+            error = EINVAL; // Invalid signal number
+            return -1;
+        }
+
+        // Check for unblockable signals
+        if (signo == H_SIGKILL || signo == H_SIGSTOP || signo == H_SIGCONT)
+        {
+            error = EPERM; // Cannot set handler for unblockable signals
+            return -1;
+        }
+
+        signal_handlers->obj.sig_handlers[signo] = handler;
+        return 0;
+    }
+
     ProcessGroup::~ProcessGroup()
     {
         destroy_task_member(session);
@@ -506,6 +525,49 @@ namespace Hamster
         siginfo.fields.kill.uid = uid;
 
         return send_signal(siginfo);
+    }
+
+    int Task::get_relative_fd(const char *path, int thread_at_fd)
+    {
+        if (!path || path[0] == '\0')
+        {
+            error = EINVAL; // Invalid path
+            return -1;
+        }
+
+        if (path[0] == '/')
+        {
+            // Absolute path
+            const char *root_path = process->obj.fs_info->obj.root_path.c_str();
+
+            return filesystem->obj.vfs.open(root_path, OPEN_RDWR | OPEN_DIRECTORY);
+        }
+        else if (thread_at_fd == -100)
+        {
+            const char *cwd_path = process->obj.fs_info->obj.cwd_path.c_str();
+            return filesystem->obj.vfs.open(cwd_path, OPEN_RDWR | OPEN_DIRECTORY);
+        }
+        else
+        {
+            if (thread_at_fd < 0 || thread_at_fd >= (int)fd_table->obj.fds.size())
+            {
+                error = EBADF; // Invalid file descriptor
+                return -1;
+            }
+
+            const UserFD &user_fd = fd_table->obj.fds[thread_at_fd];
+
+            if (user_fd.type != UserFDType::VFS || user_fd.vfs_fd < 0)
+            {
+                error = EBADF; // Not a valid VFS file descriptor
+                return -1;
+            }
+
+            return filesystem->obj.vfs.dup(user_fd.vfs_fd);
+        }
+
+        // Should not reach here
+        return -1;
     }
 
     int Task::send_signal(const sys_siginfo &siginfo)

@@ -278,21 +278,6 @@ namespace Hamster
          */
         int exec(File file, const char *const *argv, const char *const *envp);
 
-        /**
-         * @brief Get a VFS-level file descriptor to use for relative lookup preprocessing
-         * @param path The path to use for the relative lookup
-         * @param at_fd The VFS file descriptor to use as the base for relative lookups, or -100 to use the current working directory
-         * @return The VFS-level file descriptor on success, -1 on failure and set `error`
-         * @note This will resolve the path relative to the current working directory, or
-         *     * the specified file descriptor, and return a VFS-level file descriptor that can
-         *     * be used for further relative operations
-         * @note The returned file descriptor targets:
-         *     * - `cwd_path if `at_fd` is -100 and path is not absolute
-         *     * - `root_path` if path is absolute (atfd does not matter in this case)
-         *     * - `at_fd` if path is relative and `at_fd` is not -100
-         */
-        int get_relative_fd(const char *path, int at_fd = -100);
-
         TaskMember<ProcessGroup> *pg;
         TaskMember<SignalHandlers> *signal_handlers;
         TaskMember<FSInfo> *fs_info;
@@ -304,6 +289,7 @@ namespace Hamster
         uint32_t ppid; // Parent Process ID
         uint32_t uid, euid;
         uint32_t gid, egid;
+        uint32_t brk;
     };
 
     enum class BlockingOperation : uint8_t
@@ -428,6 +414,21 @@ namespace Hamster
          * @return 0 on success, -1 on failure and set `error`
          */
         int send_signal(const sys_siginfo &siginfo);
+
+        /**
+         * @brief Get a VFS-level file descriptor to use for relative lookup preprocessing
+         * @param path The path to use for the relative lookup
+         * @param at_fd The VFS file descriptor to use as the base for relative lookups, or -100 to use the current working directory
+         * @return The VFS-level file descriptor on success, -1 on failure and set `error`
+         * @note This will resolve the path relative to the current working directory, or
+         *     * the specified file descriptor, and return a VFS-level file descriptor that can
+         *     * be used for further relative operations
+         * @note The returned file descriptor targets:
+         *     * - `cwd_path if `at_fd` is -100 and path is not absolute
+         *     * - `root_path` if path is absolute (atfd does not matter in this case)
+         *     * - `at_fd` if path is relative and `at_fd` is not -100
+         */
+        int get_relative_fd(const char *path, int at_fd = -100);
 
         TaskMember<EmulatorMemory> *memory;
         TaskMember<FDTable> *fd_table;
