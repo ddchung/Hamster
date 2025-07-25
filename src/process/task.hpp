@@ -68,10 +68,23 @@ namespace Hamster
         }
     }
 
+    enum class UserFDType : uint8_t
+    {
+        VFS,
+        PID,
+    };
+
     struct UserFD
     {
-        int vfs_fd;
         int flags;
+        UserFDType type;
+
+        union
+        {
+            int vfs_fd;
+
+            uint32_t pid;
+        };
     };
 
     struct FDTable
@@ -88,7 +101,11 @@ namespace Hamster
         UnorderedMap<int, size_t> fd_refcount;
     };
 
-    using SignalHandler = void (*)(struct Task *, sys_siginfo *);
+    struct SignalHandler 
+    {
+        void (*fn)(struct Task *, sys_siginfo *, void *data);
+        void *data;
+    };
 
     struct SignalHandlers
     {
@@ -123,6 +140,13 @@ namespace Hamster
          */
         uint32_t get_sid();
 
+        ProcessGroup() = default;
+        ~ProcessGroup();
+        ProcessGroup(const ProcessGroup &) = delete;
+        ProcessGroup &operator=(const ProcessGroup &) = delete;
+        ProcessGroup(ProcessGroup &&);
+        ProcessGroup &operator=(ProcessGroup &&);
+
         TaskMember<Session> *session;
         Vector<uint32_t> processes;
         uint32_t pgid; // Process Group ID
@@ -136,6 +160,13 @@ namespace Hamster
     class Process
     {
     public:
+
+        Process() = default;
+        ~Process();
+        Process(const Process &) = delete;
+        Process &operator=(const Process &) = delete;
+        Process(Process &&);
+        Process &operator=(Process &&);
 
         /**
          * @brief Get the session ID of the process
@@ -242,6 +273,12 @@ namespace Hamster
     class Task
     {
     public:
+        Task() = default;
+        ~Task();
+        Task(const Task &) = delete;
+        Task &operator=(const Task &) = delete;
+        Task(Task &&);
+        Task &operator=(Task &&);
 
         /**
          * @brief Get the session ID of the task
@@ -319,8 +356,18 @@ namespace Hamster
          * @note This will allocate a new task, and copy or reference the necessary parts from
          *     * the current task, depending on the `clone_flags` provided.
          * @note The `clone_flags` can be a combination of the `H_CLONE_*` flags defined in `abi/values.hpp`
+         * @note This does not set the `tid` field, and does not put the new thread's ID in the `tasks` vector
+         *     * and also, if it created a new process, the pid field
          */
         Task *clone(uint32_t clone_flags);
+
+        /**
+         * @brief Initialize the thread ID
+         * @param new_id The new thread ID
+         * @return 0 on success, -1 on error
+         * @note This is only called when the task is added to the scheduler
+         */
+        int init_tid(int new_id);
 
         TaskMember<EmulatorMemory> *memory;
         TaskMember<FDTable> *fd_table;

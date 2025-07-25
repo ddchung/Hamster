@@ -40,6 +40,26 @@ namespace Hamster
          * @return 0 on success, -1 on error
          */
         int spawn(const char *path, const char *const *argv = nullptr, const char *const *envp = nullptr);
+
+        /**
+         * @brief For all processes that have PPID = `pid`, set their ppid to 1 (init)
+         * @param pid The PID match
+         * @note This is used to make init adopt child processes
+         */
+        int adopt_children(int pid);
+
+        /**
+         * @brief Get a process by PID
+         * @param pid The PID of the process
+         * @return A non-owning pointer to the process, or nullptr on error
+         * @note This will first check TID `pid` for quick access, but if not found, then
+         *     * it will check all threads. If still not found, return nullptr
+         */
+        Process *get_process(int pid);
+
+    private:
+        
+        int do_tick(Task &);
     };
 
     extern Scheduler scheduler;
