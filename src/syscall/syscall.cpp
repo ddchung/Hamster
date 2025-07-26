@@ -2,6 +2,7 @@
 #include <syscall/syscall.hpp>
 #include <abi/syscall_id.hpp>
 #include <process/scheduler.hpp>
+#include <platform/platform.hpp>
 #include <errno/errno.h>
 
 namespace Hamster
@@ -52,7 +53,52 @@ namespace Hamster
             else
                 static_assert(false, "Unsupported number of syscall arguments");
         }
+
+        const char *error_names[] = {
+            "No Error",                                // 0 - No error
+            "EPERM - Operation not permitted",         // 1
+            "ENOENT - No such file or directory",      // 2
+            "ESRCH - No such process",                 // 3
+            "EINTR - Interrupted system call",         // 4
+            "EIO - I/O error",                         // 5
+            "ENXIO - No such device or address",       // 6
+            "E2BIG - Argument list too long",          // 7
+            "ENOEXEC - Exec format error",             // 8
+            "EBADF - Bad file number",                 // 9
+            "ECHILD - No child processes",             // 10
+            "EAGAIN - Try again",                      // 11
+            "ENOMEM - Out of memory",                  // 12
+            "EACCES - Permission denied",              // 13
+            "EFAULT - Bad address",                    // 14
+            "ENOTBLK - Block device required",         // 15
+            "EBUSY - Device or resource busy",         // 16
+            "EEXIST - File exists",                    // 17
+            "EXDEV - Cross-device link",               // 18
+            "ENODEV - No such device",                 // 19
+            "ENOTDIR - Not a directory",               // 20
+            "EISDIR - Is a directory",                 // 21
+            "EINVAL - Invalid argument",               // 22
+            "ENFILE - File table overflow",            // 23
+            "EMFILE - Too many open files",            // 24
+            "ENOTTY - Not a typewriter",               // 25
+            "ETXTBSY - Text file busy",                // 26
+            "EFBIG - File too large",                  // 27
+            "ENOSPC - No space left on device",        // 28
+            "ESPIPE - Illegal seek",                   // 29
+            "EROFS - Read-only file system",           // 30
+            "EMLINK - Too many links",                 // 31
+            "EPIPE - Broken pipe",                     // 32
+            "EDOM - Math argument out of domain of func", // 33
+            "ERANGE - Math result not representable"   // 34
+        };
     } // namespace
+
+    int32_t cvt_error()
+    {
+        int32_t err = error;
+        error = 0;
+        return -err;
+    }
 
     int32_t syscall(int32_t sys_id)
     {
@@ -277,6 +323,20 @@ namespace Hamster
             result = -ENOSYS;
             break;
         }
+
+        _trace("syscall(%d) = %d", sys_id, result);
+
+        if (result < 0 && result > -128)
+        {
+            _trace(" (error)");
+
+            if ((size_t)-result < sizeof(error_names) / sizeof(error_names[0]))
+            {
+                _trace(": %s", error_names[-result]);
+            }
+        }
+
+        _trace("\n");
 
         return result;
     }

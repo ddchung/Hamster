@@ -131,4 +131,10 @@ namespace Hamster
      * @return Whatever the sys_* function returns, or -ENOSYS if the ID is not recognized 
      */
     int32_t syscall(int32_t sys_id);
+
+    /**
+     * @brief Convert and clear the global `error` variable in the kernel
+     * @return `-error`, and then set `error` back to 0
+     */
+    int32_t cvt_error();
 }
