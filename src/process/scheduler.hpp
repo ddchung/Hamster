@@ -67,6 +67,9 @@ namespace Hamster
         Task *get_current_task()
         { return current_task; }
 
+        size_t num_tasks() const
+        { return tasks.size(); }
+
     private:
         
         int do_tick(Task &);

@@ -57,5 +57,13 @@ int main()
     while (true)
     {
         Hamster::scheduler.tick();
+
+        if (Hamster::scheduler.num_tasks() == 0)
+        {
+            break;
+        }
     }
+
+    Hamster::_log("\n\n========== [ END USERSPACE OUTPUT  ] ==========\n");
+    Hamster::_log("All threads ended\n");
 }
