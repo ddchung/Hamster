@@ -496,18 +496,18 @@ namespace
                 return nullptr;
             }
 
-            int new_fd = openat(fd, name, O_RDWR | O_NOFOLLOW);
+            int new_fd = openat(fd, name, O_RDWR | O_NONBLOCK | O_NOFOLLOW);
             if (new_fd < 0)
             {
                 if (errno == ENOENT && (flags & OPEN_CREAT))
                 {
                     return flags & OPEN_DIRECTORY ?
-                        (BaseFile*)mkdir(name, O_RDWR, mode) :
-                        (BaseFile*)mkfile(name, O_RDWR, mode);
+                        (BaseFile*)mkdir(name, O_RDWR | O_NONBLOCK, mode) :
+                        (BaseFile*)mkfile(name, O_RDWR | O_NONBLOCK, mode);
                 }
                 else if (errno == ELOOP)
                 {
-                    new_fd = openat(fd, name, O_PATH | O_NOFOLLOW);
+                    new_fd = openat(fd, name, O_PATH | O_NONBLOCK | O_NOFOLLOW);
                     if (new_fd < 0)
                     {
                         swap_error();
@@ -573,7 +573,7 @@ namespace
                 return nullptr;
             }
 
-            int new_fd = openat(fd, name, O_RDWR | O_CREAT | O_EXCL, mode);
+            int new_fd = openat(fd, name, O_RDWR | O_NONBLOCK | O_CREAT | O_EXCL, mode);
 
             if (new_fd < 0)
             {
@@ -814,6 +814,12 @@ namespace
                 return -1;
             }
 
+            if (bytes_written == 0)
+            {
+                Hamster::error = EAGAIN; // No data written
+                return -1;
+            }
+
             // trace if tracing is enabled
             if (trace_file)
             {
@@ -830,6 +836,11 @@ namespace
             {
                 Hamster::error = errno;
                 errno = 0;
+                return -1;
+            }
+            if (bytes_read == 0)
+            {
+                Hamster::error = EAGAIN; // No data read
                 return -1;
             }
             return bytes_read;

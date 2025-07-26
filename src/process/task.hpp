@@ -329,13 +329,13 @@ namespace Hamster
          * @brief Poll a blocking read operation
          * @return -1 on an error, 0 otherwise
          */
-        int poll_read() { return -1; }
+        int poll_read();
 
         /**
          * @brief Poll a blocking write operation
          * @return -1 on an error, 0 otherwise
          */
-        int poll_write() { return -1; }
+        int poll_write();
 
         /**
          * @brief Poll a blocking wait operation
