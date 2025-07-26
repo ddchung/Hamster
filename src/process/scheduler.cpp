@@ -80,6 +80,7 @@ namespace Hamster
         Task *task = alloc<Task>();
 
         task->memory = make_task_member<EmulatorMemory>();
+        task->emulator.memory = &task->memory->obj;
         task->fd_table = make_task_member<FDTable>();
         task->process = make_task_member<Process>();
 
@@ -101,17 +102,17 @@ namespace Hamster
 
         task->process->obj.tasks.push_back(next_tid);
 
-        int ret = task->process->obj.exec(path, argv, envp);
+        uint32_t tid = add_task(task);
 
-        if (ret < 0)
+        if (tid == 0)
         {
             dealloc(task);
             return -1;
         }
 
-        uint32_t tid = add_task(task);
+        int ret = task->process->obj.exec(path, argv, envp);
 
-        if (tid == 0)
+        if (ret < 0)
         {
             dealloc(task);
             return -1;
@@ -210,6 +211,7 @@ namespace Hamster
         else if (result.status == RiscVEmulator::ExecuteResult::Status::ECALL)
         {
             // TODO: System call
+            printf("System Call: ID %d\n", task.emulator.x[17]); // a7 is syscall ID
             return 0;
         }
         else if (result.status == RiscVEmulator::ExecuteResult::Status::EBREAK)

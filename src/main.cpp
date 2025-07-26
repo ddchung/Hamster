@@ -48,6 +48,8 @@ int main()
         return -1;
     }
 
+    Hamster::scheduler.spawn("/usr/bin/init");
+
     Hamster::_log("Starting userspace...\n");
     Hamster::_log("========== [ BEGIN USERSPACE OUTPUT ] ==========\n");
 
