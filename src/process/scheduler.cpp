@@ -4,6 +4,7 @@
 #include <process/task.hpp>
 #include <errno/errno.h>
 #include <memory/allocator.hpp>
+#include <syscall/syscall.hpp>
 
 namespace Hamster
 {
@@ -37,6 +38,8 @@ namespace Hamster
         // Tick loop
         for (auto &[tid, task] : tasks)
         {
+            current_task = task;
+
             if (task->is_paused || task->is_dead)
                 continue;
 
@@ -46,6 +49,8 @@ namespace Hamster
                 return -1;
             }
         }
+
+        current_task = nullptr;
 
         // Remove loop
         for (auto it = tasks.begin(); it != tasks.end();)
@@ -217,8 +222,10 @@ namespace Hamster
         }
         else if (result.status == RiscVEmulator::ExecuteResult::Status::ECALL)
         {
-            // TODO: System call
-            printf("System Call: ID %d\n", task.emulator.x[17]); // a7 is syscall ID
+            // Handle system call
+            int32_t syscall_id = task.emulator.x[17]; // a7 is syscall ID
+            int32_t syscall_result = Hamster::syscall(syscall_id);
+            task.emulator.x[10] = syscall_result; // a0 is syscall return value
             return 0;
         }
         else if (result.status == RiscVEmulator::ExecuteResult::Status::EBREAK)

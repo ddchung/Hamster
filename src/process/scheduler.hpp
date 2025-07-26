@@ -58,6 +58,15 @@ namespace Hamster
          */
         Process *get_process(uint32_t pid);
 
+        /**
+         * @brief Get the currently running task
+         * @return A non-owning pointer to the currently running task, or nullptr if no task is running
+         * @note This will return the currently running task
+         * @note This will only work from a system call or anything called from a system call
+         */
+        Task *get_current_task()
+        { return current_task; }
+
     private:
         
         int do_tick(Task &);
@@ -66,6 +75,8 @@ namespace Hamster
         Map<uint32_t, Task *> tasks;
 
         uint32_t next_tid = 1;
+
+        Task *current_task = nullptr;
     };
 
     extern Scheduler scheduler;
