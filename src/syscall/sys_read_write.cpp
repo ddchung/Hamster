@@ -24,13 +24,7 @@ namespace Hamster
 
         int32_t result = syscall(sys_read);
 
-        if (result < 0 && result != -EAGAIN)
-        {
-            // If an error occurred, clear the blocking operation
-            current_task->blocking_operation = BlockingOperation::NONE;
-            current_task->io_block_fd = -1;
-        }
-        else if (result < 0)
+        if (result < 0 && result == -EAGAIN)
         {
             // Still blocking, do nothing and check again next time
             return 0;
@@ -55,13 +49,7 @@ namespace Hamster
         // Call the system call
 
         int32_t result = syscall(sys_write);
-        if (result < 0 && result != -EAGAIN)
-        {
-            // If an error occurred, clear the blocking operation
-            current_task->blocking_operation = BlockingOperation::NONE;
-            current_task->io_block_fd = -1;
-        }
-        else if (result < 0)
+        if (result < 0 && result == -EAGAIN)
         {
             // Still blocking, do nothing and check again next time
             return 0;
