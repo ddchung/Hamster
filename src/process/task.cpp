@@ -7,6 +7,7 @@
 #include <cassert>
 #include <utility>
 #include <cstring>
+#include <algorithm>
 
 namespace Hamster
 {
@@ -104,6 +105,92 @@ namespace Hamster
 
     Task::~Task()
     {
+        // Remove from process tasks
+        if (process)
+        {
+            auto it = std::find(process->obj.tasks.begin(), process->obj.tasks.end(), this);
+            if (it != process->obj.tasks.end())
+            {
+                process->obj.tasks.erase(it);
+            }
+        }
+
+        // Cleanup resources, and send exit signal if necessary
+        if (process->refcount <= 1)
+        {
+            scheduler.adopt_children(process->obj.pid);
+
+            Process *parent = scheduler.get_process(process->obj.ppid);
+            if (parent)
+            {
+                if (exit_signal & 0xFF)
+                {
+                    sys_siginfo siginfo;
+
+                    siginfo.signo = exit_signal & 0xFF;
+                    siginfo.errno_value = 0;
+                    if ((exit_signal & 0xFF) == H_SIGCHLD)
+                    {
+                        if (is_wait_exited(exit_code))
+                            siginfo.code = H_CLD_EXITED;
+                        else if (is_wait_terminated(exit_code))
+                            siginfo.code = H_CLD_KILLED;
+                        else if (is_wait_terminated_coredump(exit_code))
+                            siginfo.code = H_CLD_DUMPED;
+                        else
+                            siginfo.code = H_CLD_STOPPED;
+
+                        siginfo.fields.child.pid = process->obj.pid;
+                        siginfo.fields.child.uid = process->obj.uid;
+                        siginfo.fields.child.status = exit_code;
+                        siginfo.fields.child.utime = 0;
+                        siginfo.fields.child.stime = 0;
+                    }
+                    else
+                    {
+                        siginfo.code = H_SI_USER;
+                        siginfo.fields.kill.pid = process->obj.pid;
+                        siginfo.fields.kill.uid = process->obj.uid;
+                    }
+                    parent->send_signal(siginfo);
+                }
+
+                ProcessStateChange state_change;
+
+                if (is_wait_exited(exit_code))
+                {
+                    state_change.type = ProcessStateChangeType::EXIT;
+                    state_change.exit_code = exit_code >> 8;
+                }
+                else
+                {
+                    state_change.type = ProcessStateChangeType::TERMINATE;
+                    state_change.signal = exit_code & 0x7F;
+                }
+
+                parent->children_state_changes[get_pid()] = state_change;
+            }
+
+            // Clean up resources
+            if (fd_table->refcount == 1)
+            {
+                for (auto &fd : fd_table->obj.fds)
+                {
+                    if (fd.type == UserFDType::VFS && fd.vfs_fd >= 0)
+                    {
+                        fd_refcount[fd.vfs_fd]--;
+                        if (fd_refcount[fd.vfs_fd] == 0)
+                        {
+                            vfs.close(fd.vfs_fd);
+                            fd_refcount.erase(fd.vfs_fd);
+                        }
+                        fd.vfs_fd = -1; // Mark as closed
+                    }
+                }
+                fd_table->obj.fds.clear();
+            }
+        }
+
         destroy_task_member(memory);
         destroy_task_member(fd_table);
         destroy_task_member(process);
@@ -151,6 +238,16 @@ namespace Hamster
 
     Process::~Process()
     {
+        // Remove from process group
+        if (pg)
+        {
+            auto it = std::find(pg->obj.processes.begin(), pg->obj.processes.end(), this);
+            if (it != pg->obj.processes.end())
+            {
+                pg->obj.processes.erase(it);
+            }
+        }
+
         destroy_task_member(signal_handlers);
         destroy_task_member(fs_info);
         destroy_task_member(pg);
@@ -234,6 +331,16 @@ namespace Hamster
 
     ProcessGroup::~ProcessGroup()
     {
+        // Remove from session
+        if (session)
+        {
+            auto it = std::find(session->obj.pgroups.begin(), session->obj.pgroups.end(), this);
+            if (it != session->obj.pgroups.end())
+            {
+                session->obj.pgroups.erase(it);
+            }
+        }
+
         destroy_task_member(session);
     }
 
@@ -399,7 +506,7 @@ namespace Hamster
             proc.fs_info = clone_flags & H_CLONE_FS ? ref_task_member(process->obj.fs_info) : copy_task_member(process->obj.fs_info);
             proc.ppid = clone_flags & H_CLONE_PARENT ? process->obj.ppid : process->obj.pid;
             proc.pid = 0;
-            proc.tasks.push_back(0);
+            proc.tasks.push_back(new_task);
 
             proc.uid = process->obj.uid;
             proc.euid = process->obj.euid;
@@ -422,11 +529,6 @@ namespace Hamster
         if (proc.pid == 0)
             proc.pid = new_id;
         
-        if (proc.tasks.empty())
-            proc.tasks.push_back(new_id);
-        else if (proc.tasks.size() == 1 && proc.tasks[0] == 0)
-            proc.tasks[0] = new_id;
-        
         return 0;
     }
 
@@ -434,81 +536,6 @@ namespace Hamster
     {
         is_dead = true;
         this->exit_code = exit_code;
-
-        if (process->refcount > 1)
-            return 0; // We are done here, as there are still other threads running
-
-        scheduler.adopt_children(process->obj.pid);
-
-        Process *parent = scheduler.get_process(process->obj.ppid);
-        if (parent)
-        {
-            if (exit_signal & 0xFF)
-            {
-                sys_siginfo siginfo;
-
-                siginfo.signo = exit_signal & 0xFF;
-                siginfo.errno_value = 0;
-                if ((exit_signal & 0xFF) == H_SIGCHLD)
-                {
-                    if (is_wait_exited(exit_code))
-                        siginfo.code = H_CLD_EXITED;
-                    else if (is_wait_terminated(exit_code))
-                        siginfo.code = H_CLD_KILLED;
-                    else if (is_wait_terminated_coredump(exit_code))
-                        siginfo.code = H_CLD_DUMPED;
-                    else
-                        siginfo.code = H_CLD_STOPPED;
-
-                    siginfo.fields.child.pid = process->obj.pid;
-                    siginfo.fields.child.uid = process->obj.uid;
-                    siginfo.fields.child.status = exit_code;
-                    siginfo.fields.child.utime = 0;
-                    siginfo.fields.child.stime = 0;
-                }
-                else
-                {
-                    siginfo.code = H_SI_USER;
-                    siginfo.fields.kill.pid = process->obj.pid;
-                    siginfo.fields.kill.uid = process->obj.uid;
-                }
-                parent->send_signal(siginfo);
-            }
-
-            ProcessStateChange state_change;
-
-            if (is_wait_exited(exit_code))
-            {
-                state_change.type = ProcessStateChangeType::EXIT;
-                state_change.exit_code = exit_code >> 8;
-            }
-            else
-            {
-                state_change.type = ProcessStateChangeType::TERMINATE;
-                state_change.signal = exit_code & 0x7F;
-            }
-
-            parent->children_state_changes[get_pid()] = state_change;
-        }
-
-        // Clean up resources
-        if (fd_table->refcount == 1)
-        {
-            for (auto &fd : fd_table->obj.fds)
-            {
-                if (fd.type == UserFDType::VFS && fd.vfs_fd >= 0)
-                {
-                    fd_refcount[fd.vfs_fd]--;
-                    if (fd_refcount[fd.vfs_fd] == 0)
-                    {
-                        vfs.close(fd.vfs_fd);
-                        fd_refcount.erase(fd.vfs_fd);
-                    }
-                    fd.vfs_fd = -1; // Mark as closed
-                }
-            }
-            fd_table->obj.fds.clear();
-        }
 
         return 0;
     }

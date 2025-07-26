@@ -143,7 +143,7 @@ namespace Hamster
     class Session
     {
     public:
-        Vector<uint32_t> pgroups;
+        Vector<class ProcessGroup*> pgroups;
         uint32_t sid;
     };
 
@@ -164,7 +164,7 @@ namespace Hamster
         ProcessGroup &operator=(ProcessGroup &&);
 
         TaskMember<Session> *session;
-        Vector<uint32_t> processes;
+        Vector<class Process*> processes;
         uint32_t pgid; // Process Group ID
     };
 
@@ -271,7 +271,7 @@ namespace Hamster
         TaskMember<ProcessGroup> *pg;
         TaskMember<SignalHandlers> *signal_handlers;
         TaskMember<FSInfo> *fs_info;
-        Vector<uint32_t> tasks;
+        Vector<Task*> tasks;
         Deque<sys_siginfo> shared_sig_queue;
         Map<uint32_t, ProcessStateChange> children_state_changes;
 

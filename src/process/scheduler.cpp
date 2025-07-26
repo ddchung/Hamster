@@ -50,8 +50,15 @@ namespace Hamster
         // Remove loop
         for (auto it = tasks.begin(); it != tasks.end();)
         {
-            if (it->second->is_dead)
+            if (it->second->is_dead && it->first != it->second->get_pid())
             {
+                // Remove dead non-leader tasks
+                dealloc(it->second);
+                it = tasks.erase(it);
+            }
+            else if (it->second->is_dead && it->second->process->obj.tasks.size() == 1)
+            {
+                // Remove dead leader tasks, but only if they are the last task in the process
                 dealloc(it->second);
                 it = tasks.erase(it);
             }
@@ -100,7 +107,7 @@ namespace Hamster
         task->process->obj.gid = 0;
         task->process->obj.egid = 0;
 
-        task->process->obj.tasks.push_back(next_tid);
+        task->process->obj.tasks.push_back(task);
 
         uint32_t tid = add_task(task);
 

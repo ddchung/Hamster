@@ -78,28 +78,28 @@ namespace Hamster
 
         if (file.openat_replace(path, OPEN_RDONLY) < 0)
             return -1;
+        
+        Task *leader = nullptr;
 
         // Kill all threads, except the thread group leader
-        for (uint32_t tid : tasks)
+        for (Task *task : tasks)
         {
-            if (tid != pid)
+            if (task->tid != pid)
             {
-                Task *t = scheduler.get_task(tid);
-                if (t)
-                {
-                    t->exit(make_wait_terminated(H_SIGKILL));
-                }
+                task->exit(make_wait_terminated(H_SIGKILL));
+            }
+            else
+            {
+                leader = task;
             }
         }
         tasks.clear();
-        tasks.push_back(pid);
+        tasks.push_back(leader);
 
-        Task *leader = scheduler.get_task(pid);
+        assert(leader != nullptr);
 
-        if (!leader)
-        {
-            return -1;
-        }
+        leader->is_dead = false;
+        leader->is_paused = false;
 
         MemorySpace &memory_space = leader->memory->obj.memory;
 
