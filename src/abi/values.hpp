@@ -28,6 +28,7 @@ namespace Hamster
     inline constexpr int OPEN_ASYNC = 020000;      // Enable signal-driven I/O
     inline constexpr int OPEN_DIRECTORY = 0200000; // Open directory
     inline constexpr int OPEN_NOFOLLOW = 0400000;  // Do not follow symbolic links
+    inline constexpr int OPEN_CLOEXEC = 02000000;  // Close-on-exec flag
 
     inline constexpr int H_SEEK_SET = 0; // Set file offset relative to start of file
     inline constexpr int H_SEEK_CUR = 1; // Set file offset relative to current position
@@ -81,6 +82,8 @@ namespace Hamster
     inline constexpr int FILE_SETFD = 2;            /* set/clear close_on_exec */
     inline constexpr int FILE_GETFL = 3;            /* get file->f_flags */
     inline constexpr int FILE_SETFL = 4;            /* set file->f_flags */
+
+    inline constexpr int H_FD_CLOEXEC = 1; // Close-on-exec flag
 
     inline constexpr int H_SIGHUP = 1;
     inline constexpr int H_SIGINT = 2;
