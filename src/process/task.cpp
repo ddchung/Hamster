@@ -106,7 +106,6 @@ namespace Hamster
     {
         destroy_task_member(memory);
         destroy_task_member(fd_table);
-        destroy_task_member(filesystem);
         destroy_task_member(process);
     }
 
@@ -128,7 +127,6 @@ namespace Hamster
         
         std::swap(memory, other.memory);
         std::swap(fd_table, other.fd_table);
-        std::swap(filesystem, other.filesystem);
         std::swap(process, other.process);
         std::swap(sig_queue, other.sig_queue);
         std::swap(emulator, other.emulator);
@@ -375,7 +373,6 @@ namespace Hamster
         new_task->emulator = emulator;
 
         new_task->memory = clone_flags & H_CLONE_VM ? ref_task_member(memory) : copy_task_member(memory);
-        new_task->filesystem = ref_task_member(filesystem);
         new_task->fd_table = clone_flags & H_CLONE_FILES ? ref_task_member(fd_table) : copy_task_member(fd_table);
         if (!(clone_flags & H_CLONE_FILES))
         {
@@ -383,7 +380,7 @@ namespace Hamster
             {
                 if (file.type == UserFDType::VFS && file.vfs_fd >= 0)
                 {
-                    filesystem->obj.fd_refcount[file.vfs_fd]++;
+                    fd_refcount[file.vfs_fd]++;
                 }
             }
         }
@@ -500,11 +497,11 @@ namespace Hamster
             {
                 if (fd.type == UserFDType::VFS && fd.vfs_fd >= 0)
                 {
-                    filesystem->obj.fd_refcount[fd.vfs_fd]--;
-                    if (filesystem->obj.fd_refcount[fd.vfs_fd] == 0)
+                    fd_refcount[fd.vfs_fd]--;
+                    if (fd_refcount[fd.vfs_fd] == 0)
                     {
-                        filesystem->obj.vfs.close(fd.vfs_fd);
-                        filesystem->obj.fd_refcount.erase(fd.vfs_fd);
+                        vfs.close(fd.vfs_fd);
+                        fd_refcount.erase(fd.vfs_fd);
                     }
                     fd.vfs_fd = -1; // Mark as closed
                 }
@@ -540,12 +537,12 @@ namespace Hamster
             // Absolute path
             const char *root_path = process->obj.fs_info->obj.root_path.c_str();
 
-            return filesystem->obj.vfs.open(root_path, OPEN_RDWR | OPEN_DIRECTORY);
+            return vfs.open(root_path, OPEN_RDWR | OPEN_DIRECTORY);
         }
         else if (thread_at_fd == -100)
         {
             const char *cwd_path = process->obj.fs_info->obj.cwd_path.c_str();
-            return filesystem->obj.vfs.open(cwd_path, OPEN_RDWR | OPEN_DIRECTORY);
+            return vfs.open(cwd_path, OPEN_RDWR | OPEN_DIRECTORY);
         }
         else
         {
@@ -563,7 +560,7 @@ namespace Hamster
                 return -1;
             }
 
-            return filesystem->obj.vfs.dup(user_fd.vfs_fd);
+            return vfs.dup(user_fd.vfs_fd);
         }
 
         // Should not reach here

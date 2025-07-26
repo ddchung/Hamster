@@ -66,9 +66,9 @@ namespace Hamster
 
     static const char *empty_strings[] = {nullptr};
 
-    int Scheduler::spawn(File file, const char *const *argv, const char *const *envp)
+    int Scheduler::spawn(const char *path, const char *const *argv, const char *const *envp)
     {
-        if (!file)
+        if (!path)
         {
             error = EBADF;
             return -1;
@@ -81,7 +81,6 @@ namespace Hamster
 
         task->memory = make_task_member<EmulatorMemory>();
         task->fd_table = make_task_member<FDTable>();
-        task->filesystem = make_task_member<Filesystem>();
         task->process = make_task_member<Process>();
 
         task->process->obj.pg = make_task_member<ProcessGroup>();
@@ -102,7 +101,7 @@ namespace Hamster
 
         task->process->obj.tasks.push_back(next_tid);
 
-        int ret = task->process->obj.exec(file, argv, envp);
+        int ret = task->process->obj.exec(path, argv, envp);
 
         if (ret < 0)
         {

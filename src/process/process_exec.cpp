@@ -65,8 +65,20 @@ namespace Hamster
         }
     } // namespace
 
-    int Process::exec_elf(File file, const char *const *argv, const char *const *envp)
+    int Process::exec_elf(const char *path, const char *const *argv, const char *const *envp)
     {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        // Open file
+        File file;
+
+        if (file.openat_replace(path, OPEN_RDONLY) < 0)
+            return -1;
+
         // Kill all threads, except the thread group leader
         for (uint32_t tid : tasks)
         {
@@ -109,16 +121,7 @@ namespace Hamster
         push_stack(memory_space, sp, 0);
 
 
-        const char *exec_fn[2]{nullptr, nullptr};
-
-        if (argv && argv[0])
-        {
-            exec_fn[0] = argv[0];
-        }
-        else
-        {
-            exec_fn[0] = "(Kernel): exec_fn without argv not implemented yet";
-        }
+        const char *exec_fn[]{path, nullptr};
 
         push_strings(memory_space, sp, exec_fn);
 
@@ -199,9 +202,14 @@ namespace Hamster
         return 0;
     }
 
-    int Process::exec(File file, const char *const *argv, const char *const *envp)
+    int Process::exec(const char *path, const char *const *argv, const char *const *envp)
     {
         // Either run a script or an executable
+
+        File file;
+
+        if (file.openat_replace(path, OPEN_RDONLY) < 0)
+            return -1;
 
         if (file.seek(0, H_SEEK_SET) < 0)
         {
@@ -217,15 +225,65 @@ namespace Hamster
 
         if (memcmp(magic, "#!", 2) == 0)
         {
-            // TODO: Handle script execution
-            // For now, we just return an error
-            error = ENOEXEC;
-            return -1;
+            String interpreter;
+
+            interpreter.reserve(32);
+
+            if (file.seek(2, H_SEEK_SET) < 0)
+                return -1;
+            
+            char c;
+
+            // Skip leading whitespace
+            while (file.read(&c, 1) == 1 && (c == ' ' || c == '\t'))
+                ;
+
+            while (file.read(&c, 1) == 1)
+            {
+                if (isspace(c))
+                    break;
+                interpreter.push_back(c);
+            }
+
+            String arg;
+
+            arg.reserve(4);
+
+            // Skip more whitespace
+            while (file.read(&c, 1) == 1 && (c == ' ' || c == '\t'))
+                ;
+
+            while (file.read(&c, 1) == 1)
+            {
+                if (isspace(c))
+                    break;
+                arg.push_back(c);
+            }
+
+            bool has_arg = !arg.empty();
+            if (interpreter.empty())
+            {
+                error = ENOEXEC;
+                return -1;
+            }
+
+            // Generate argv for the interpreter
+
+            Vector<const char *> interp_argv;
+            interp_argv.push_back(interpreter.c_str());
+            if (has_arg)
+            {
+                interp_argv.push_back(arg.c_str());
+            }
+            interp_argv.push_back(path);
+            interp_argv.push_back(nullptr);
+
+            return exec_elf(interpreter.c_str(), interp_argv.data(), envp);
         }
         else if (memcmp(magic, ELFMAG, SELFMAG) == 0)
         {
             // It's an ELF file, so we can use the exec_elf function
-            return exec_elf(file, argv, envp);
+            return exec_elf(path, argv, envp);
         }
         else
         {

@@ -34,13 +34,13 @@ namespace Hamster
 
         /**
          * @brief Make a new process from an executable
-         * @param file The executable
+         * @param path The path to the executable
          * @param argv The arguments to pass to the new process, nullptr for empty args
          * @param envp The environment variables to pass to the new process, nullptr for empty env
          * This sets the uid, gid, and ppid to 0 on the new process
          * @return 0 on success, -1 on error
          */
-        int spawn(File file, const char *const *argv = nullptr, const char *const *envp = nullptr);
+        int spawn(const char *path, const char *const *argv = nullptr, const char *const *envp = nullptr);
 
         /**
          * @brief For all processes that have PPID = `pid`, set their ppid to 1 (init)

@@ -7,7 +7,6 @@
 #include <memory/allocator.hpp>
 #include <memory/stl_map.hpp>
 #include <abi/structs.hpp>
-#include <filesystem/vfs.hpp>
 #include <filesystem/file.hpp>
 #include <cstdint>
 
@@ -116,15 +115,6 @@ namespace Hamster
     struct FDTable
     {
         Vector<UserFD> fds;
-    };
-
-    struct Filesystem
-    {
-        VFS vfs;
-
-        // VFS-level file descriptor reference count
-        // Used for dup and cloning
-        UnorderedMap<int, size_t> fd_refcount;
     };
 
     struct SignalHandler 
@@ -258,17 +248,17 @@ namespace Hamster
 
         /**
          * @brief Load an ELF executable into the process memory space
-         * @param file The ELF executable
+         * @param path The path to the ELF executable
          * @param argv The command line arguments for the ELF executable
          * @param envp The environment variables for the ELF executable
          * @return 0 on success, -1 on failure and set `error`
          * @note This will kill all threads, and replace the memory space
          */
-        int exec_elf(File file, const char *const *argv, const char *const *envp);
+        int exec_elf(const char *path, const char *const *argv, const char *const *envp);
 
         /**
          * @brief Load an executable into the process memory space
-         * @param file The executable
+         * @param path The path to the executable
          * @param argv The command line arguments for the executable
          * @param envp The environment variables for the executable
          * @return 0 on success, -1 on failure and set `error`
@@ -276,7 +266,7 @@ namespace Hamster
          * @note This can forward to `load_elf` if the executable is an ELF file, or run an
          *     * interpreter if the executable is a script
          */
-        int exec(File file, const char *const *argv, const char *const *envp);
+        int exec(const char *path, const char *const *argv, const char *const *envp);
 
         TaskMember<ProcessGroup> *pg;
         TaskMember<SignalHandlers> *signal_handlers;
@@ -432,7 +422,6 @@ namespace Hamster
 
         TaskMember<EmulatorMemory> *memory;
         TaskMember<FDTable> *fd_table;
-        TaskMember<Filesystem> *filesystem;
         TaskMember<Process> *process;
         Deque<sys_siginfo> sig_queue;
         RiscVEmulator emulator;
@@ -454,5 +443,8 @@ namespace Hamster
         bool is_paused : 1 = false;
         bool is_dead : 1 = false;
     };
+
+    // VFS file descriptor reference count
+    extern UnorderedMap<int, unsigned int> fd_refcount;
 } // namespace Hamster
 

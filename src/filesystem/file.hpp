@@ -9,7 +9,7 @@ namespace Hamster
     class File
     {
     public:
-        File(VFS *vfs, int fd = -1);
+        File(int fd = -1);
 
         File(const File &other);
 
@@ -24,9 +24,6 @@ namespace Hamster
         operator bool() const
         { return fd >= 0; }
 
-        VFS *get_vfs() const
-        { return vfs; }
-
         int get_fd() const
         { return fd; }
 
@@ -39,6 +36,9 @@ namespace Hamster
         // relative to the directory specified, even if the path is absolute.
 
         File openat(const char *path, int flags, int mode = 0);
+
+        // This replaces the current file
+        int openat_replace(const char *path, int flags, int mode = 0);
 
         int close();
 
@@ -94,7 +94,6 @@ namespace Hamster
         int set_flags(int flags);
 
     private:
-        VFS *vfs;
         int fd;
     };
 } // namespace Hamster
