@@ -181,6 +181,8 @@ namespace Hamster
     {
         ProcessStateChangeType type;
 
+        uint32_t uid, gid;
+
         union 
         {
             // EXIT
@@ -251,22 +253,24 @@ namespace Hamster
          * @param path The path to the ELF executable
          * @param argv The command line arguments for the ELF executable
          * @param envp The environment variables for the ELF executable
+         * @param dirfd The directory file descriptor to open the executable in, or -1 for root
          * @return 0 on success, -1 on failure and set `error`
          * @note This will kill all threads, and replace the memory space
          */
-        int exec_elf(const char *path, const char *const *argv, const char *const *envp);
+        int exec_elf(const char *path, const char *const *argv, const char *const *envp, int dirfd = -1);
 
         /**
          * @brief Load an executable into the process memory space
          * @param path The path to the executable
          * @param argv The command line arguments for the executable
          * @param envp The environment variables for the executable
+         * @param dirfd The directory file descriptor to open the executable in, or -1 for root
          * @return 0 on success, -1 on failure and set `error`
          * @note This will kill all threads, and replace the memory space
          * @note This can forward to `load_elf` if the executable is an ELF file, or run an
          *     * interpreter if the executable is a script
          */
-        int exec(const char *path, const char *const *argv, const char *const *envp);
+        int exec(const char *path, const char *const *argv, const char *const *envp, int dirfd = -1);
 
         TaskMember<ProcessGroup> *pg;
         TaskMember<SignalHandlers> *signal_handlers;
@@ -341,7 +345,7 @@ namespace Hamster
          * @brief Poll a blocking wait operation
          * @return -1 on an error, 0 otherwise
          */
-        int poll_wait() { return -1; }
+        int poll_wait();
 
         /**
          * @brief Do the exit routine for the task

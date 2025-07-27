@@ -9,6 +9,8 @@
 #include <cstring>
 #include <algorithm>
 
+#include <platform/platform.hpp>
+
 namespace Hamster
 {
     namespace
@@ -17,6 +19,9 @@ namespace Hamster
 
         void sighand_nop(Task *, sys_siginfo *, void *)
         {
+            Task *current_task = scheduler.get_current_task();
+            if (current_task)
+                _trace("TID %d received signal %d, doing nothing\n", current_task->tid, current_task->emulator.x[17]);
         }
 
         void sighand_term(Task *task, sys_siginfo *siginfo, void *)
@@ -24,6 +29,10 @@ namespace Hamster
             assert(task);
             assert(siginfo);
             task->exit(make_wait_terminated(siginfo->signo));
+
+            Task *current_task = scheduler.get_current_task();
+            if (current_task)
+                _trace("TID %d received signal %d, terminating\n", current_task->tid, siginfo->signo);
         }
 
         void sighand_dump(Task *task, sys_siginfo *siginfo, void *)
@@ -31,6 +40,10 @@ namespace Hamster
             assert(task);
             assert(siginfo);
             task->exit(make_wait_terminated_coredump(siginfo->signo));
+
+            Task *current_task = scheduler.get_current_task();
+            if (current_task)
+                _trace("TID %d received signal %d, terminating with core dump at PC 0x%08x\n", current_task->tid, siginfo->signo, current_task->emulator.pc);
         }
 
         void sighand_stop(Task *task, sys_siginfo * siginfo, void *)
@@ -48,6 +61,10 @@ namespace Hamster
                 state_change.signal = siginfo->signo;
                 parent_process->children_state_changes[task->get_pid()] = state_change;
             }
+
+            Task *current_task = scheduler.get_current_task();
+            if (current_task)
+                _trace("TID %d received signal %d, stopping\n", current_task->tid, siginfo->signo);
         }
 
         void sighand_cont(Task *task, sys_siginfo *siginfo, void *)
