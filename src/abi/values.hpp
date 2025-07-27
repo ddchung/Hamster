@@ -85,6 +85,8 @@ namespace Hamster
 
     inline constexpr int H_FD_CLOEXEC = 1; // Close-on-exec flag
 
+    inline constexpr int H_AT_FDCWD = -100; // Special value for current working directory
+
     inline constexpr int H_SIGHUP = 1;
     inline constexpr int H_SIGINT = 2;
     inline constexpr int H_SIGQUIT = 3;
@@ -223,6 +225,18 @@ namespace Hamster
     inline constexpr int H_CLD_STOPPED = 5;   /* child has stopped */
     inline constexpr int H_CLD_CONTINUED = 6; /* stopped child has continued */
     inline constexpr int H_NSIGCHLD = 6;
+
+    inline constexpr int H_WNOHANG = 0x00000001;
+    inline constexpr int H_WUNTRACED = 0x00000002;
+    inline constexpr int H_WSTOPPED = H_WUNTRACED;
+    inline constexpr int H_WEXITED = 0x00000004;
+    inline constexpr int H_WCONTINUED = 0x00000008;
+    inline constexpr int H_WNOWAIT = 0x01000000;
+    
+    inline constexpr int H_P_ALL = 0;
+    inline constexpr int H_P_PID = 1;
+    inline constexpr int H_P_PGID = 2;
+    inline constexpr int H_P_PIDFD = 3;
 
     inline bool is_directory(int mode) { return (mode & STAT_IFMT) == STAT_IFDIR; }
     inline bool is_character_device(int mode) { return (mode & STAT_IFMT) == STAT_IFCHR; }
