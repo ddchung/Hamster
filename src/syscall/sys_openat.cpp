@@ -32,6 +32,14 @@ namespace Hamster
         vfs.close(vfs_at_fd);
         dealloc(pathname);
 
+        if (new_fd < 0)
+        {
+            return cvt_error();
+        }
+
+        // Set its reference count to 1, since we just opened it
+        fd_refcount[new_fd] = 1;
+
         int new_thread_fd = current_task->get_unused_fd_index();
         if (new_thread_fd < 0)
         {
