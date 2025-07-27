@@ -37,10 +37,12 @@ namespace Hamster
          * @param path The path to the executable
          * @param argv The arguments to pass to the new process, nullptr for empty args
          * @param envp The environment variables to pass to the new process, nullptr for empty env
+         * @param dirfd The directory file descriptor to open the executable in, or -1 for root
          * This sets the uid, gid, and ppid to 0 on the new process
          * @return 0 on success, -1 on error
          */
-        int spawn(const char *path, const char *const *argv = nullptr, const char *const *envp = nullptr);
+        int spawn(const char *path, const char *const *argv = nullptr, const char *const *envp = nullptr,
+                  int dirfd = -1);
 
         /**
          * @brief For all processes that have PPID = `pid`, set their ppid to 1 (init)
@@ -69,6 +71,9 @@ namespace Hamster
 
         size_t num_tasks() const
         { return tasks.size(); }
+
+        Map<uint32_t, Task *> &get_tasks()
+        { return tasks; }
 
     private:
         

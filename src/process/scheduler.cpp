@@ -78,7 +78,7 @@ namespace Hamster
 
     static const char *empty_strings[] = {nullptr};
 
-    int Scheduler::spawn(const char *path, const char *const *argv, const char *const *envp)
+    int Scheduler::spawn(const char *path, const char *const *argv, const char *const *envp, int dirfd)
     {
         if (!path)
         {
@@ -122,7 +122,7 @@ namespace Hamster
             return -1;
         }
 
-        int ret = task->process->obj.exec(path, argv, envp);
+        int ret = task->process->obj.exec(path, argv, envp, dirfd);
 
         if (ret < 0)
         {

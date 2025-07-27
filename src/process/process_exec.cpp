@@ -65,7 +65,7 @@ namespace Hamster
         }
     } // namespace
 
-    int Process::exec_elf(const char *path, const char *const *argv, const char *const *envp)
+    int Process::exec_elf(const char *path, const char *const *argv, const char *const *envp, int dirfd)
     {
         if (!path)
         {
@@ -74,7 +74,9 @@ namespace Hamster
         }
 
         // Open file
-        File file;
+
+        // Note: its fine if this fails, file would be replaced anyway
+        File file{vfs.dup(dirfd)};
 
         if (file.openat_replace(path, OPEN_RDONLY) < 0)
             return -1;
@@ -202,11 +204,12 @@ namespace Hamster
         return 0;
     }
 
-    int Process::exec(const char *path, const char *const *argv, const char *const *envp)
+    int Process::exec(const char *path, const char *const *argv, const char *const *envp, int dirfd)
     {
         // Either run a script or an executable
 
-        File file;
+        // Note: its fine if this fails, file would be replaced anyway
+        File file{vfs.dup(dirfd)};
 
         if (file.openat_replace(path, OPEN_RDONLY) < 0)
             return -1;
