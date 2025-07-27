@@ -37,6 +37,8 @@ namespace Hamster
         // Copy to a0 register (return value)
 
         current_task->emulator.x[10] = result;
+        current_task->blocking_operation = BlockingOperation::NONE;
+        current_task->io_block_fd = -1; // Reset the blocking FD
         return 0;
     }
 
@@ -62,6 +64,8 @@ namespace Hamster
 
         // Copy to a0 register (return value)
         current_task->emulator.x[10] = result;
+        current_task->blocking_operation = BlockingOperation::NONE;
+        current_task->io_block_fd = -1; // Reset the blocking FD
         return 0;
     }
 
