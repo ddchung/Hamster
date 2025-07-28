@@ -18,7 +18,7 @@ namespace Hamster
              * This system call terminates the calling process.
              * @note Userspace sig: `void exit(int status);`
              */
-            EXIT = 93,
+            EXIT = 93,//
 
             /**
              * @brief Get the PID of the calling process
@@ -81,14 +81,14 @@ namespace Hamster
              * This system call creates either a new process or a new thread, depending on the flags provided.
              * @note Userspace sig: `int clone(unsigned long flags, void *stack, int *ptid, int *ctid, unsigned long newtls);`
              */
-            CLONE = 220,
+            CLONE = 220,//
 
             /**
              * @brief Replace the current process image with a new one
              * This system call replaces the current process image with a new program.
              * @note Userspace sig: `int execve(const char *filename, char *const argv[], char *const envp[]);`
              */
-            EXECVE = 221,
+            EXECVE = 221,//
 
             /**
              * @brief Replace the current process image with a new one using file descriptor
@@ -96,7 +96,7 @@ namespace Hamster
              * to a directory file descriptor, instead of the CWD
              * @note Userspace sig: `int execveat(int dirfd, const char *filename, char *const argv[], char *const envp[], int flags);`
              */
-            EXECVEAT = 281,
+            EXECVEAT = 281,//
 
             /**
              * @brief Wait for a child process to change state
@@ -104,7 +104,7 @@ namespace Hamster
              * changes state, such as exiting or stopping.
              * @note Userspace sig: `pid_t waitid(int which, pid_t pid, struct siginfo *infop, int options, struct rusage *ru);`, `pid_t` = `int`
              */
-            WAITID = 95,
+            WAITID = 95,//
 
             /**
              * @brief Wait for a child process to change state
@@ -187,28 +187,28 @@ namespace Hamster
              * @note Userspace sig: `int openat(int dfd, const char *pathname, int flags, mode_t mode);`, `mode_t` = `unsigned int`
              * @note The `mode_t` is used only if `flags` includes `OPEN_CREAT`
              */
-            OPENAT = 56,
+            OPENAT = 56,//
 
             /**
              * @brief Read from a file descriptor
              * This system call reads data from a file descriptor into a buffer.
              * @note Userspace sig: `ssize_t read(int fd, void *buf, size_t count);`, `ssize_t` = `long`
              */
-            READ = 63,
+            READ = 63,//
 
             /**
              * @brief Write to a file descriptor
              * This system call writes data from a buffer to a file descriptor.
              * @note Userspace sig: `ssize_t write(int fd, const void *buf, size_t count);`, `ssize_t` = `long`
              */
-            WRITE = 64,
+            WRITE = 64,//
 
             /**
              * @brief Close a file descriptor
              * This system call closes a file descriptor, releasing any resources associated with it.
              * @note Userspace sig: `int close(int fd);`
              */
-            CLOSE = 57,
+            CLOSE = 57,//
 
             /**
              * @brief Copy data from one file descriptor to another
@@ -301,7 +301,7 @@ namespace Hamster
              * This system call changes the file offset of a file descriptor to a specified position.
              * @note Userspace sig: `int llseek(int fd, unsigned long off_high, unsigned long off_low, loff_t *result, int whence);`, `loff_t` = `long long`
              */
-            LLSEEK = 62,
+            LLSEEK = 62,//
 
             /**
              * @brief Get file status of a path relative to a directory file descriptor
@@ -317,7 +317,7 @@ namespace Hamster
              * and timestamps.
              * @note Userspace sig: `int newfstat(int fd, struct stat *statbuf);`
              */
-            NEWFSTAT = 80,
+            NEWFSTAT = 80,//
 
             /**
              * @brief Duplicate a file descriptor to the lowest available file descriptor
@@ -421,7 +421,7 @@ namespace Hamster
              * @brief Set the program data's end (the break)
              * @note Userspace sig: `void *brk(void *end_data_segment);`
              */
-            BRK = 214,
+            BRK = 214,//
 
             /**
              * @brief Memory map a file or device into memory
@@ -477,13 +477,13 @@ namespace Hamster
              * @brief Get the user ID of the calling process
              * @note Userspace sig: `uid_t getuid(void);`, `uid_t` = `unsigned int`
              */
-            GETUID = 174,
+            GETUID = 174,//
 
             /**
              * @brief Get effective user ID of the calling process
              * @note Userspace sig: `uid_t geteuid(void);`, `uid_t` = `unsigned int`
              */
-            GETEUID = 175,
+            GETEUID = 175,//
 
             /**
              * @brief Get the real, effective, and saved set user IDs of the calling process
