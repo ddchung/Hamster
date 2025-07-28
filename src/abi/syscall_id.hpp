@@ -67,7 +67,7 @@ namespace Hamster
              * This system call allows the calling process to yield the CPU, allowing other processes to run
              * @note Userspace sig: `void sched_yield(void);`
              */
-            SCHED_YIELD = 124,
+            SCHED_YIELD = 124,//
 
             /**
              * @brief Get the PID of the parent process
@@ -119,14 +119,14 @@ namespace Hamster
              * This system call sends a signal to a specified process or process group.
              * @note Userspace sig: `int kill(pid_t pid, int sig);`,
              */
-            KILL = 129,
+            KILL = 129,//
 
             /**
              * @brief Send a signal to a thread
              * This system call sends a signal to a specified thread.
              * @note Userspace sig: `int tgkill(int tgid, int tid, int sig);`
              */
-            TGKILL = 234,
+            TGKILL = 234,//
 
             /**
              * @brief Get random numbers
@@ -533,7 +533,7 @@ namespace Hamster
              * policy or priority.
              * @note Userspace sig: `int prctl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5);`
              */
-            PRCTL = 167,
+            PRCTL = 167,//
         };
     } // namespace SyscallID
 } // namespace Hamster
