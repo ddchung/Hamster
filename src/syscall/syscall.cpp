@@ -503,5 +503,8 @@ namespace Hamster
     __attribute__((weak)) int32_t sys_ioctl(int32_t fd, int32_t request, uint32_t arg) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_fcntl64(int32_t fd, int32_t cmd,
                       uint32_t arg) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_prctl(int32_t option, uint32_t arg2,
+                      uint32_t arg3, uint32_t arg4,
+                      uint32_t arg5) { return -ENOSYS; }
 } // namespace Hamster
 

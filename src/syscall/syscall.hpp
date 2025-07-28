@@ -126,6 +126,9 @@ namespace Hamster
     int32_t sys_ioctl(int32_t fd, int32_t request, uint32_t arg);
     int32_t sys_fcntl64(int32_t fd, int32_t cmd,
                       uint32_t arg);
+    int32_t sys_prctl(int32_t option, uint32_t arg2,
+                      uint32_t arg3, uint32_t arg4,
+                      uint32_t arg5);
     
     /**
      * @brief Call a system call

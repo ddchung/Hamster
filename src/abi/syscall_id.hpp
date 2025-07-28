@@ -526,6 +526,14 @@ namespace Hamster
              * @note Userspace sig: `int fcntl64(int fd, int cmd, ...);`
              */
             FCNTL64 = 25,
+
+            /**
+             * @brief Manipulate behavior of the calling process
+             * This system call manipulates the behavior of the calling process, such as setting its scheduling
+             * policy or priority.
+             * @note Userspace sig: `int prctl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5);`
+             */
+            PRCTL = 167,
         };
     } // namespace SyscallID
 } // namespace Hamster
