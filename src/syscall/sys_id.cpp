@@ -47,16 +47,18 @@ namespace Hamster
         return current_task->get_sid();
     }
 
-    int32_t sys_setpgid(int32_t pid, int32_t pgid)
+    int32_t sys_setpgid(int32_t spid, int32_t spgid)
     {
+        if (spid < 0 || spgid < 0)
+        {
+            error = EINVAL;
+            return cvt_error();
+        }
+
+        uint32_t pid = spid;
+        uint32_t pgid = spgid;
         Task *current_task = scheduler.get_current_task();
         assert(current_task != nullptr);
-
-        if (pid < 0 || pgid < 0)
-        {
-            errno = EINVAL;
-            return -1;
-        }
 
         Process *process;
 
