@@ -340,6 +340,9 @@ namespace Hamster
 
     int RiscVEmulator::read32(uint32_t addr, uint32_t &out)
     {
+        if (addr < 128)
+            return -1; // Trap NULL
+
         if (!memory->memory.is_allocated(addr) ||
             !memory->memory.is_allocated(addr + sizeof(out) - 1))
         {
@@ -351,6 +354,9 @@ namespace Hamster
 
     int RiscVEmulator::read16(uint32_t addr, uint16_t &out)
     {
+        if (addr < 128)
+            return -1; // Trap NULL
+
         if (!memory->memory.is_allocated(addr) ||
             !memory->memory.is_allocated(addr + sizeof(out) - 1))
         {
@@ -362,6 +368,9 @@ namespace Hamster
 
     int RiscVEmulator::read8(uint32_t addr, uint8_t &out)
     {
+        if (addr < 128)
+            return -1; // Trap NULL
+
         if (!memory->memory.is_allocated(addr) ||
             !memory->memory.is_allocated(addr + sizeof(out) - 1))
         {
@@ -373,22 +382,34 @@ namespace Hamster
 
     int RiscVEmulator::write32(uint32_t addr, uint32_t value)
     {
+        if (addr < 128)
+            return -1; // Trap NULL
+
         // Note that writing to unallocating memory will allocate it
         return memory->memory.memcpy(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::write16(uint32_t addr, uint16_t value)
     {
+        if (addr < 128)
+            return -1; // Trap NULL
+
         return memory->memory.memcpy(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::write8(uint32_t addr, uint8_t value)
     {
+        if (addr < 128)
+            return -1; // Trap NULL
+
         return memory->memory.memcpy(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::readf32(uint32_t addr, float &out)
     {
+        if (addr < 128)
+            return -1; // Trap NULL
+
         if (!memory->memory.is_allocated(addr) ||
             !memory->memory.is_allocated(addr + sizeof(out) - 1))
         {
@@ -400,6 +421,9 @@ namespace Hamster
 
     int RiscVEmulator::readf64(uint32_t addr, double &out)
     {
+        if (addr < 128)
+            return -1; // Trap NULL
+
         if (!memory->memory.is_allocated(addr) ||
             !memory->memory.is_allocated(addr + sizeof(out) - 1))
         {
@@ -411,12 +435,18 @@ namespace Hamster
 
     int RiscVEmulator::writef32(uint32_t addr, float value)
     {
+        if (addr < 128)
+            return -1; // Trap NULL
+
         // Note that writing to unallocating memory will allocate it
         return memory->memory.memcpy(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::writef64(uint32_t addr, double value)
     {
+        if (addr < 128)
+            return -1; // Trap NULL
+
         // Note that writing to unallocating memory will allocate it
         return memory->memory.memcpy(addr, &value, sizeof(value));
     }
@@ -742,27 +772,93 @@ namespace Hamster
                 // Base branch instructions
             case FUNCT3_BEQ:
                 if (x[extract_rs1(inst)] == x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst) - 4;
+                {
+                    auto new_pc = pc + extract_imm_b(inst) - 4;
+                    // Ensure that it is readable
+                    uint32_t dummy;
+                    if (read32(new_pc, dummy) != 0)
+                    {
+                        result.status = ExecuteResult::Status::IllegalLoad;
+                        result.illegal_load.address = new_pc;
+                        return result;
+                    }
+                    pc = new_pc;
+                }
                 break;
             case FUNCT3_BNE:
                 if (x[extract_rs1(inst)] != x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst) - 4;
+                {
+                    auto new_pc = pc + extract_imm_b(inst) - 4;
+                    // Ensure that it is readable
+                    uint32_t dummy;
+                    if (read32(new_pc, dummy) != 0)
+                    {
+                        result.status = ExecuteResult::Status::IllegalLoad;
+                        result.illegal_load.address = new_pc;
+                        return result;
+                    }
+                    pc = new_pc;
+                }
                 break;
             case FUNCT3_BLT:
                 if ((int32_t)x[extract_rs1(inst)] < (int32_t)x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst) - 4;
+                {
+                    auto new_pc = pc + extract_imm_b(inst) - 4;
+                    // Ensure that it is readable
+                    uint32_t dummy;
+                    if (read32(new_pc, dummy) != 0)
+                    {
+                        result.status = ExecuteResult::Status::IllegalLoad;
+                        result.illegal_load.address = new_pc;
+                        return result;
+                    }
+                    pc = new_pc;
+                }
                 break;
             case FUNCT3_BGE:
                 if ((int32_t)x[extract_rs1(inst)] >= (int32_t)x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst) - 4;
+                {
+                    auto new_pc = pc + extract_imm_b(inst) - 4;
+                    // Ensure that it is readable
+                    uint32_t dummy;
+                    if (read32(new_pc, dummy) != 0)
+                    {
+                        result.status = ExecuteResult::Status::IllegalLoad;
+                        result.illegal_load.address = new_pc;
+                        return result;
+                    }
+                    pc = new_pc;
+                }
                 break;
             case FUNCT3_BLTU:
                 if (x[extract_rs1(inst)] < x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst) - 4;
+                {
+                    auto new_pc = pc + extract_imm_b(inst) - 4;
+                    // Ensure that it is readable
+                    uint32_t dummy;
+                    if (read32(new_pc, dummy) != 0)
+                    {
+                        result.status = ExecuteResult::Status::IllegalLoad;
+                        result.illegal_load.address = new_pc;
+                        return result;
+                    }
+                    pc = new_pc;
+                }
                 break;
             case FUNCT3_BGEU:
                 if (x[extract_rs1(inst)] >= x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst) - 4;
+                {
+                    auto new_pc = pc + extract_imm_b(inst) - 4;
+                    // Ensure that it is readable
+                    uint32_t dummy;
+                    if (read32(new_pc, dummy) != 0)
+                    {
+                        result.status = ExecuteResult::Status::IllegalLoad;
+                        result.illegal_load.address = new_pc;
+                        return result;
+                    }
+                    pc = new_pc;
+                }
                 break;
             default:
                 // Unknown funct3
@@ -776,14 +872,32 @@ namespace Hamster
         {
             // JAL
             x[extract_rd(inst)] = pc; // + 4 - 4
-            pc += extract_imm_j(inst) - 4;
+            auto new_pc = pc + extract_imm_j(inst) - 4;
+            // Ensure that it is readable
+            uint32_t dummy;
+            if (read32(new_pc, dummy) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = new_pc;
+                return result;
+            }
+            pc = new_pc;
             break;
         }
         case OP_JALR:
         {
             // JALR
             x[extract_rd(inst)] = pc;
-            pc = (x[extract_rs1(inst)] + extract_imm_i(inst)) & ~0x1;
+            auto new_pc = (x[extract_rs1(inst)] + extract_imm_i(inst)) & ~0x1;
+            // Ensure that it is readable
+            uint32_t dummy;
+            if (read32(new_pc, dummy) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = new_pc;
+                return result;
+            }
+            pc = new_pc;
             break;
         }
         case OP_LUI:
