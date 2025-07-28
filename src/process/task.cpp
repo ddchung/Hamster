@@ -348,6 +348,30 @@ namespace Hamster
         return 0;
     }
 
+    int Process::join_process_group(TaskMember<ProcessGroup> *pg)
+    {
+        // Leave current process group if any
+        if (this->pg)
+        {
+            auto it = std::find(this->pg->obj.processes.begin(), this->pg->obj.processes.end(), this);
+            if (it != this->pg->obj.processes.end())
+            {
+                this->pg->obj.processes.erase(it);
+            }
+            destroy_task_member(this->pg);
+            this->pg = nullptr;
+        }
+
+        if (pg)
+        {
+            // Join new process group
+            this->pg = ref_task_member(pg);
+            pg->obj.processes.push_back(this);
+        }
+
+        return 0;
+    }
+
     ProcessGroup::~ProcessGroup()
     {
         // Remove from session

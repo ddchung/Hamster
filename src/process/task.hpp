@@ -272,6 +272,15 @@ namespace Hamster
          */
         int exec(const char *path, const char *const *argv, const char *const *envp, int dirfd = -1);
 
+        /**
+         * @brief Join a process group
+         * @param pg The process group to join
+         * @return 0 on success, -1 on failure and set `error`
+         * @note This will leave the current pgroup, if any, and join the new pgroup
+         * @note If pg is null, it will just leave the current pgroup
+         */
+        int join_process_group(TaskMember<ProcessGroup> *pg);
+
         TaskMember<ProcessGroup> *pg;
         TaskMember<SignalHandlers> *signal_handlers;
         TaskMember<FSInfo> *fs_info;
