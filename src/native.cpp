@@ -848,10 +848,8 @@ namespace
 
         int ioctl(int req, Hamster::IoctlArg args) override
         {
-            if (args.p)
-                return ::ioctl(STDIN_FILENO, req, args.p);
-            else
-                return ::ioctl(STDIN_FILENO, req, args.i);
+            Hamster::error = ENOTTY;
+            return -1;
         }
 
         int get_flags() override
