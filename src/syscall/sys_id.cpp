@@ -1,0 +1,141 @@
+// Hamster system calls for Thread, Process, Process group and session IDs
+
+#include <syscall/syscall.hpp>
+#include <process/scheduler.hpp>
+#include <errno/errno.h>
+#include <algorithm>
+
+namespace Hamster
+{
+    int32_t sys_gettid()
+    {
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
+
+        return current_task->tid;
+    }
+
+    int32_t sys_getpid()
+    {
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
+
+        return current_task->get_pid();
+    }
+
+    int32_t sys_getppid()
+    {
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
+
+        return current_task->process->obj.ppid;
+    }
+
+    int32_t sys_getpgid()
+    {
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
+
+        return current_task->get_pgid();
+    }
+
+    int32_t sys_getsid()
+    {
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
+
+        return current_task->get_sid();
+    }
+
+    int32_t sys_setpgid(int32_t pid, int32_t pgid)
+    {
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
+
+        if (pid < 0 || pgid < 0)
+        {
+            errno = EINVAL;
+            return -1;
+        }
+
+        Process *process;
+
+        if (pid == 0)
+        {
+            process = &current_task->process->obj;
+        }
+        else
+        {
+            process = scheduler.get_process(pid);
+            if (process == nullptr)
+            {
+                error = ESRCH;
+                return cvt_error();
+            }
+
+            // Check if it is the calling process or one of its children
+            if (process->pid != current_task->get_pid() && process->ppid != current_task->get_pid())
+            {
+                error = ESRCH;
+                return cvt_error();
+            }
+        }
+        if (pgid != 0)
+        {
+            Process *pg_process = scheduler.get_process(pgid);
+            if (pg_process == nullptr || pg_process->get_pgid() != pgid)
+            {
+                // Process group does not exist
+                error = EPERM;
+                return cvt_error();
+            }
+
+            // Check if the old and new process groups belong to the same session
+            if (process->get_sid() != pg_process->get_sid())
+            {
+                error = EPERM;
+                return cvt_error();
+            }
+
+            process->join_process_group(pg_process->pg);
+        }
+        else
+        {
+            // Set the process group ID to the process ID
+            auto old_session = process->pg ? process->pg->obj.session : nullptr;
+            process->join_process_group(nullptr);
+            process->pg = make_task_member<ProcessGroup>();
+            process->pg->obj.pgid = process->pid;
+            process->pg->obj.processes.push_back(process);
+            process->pg->obj.session = old_session ? ref_task_member(old_session) : make_task_member<Session>();
+            process->pg->obj.session->obj.pgroups.push_back(&process->pg->obj);
+        }
+        return 0;
+    }
+
+    int32_t sys_setsid()
+    {
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
+
+        Process &process = current_task->process->obj;
+
+        if (process.get_pgid() == process.pid)
+        {
+            // Already a process group leader
+            error = EPERM;
+            return cvt_error();
+        }
+
+        process.join_process_group(nullptr);
+        process.pg = make_task_member<ProcessGroup>();
+        process.pg->obj.pgid = process.pid;
+        process.pg->obj.processes.push_back(&process);
+        process.pg->obj.session = make_task_member<Session>();
+        process.pg->obj.session->obj.sid = process.pid;
+
+        return process.get_sid();
+    }
+
+} // namespace Hamster
+

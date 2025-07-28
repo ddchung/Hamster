@@ -25,42 +25,42 @@ namespace Hamster
              * This system call retrieves the process ID of the calling process.
              * @note Userspace sig: `pid_t getpid(void);`, `pid_t` = `int`
              */
-            GETPID = 172,
+            GETPID = 172,//
 
             /**
              * @brief Get the Thread ID of the calling thread
              * This system call retrieves the thread ID of the calling thread.
              * @note Userspace sig: `pid_t gettid(void);`, `pid_t` = `int`
              */
-            GETTID = 178,
+            GETTID = 178,//
 
             /**
              * @brief Set the PGID of a process
              * This system call sets the process group ID of the specified process.
              * @note Userspace sig: `int setpgid(pid_t pid, pid_t pgid);`
              */
-            SETPGID = 154,
+            SETPGID = 154,//
 
             /**
              * @brief Get the PGID of a process
              * This system call retrieves the process group ID of the specified process.
              * @note Userspace sig: `pid_t getpgid(pid_t pid);`, `pid_t` = `int`
              */
-            GETPGID = 155,
+            GETPGID = 155,//
 
             /**
              * @brief Get the SID of a process
              * This system call retrieves the session ID of the specified process.
              * @note Userspace sig: `pid_t getsid(pid_t pid);`, `pid_t` = `int`
              */
-            GETSID = 156,
+            GETSID = 156,//
 
             /**
              * @brief Create a new session
              * This system call creates a new session and sets the calling process as the session leader.
              * @note Userspace sig: `pid_t setsid(void);`, `pid_t` = `int`
              */
-            SETSID = 157,
+            SETSID = 157,//
 
             /**
              * @brief Voluntarily yield the CPU
@@ -74,7 +74,7 @@ namespace Hamster
              * This system call retrieves the process ID of the parent process of the calling process.
              * @note Userspace sig: `pid_t getppid(void);`, `pid_t` = `int`
              */
-            GETPPID = 173,
+            GETPPID = 173,//
 
             /**
              * @brief Clone a task
@@ -142,14 +142,14 @@ namespace Hamster
              * This sets the effective UID, and if the EUID was 0, then all the other UIDs are also set
              * @note Userspace sig: `int setuid(uid_t uid);`, `uid_t` = `unsigned int`
              */
-            SETUID = 146,
+            SETUID = 146,//
 
             /**
              * @brief Set the real and effective user IDs of the calling process
              * This sets the real UID and effective UID of the calling process.
              * @note Userspace sig: `int setreuid(uid_t ruid, uid_t euid);`, `uid_t` = `unsigned int`
              */
-            SETREUID = 145,
+            SETREUID = 145,//
 
             /**
              * @brief Set the real, effective, and saved set user IDs of the calling process
@@ -157,21 +157,21 @@ namespace Hamster
              * Note that on Hamster, the saved set user ID is not implemented yet, so it is ignored
              * @note Userspace sig: `int setresuid(uid_t ruid, uid_t euid, uid_t suid);`, `uid_t` = `unsigned int`
              */
-            SETRESUID = 147,
+            SETRESUID = 147,//
 
             /**
              * @brief Set the group ID of the calling process
              * This sets the effective GID, and if the EGID was 0, then all the other GIDs are also set
              * @note Userspace sig: `int setgid(gid_t gid);`, `gid_t` = `unsigned int`
              */
-            SETGID = 144,
+            SETGID = 144,//
 
             /**
              * @brief Set the real and effective group IDs of the calling process
              * This sets the real GID and effective GID of the calling process.
              * @note Userspace sig: `int setregid(gid_t rgid, gid_t egid);`, `gid_t` = `unsigned int`
              */
-            SETREGID = 143,
+            SETREGID = 143,//
 
             /**
              * @brief Set the real, effective, and saved set group IDs of the calling process
@@ -179,7 +179,7 @@ namespace Hamster
              * Note that on Hamster, the saved set group ID is not implemented yet, so it is ignored
              * @note Userspace sig: `int setresgid(gid_t rgid, gid_t egid, gid_t sgid);`, `gid_t` = `unsigned int`
              */
-            SETRESGID = 149,
+            SETRESGID = 149,//
 
             /**
              * @brief Open a file
@@ -491,19 +491,19 @@ namespace Hamster
              * Note that on Hamster, the saved set user ID is not implemented yet, so it is equal to the effective user ID
              * @note Userspace sig: `int getresuid(uid_t *ruid, uid_t *euid, uid_t *suid);`, `uid_t`
              */
-            GETRESUID = 148,
+            GETRESUID = 148,//
 
             /**
              * @brief Get the group ID of the calling process
              * @note Userspace sig: `gid_t getgid(void);`, `gid_t` = `unsigned int`
              */
-            GETGID = 176,
+            GETGID = 176,//
 
             /**
              * @brief Get effective group ID of the calling process
              * @note Userspace sig: `gid_t getegid(void);`, `gid_t` = `unsigned int`
              */
-            GETEGID = 177,
+            GETEGID = 177,//
 
             /**
              * @brief Get the real, effective, and saved set group IDs of the calling process
@@ -511,13 +511,13 @@ namespace Hamster
              * Note that on Hamster, the saved set group ID is not implemented yet, so it is equal to the effective group ID
              * @note Userspace sig: `int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid);`, `gid_t` = `unsigned int`
              */
-            GETRESGID = 150,
+            GETRESGID = 150,//
 
             /**
              * ioctl.
              * @note Userspace sig: `int ioctl(int fd, int request, ...);`
              */
-            IOCTL = 29,
+            IOCTL = 29,//
 
             /**
              * @brief Perform an operation on a file descriptor
