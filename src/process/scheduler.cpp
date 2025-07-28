@@ -5,6 +5,7 @@
 #include <errno/errno.h>
 #include <memory/allocator.hpp>
 #include <syscall/syscall.hpp>
+#include <cstring>
 
 namespace Hamster
 {
@@ -92,9 +93,12 @@ namespace Hamster
         Task *task = alloc<Task>();
 
         task->memory = make_task_member<EmulatorMemory>();
+        task->program_brk = make_task_member<uint32_t>();
         task->emulator.memory = &task->memory->obj;
         task->fd_table = make_task_member<FDTable>();
         task->process = make_task_member<Process>();
+
+        memset(task->emulator.x, 0, sizeof(task->emulator.x));
 
         task->process->obj.pg = make_task_member<ProcessGroup>();
         task->process->obj.signal_handlers = make_task_member<SignalHandlers>();

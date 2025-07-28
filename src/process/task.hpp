@@ -283,7 +283,6 @@ namespace Hamster
         uint32_t ppid; // Parent Process ID
         uint32_t uid, euid;
         uint32_t gid, egid;
-        uint32_t brk;
     };
 
     enum class BlockingOperation : uint8_t
@@ -425,6 +424,7 @@ namespace Hamster
         int get_relative_fd(const char *path, int at_fd = -100);
 
         TaskMember<EmulatorMemory> *memory;
+        TaskMember<uint32_t> *program_brk;
         TaskMember<FDTable> *fd_table;
         TaskMember<Process> *process;
         Deque<sys_siginfo> sig_queue;

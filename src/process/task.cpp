@@ -209,6 +209,7 @@ namespace Hamster
         }
 
         destroy_task_member(memory);
+        destroy_task_member(program_brk);
         destroy_task_member(fd_table);
         destroy_task_member(process);
     }
@@ -230,6 +231,7 @@ namespace Hamster
             return *this;
         
         std::swap(memory, other.memory);
+        std::swap(program_brk, other.program_brk);
         std::swap(fd_table, other.fd_table);
         std::swap(process, other.process);
         std::swap(sig_queue, other.sig_queue);
@@ -497,6 +499,7 @@ namespace Hamster
         new_task->emulator = emulator;
 
         new_task->memory = clone_flags & H_CLONE_VM ? ref_task_member(memory) : copy_task_member(memory);
+        new_task->program_brk = clone_flags & H_CLONE_VM ? ref_task_member(program_brk) : copy_task_member(program_brk);
         new_task->emulator.memory = &new_task->memory->obj;
         new_task->fd_table = clone_flags & H_CLONE_FILES ? ref_task_member(fd_table) : copy_task_member(fd_table);
         if (!(clone_flags & H_CLONE_FILES))

@@ -61,6 +61,7 @@ namespace Hamster
 
             entry_point = ehdr.e_entry;
             ph_num = ehdr.e_phnum;
+            brk = 0;
 
             // Load program headers
             if (file.seek(ehdr.e_phoff, H_SEEK_SET) < 0)
@@ -91,8 +92,6 @@ namespace Hamster
                     error = EIO;
                     return -1;
                 }
-
-                brk = 0;
 
                 if (phdr.p_type == PT_LOAD)
                 {
@@ -134,7 +133,11 @@ namespace Hamster
                 }
             }
 
+            _trace("Loaded elf with brk: %lx\n", brk);
+
             brk = (brk + (HAMSTER_PAGE_SIZE - 1)) & ~((uint64_t)HAMSTER_PAGE_SIZE - 1);
+
+            _trace("Adjusted brk to: %lx\n", brk);
 
             // done loading
             return 0;

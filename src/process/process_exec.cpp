@@ -113,7 +113,7 @@ namespace Hamster
             return -1;
         }
 
-        this->brk = brk;
+        leader->program_brk->obj = brk;
 
         // Load stack
         uint64_t sp = HAMSTER_STACK_TOP;
