@@ -22,7 +22,9 @@ namespace Hamster
         }
 
         // Set the new task's stack pointer
-        new_task->emulator.x[2] = stack_loc; // sp
+
+        if (stack_loc)
+            new_task->emulator.x[2] = stack_loc; // sp
 
         // Set the return code for the new task
         new_task->emulator.x[10] = 0; // return 0
