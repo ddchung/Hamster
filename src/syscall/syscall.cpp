@@ -4,6 +4,7 @@
 #include <process/scheduler.hpp>
 #include <platform/platform.hpp>
 #include <errno/errno.h>
+#include <cstring>
 
 namespace Hamster
 {
@@ -46,6 +47,12 @@ namespace Hamster
             "EDOM - Math argument out of domain of func", // 33
             "ERANGE - Math result not representable"   // 34
         };
+
+        template <typename... Args>
+        uint8_t num_args(int32_t (*sys_fn)(Args...))
+        {
+            return sizeof...(Args);
+        }
     } // namespace
 
     int32_t cvt_error()
@@ -57,229 +64,316 @@ namespace Hamster
 
     int32_t syscall(int32_t sys_id)
     {
+        // Save the arguments for tracing
+        int32_t args[6] = {0};
+        Task *current_task = scheduler.get_current_task();
+        memcpy(args, current_task->emulator.x + 10, sizeof(args));
+
+        uint8_t arg_count = 0;
+
         int32_t result;
         switch (sys_id)
         {
         case SyscallID::EXIT:
             result = syscall(sys_exit);
+            arg_count = num_args(sys_exit);
             break;
         case SyscallID::GETPID:
             result = syscall(sys_getpid);
+            arg_count = num_args(sys_getpid);
             break;
         case SyscallID::GETTID:
             result = syscall(sys_gettid);
+            arg_count = num_args(sys_gettid);
             break;
         case SyscallID::SETPGID:
             result = syscall(sys_setpgid);
+            arg_count = num_args(sys_setpgid);
             break;
         case SyscallID::GETPGID:
             result = syscall(sys_getpgid);
+            arg_count = num_args(sys_getpgid);
             break;
         case SyscallID::GETSID:
             result = syscall(sys_getsid);
+            arg_count = num_args(sys_getsid);
             break;
         case SyscallID::SETSID:
             result = syscall(sys_setsid);
+            arg_count = num_args(sys_setsid);
             break;
         case SyscallID::SCHED_YIELD:
             result = syscall(sys_sched_yield);
+            arg_count = num_args(sys_sched_yield);
             break;
         case SyscallID::GETPPID:
             result = syscall(sys_getppid);
+            arg_count = num_args(sys_getppid);
             break;
         case SyscallID::CLONE:
             result = syscall(sys_clone);
+            arg_count = num_args(sys_clone);
             break;
         case SyscallID::EXECVE:
             result = syscall(sys_execve);
+            arg_count = num_args(sys_execve);
             break;
         case SyscallID::EXECVEAT:
             result = syscall(sys_execveat);
+            arg_count = num_args(sys_execveat);
             break;
         case SyscallID::WAITID:
             result = syscall(sys_waitid);
+            arg_count = num_args(sys_waitid);
             break;
         case SyscallID::WAIT4:
             result = syscall(sys_wait4);
+            arg_count = num_args(sys_wait4);
             break;
         case SyscallID::KILL:
             result = syscall(sys_kill);
+            arg_count = num_args(sys_kill);
             break;
         case SyscallID::TGKILL:
             result = syscall(sys_tgkill);
+            arg_count = num_args(sys_tgkill);
             break;
         case SyscallID::GETRANDOM:
             result = syscall(sys_getrandom);
+            arg_count = num_args(sys_getrandom);
             break;
         case SyscallID::SETUID:
             result = syscall(sys_setuid);
+            arg_count = num_args(sys_setuid);
             break;
         case SyscallID::SETREUID:
             result = syscall(sys_setreuid);
+            arg_count = num_args(sys_setreuid);
             break;
         case SyscallID::SETRESUID:
             result = syscall(sys_setresuid);
+            arg_count = num_args(sys_setresuid);
             break;
         case SyscallID::SETGID:
             result = syscall(sys_setgid);
+            arg_count = num_args(sys_setgid);
             break;
         case SyscallID::SETREGID:
             result = syscall(sys_setregid);
+            arg_count = num_args(sys_setregid);
             break;
         case SyscallID::SETRESGID:
             result = syscall(sys_setresgid);
+            arg_count = num_args(sys_setresgid);
             break;
         case SyscallID::OPENAT:
             result = syscall(sys_openat);
+            arg_count = num_args(sys_openat);
             break;
         case SyscallID::READ:
             result = syscall(sys_read);
+            arg_count = num_args(sys_read);
             break;
         case SyscallID::WRITE:
             result = syscall(sys_write);
+            arg_count = num_args(sys_write);
             break;
         case SyscallID::CLOSE:
             result = syscall(sys_close);
+            arg_count = num_args(sys_close);
             break;
         case SyscallID::SENDFILE64:
             result = syscall(sys_sendfile64);
+            arg_count = num_args(sys_sendfile64);
             break;
         case SyscallID::SPLICE:
             result = syscall(sys_splice);
+            arg_count = num_args(sys_splice);
             break;
         case SyscallID::STATFS:
             result = syscall(sys_statfs);
+            arg_count = num_args(sys_statfs);
             break;
         case SyscallID::FSTATFS:
             result = syscall(sys_fstatfs);
+            arg_count = num_args(sys_fstatfs);
             break;
         case SyscallID::MOUNT:
             result = syscall(sys_mount);
+            arg_count = num_args(sys_mount);
             break;
         case SyscallID::UMOUNT2:
             result = syscall(sys_umount2);
+            arg_count = num_args(sys_umount2);
             break;
         case SyscallID::FCHOWNAT:
             result = syscall(sys_fchownat);
+            arg_count = num_args(sys_fchownat);
             break;
         case SyscallID::FCHOWN:
             result = syscall(sys_fchown);
+            arg_count = num_args(sys_fchown);
             break;
         case SyscallID::FCHMODAT:
             result = syscall(sys_fchmodat);
+            arg_count = num_args(sys_fchmodat);
             break;
         case SyscallID::FCHMOD:
             result = syscall(sys_fchmod);
+            arg_count = num_args(sys_fchmod);
             break;
         case SyscallID::FTRUNCATE64:
             result = syscall(sys_ftruncate64);
+            arg_count = num_args(sys_ftruncate64);
             break;
         case SyscallID::TRUNCATE64:
             result = syscall(sys_truncate64);
+            arg_count = num_args(sys_truncate64);
             break;
         case SyscallID::LLSEEK:
             result = syscall(sys_llseek);
+            arg_count = num_args(sys_llseek);
             break;
         case SyscallID::NEWFSTATAT:
             result = syscall(sys_newfstatat);
+            arg_count = num_args(sys_newfstatat);
             break;
         case SyscallID::NEWFSTAT:
             result = syscall(sys_newfstat);
+            arg_count = num_args(sys_newfstat);
             break;
         case SyscallID::DUP:
             result = syscall(sys_dup);
+            arg_count = num_args(sys_dup);
             break;
         case SyscallID::DUP3:
             result = syscall(sys_dup3);
+            arg_count = num_args(sys_dup3);
             break;
         case SyscallID::MKDIRAT:
             result = syscall(sys_mkdirat);
+            arg_count = num_args(sys_mkdirat);
             break;
         case SyscallID::UNLINKAT:
             result = syscall(sys_unlinkat);
+            arg_count = num_args(sys_unlinkat);
             break;
         case SyscallID::LINKAT:
             result = syscall(sys_linkat);
+            arg_count = num_args(sys_linkat);
             break;
         case SyscallID::RENAMEAT:
             result = syscall(sys_renameat);
+            arg_count = num_args(sys_renameat);
             break;
         case SyscallID::RENAMEAT2:
             result = syscall(sys_renameat2);
+            arg_count = num_args(sys_renameat2);
             break;
         case SyscallID::GETDENTS64:
             result = syscall(sys_getdents64);
+            arg_count = num_args(sys_getdents64);
             break;
         case SyscallID::CHDIR:
             result = syscall(sys_chdir);
+            arg_count = num_args(sys_chdir);
             break;
         case SyscallID::GETCWD:
             result = syscall(sys_getcwd);
+            arg_count = num_args(sys_getcwd);
             break;
         case SyscallID::FACCESSAT:
             result = syscall(sys_faccessat);
+            arg_count = num_args(sys_faccessat);
             break;
         case SyscallID::FACCESSAT2:
             result = syscall(sys_faccessat2);
+            arg_count = num_args(sys_faccessat2);
             break;
         case SyscallID::PIPE2:
             result = syscall(sys_pipe2);
+            arg_count = num_args(sys_pipe2);
             break;
         case SyscallID::BRK:
             result = syscall(sys_brk);
+            arg_count = num_args(sys_brk);
             break;
         case SyscallID::MMAP2:
             result = syscall(sys_mmap2);
+            arg_count = num_args(sys_mmap2);
             break;
         case SyscallID::MREMAP:
             result = syscall(sys_mremap);
+            arg_count = num_args(sys_mremap);
             break;
         case SyscallID::MUNMAP:
             result = syscall(sys_munmap);
+            arg_count = num_args(sys_munmap);
             break;
         case SyscallID::MPROTECT:
             result = syscall(sys_mprotect);
+            arg_count = num_args(sys_mprotect);
             break;
         case SyscallID::STATX:
             result = syscall(sys_statx);
+            arg_count = num_args(sys_statx);
             break;
         case SyscallID::READLINKAT:
             result = syscall(sys_readlinkat);
+            arg_count = num_args(sys_readlinkat);
             break;
         case SyscallID::SYMLINKAT:
             result = syscall(sys_symlinkat);
+            arg_count = num_args(sys_symlinkat);
             break;
         case SyscallID::GETUID:
             result = syscall(sys_getuid);
+            arg_count = num_args(sys_getuid);
             break;
         case SyscallID::GETEUID:
             result = syscall(sys_geteuid);
+            arg_count = num_args(sys_geteuid);
             break;
         case SyscallID::GETRESUID:
             result = syscall(sys_getresuid);
+            arg_count = num_args(sys_getresuid);
             break;
         case SyscallID::GETGID:
             result = syscall(sys_getgid);
+            arg_count = num_args(sys_getgid);
             break;
         case SyscallID::GETEGID:
             result = syscall(sys_getegid);
+            arg_count = num_args(sys_getegid);
             break;
         case SyscallID::GETRESGID:
             result = syscall(sys_getresgid);
+            arg_count = num_args(sys_getresgid);
             break;
         case SyscallID::IOCTL:
             result = syscall(sys_ioctl);
+            arg_count = num_args(sys_ioctl);
             break;
         case SyscallID::FCNTL64:
             result = syscall(sys_fcntl64);
+            arg_count = num_args(sys_fcntl64);
             break;
         default:
             // Unsupported syscall ID
             result = -ENOSYS;
+            arg_count = 0;
             break;
         }
 
-        _trace("syscall(%d) = %d", sys_id, result);
+        _trace("TID %d: syscall(num=%d, args={", current_task->tid, sys_id);
+
+        for (uint8_t i = 0; i < arg_count; ++i)
+        {
+            _trace("%d", args[i]);
+            if (i < arg_count - 1)
+                _trace(", ");
+        }
+        _trace("}) = %d", result);
 
         if (result < 0 && result > -128)
         {
