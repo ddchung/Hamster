@@ -162,4 +162,32 @@ namespace Hamster
         // We use this to replace a flexible array member
         char name[1];
     };
+
+    struct sys_fd_set
+    {
+        // 1024 / (8 * sizeof(uint32_t)) = 32
+        uint32_t fds_bits[32];
+    };
+
+    struct sys_timespec
+    {
+        int64_t sec;
+        int64_t nsec;
+    };
+
+    struct sys_statfs
+    {
+        uint32_t type;
+        uint32_t bsize;
+        uint64_t blocks;
+        uint64_t bfree;
+        uint64_t bavail;
+        uint64_t files;
+        uint64_t ffree;
+        uint64_t fsid;
+        uint32_t namelen;
+        uint32_t frsize;
+        uint32_t flags;
+        uint32_t spare[4];
+    };
 } // namespace Hamster
