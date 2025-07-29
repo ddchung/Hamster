@@ -14,8 +14,8 @@ namespace Hamster
         Task *current_task = scheduler.get_current_task();
         assert(current_task);
 
-        int uid = current_task->process->obj.uid;
-        int euid = current_task->process->obj.euid;
+        uint32_t uid = current_task->process->obj.uid;
+        uint32_t euid = current_task->process->obj.euid;
 
         sys_siginfo siginfo;
         siginfo.signo = sig;
@@ -61,6 +61,13 @@ namespace Hamster
                     return cvt_error();
                 }
             }
+
+            if (!at_least_one_sent)
+            {
+                error = EPERM;
+                return cvt_error();
+            }
+
             return 0;
         }
         else if (pid == -1)
@@ -96,7 +103,7 @@ namespace Hamster
             for (auto &task : scheduler.get_tasks())
             {
                 auto &proc = task.second->process->obj;
-                if (proc.get_pgid() != -pid)
+                if (proc.get_pgid() != (uint32_t)-pid)
                     continue; // Not in the specified process group
                 if (uid != 0 && uid != proc.uid && euid != 0 && euid != proc.euid)
                     continue; // Skip processes that the user cannot signal
@@ -122,8 +129,8 @@ namespace Hamster
         Task *current_task = scheduler.get_current_task();
         assert(current_task);
 
-        int uid = current_task->process->obj.uid;
-        int euid = current_task->process->obj.euid;
+        uint32_t uid = current_task->process->obj.uid;
+        uint32_t euid = current_task->process->obj.euid;
 
         sys_siginfo siginfo;
         siginfo.signo = sig;
