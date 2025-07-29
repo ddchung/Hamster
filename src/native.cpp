@@ -735,57 +735,6 @@ namespace
 
 namespace
 {
-    void tty_atexit(void);
-    int tty_reset(void);
-    void tty_raw(void);
-
-    struct termios orig_termios; /* TERMinal I/O Structure */
-    int ttyfd = STDIN_FILENO;    /* STDIN_FILENO is 0 by default */
-
-    /* exit handler for tty reset */
-    void tty_atexit(void) /* NOTE: If the program terminates due to a signal   */
-    {                     /* this code will not run.  This is for exit()'s     */
-        tty_reset();      /* only.  For resetting the terminal after a signal, */
-    } /* a signal handler which calls tty_reset is needed. */
-
-    /* reset tty - useful also for restoring the terminal when this process
-       wishes to temporarily relinquish the tty
-    */
-    int tty_reset(void)
-    {
-        /* flush and reset */
-        if (tcsetattr(ttyfd, TCSAFLUSH, &orig_termios) < 0)
-            return -1;
-        return 0;
-    }
-
-    /* put terminal in raw mode - see termio(7I) for modes */
-    void tty_raw(void)
-    {
-        struct termios raw;
-
-        raw = orig_termios; /* copy original and then modify below */
-
-        // /* input modes - clear indicated ones giving: no break, no CR to NL,
-        //    no parity check, no strip char, no start/stop output (sic) control */
-        // raw.c_iflag |= ICRNL;
-
-        // /* control modes - set 8 bit chars */
-        // raw.c_cflag |= (CS8);
-
-        // /* local modes - clear giving: echoing off, canonical off (no erase with
-        //    backspace, ^U,...),  no extended functions, no signal chars (^Z,^C) */
-        // raw.c_lflag &= ~(ISIG);
-
-        // /* control chars - set return condition: min number of bytes and timer */
-        raw.c_cc[VMIN] = 0;
-        raw.c_cc[VTIME] = 0;
-
-        /* put terminal in raw mode after flushing */
-        if (tcsetattr(ttyfd, TCSAFLUSH, &raw) < 0)
-        printf("Warning: Can't set TTY to raw mode, skipping.\n");
-    }
-
     FILE *trace_file = nullptr;
     
     std::string trace_write_buf;
@@ -814,12 +763,6 @@ namespace
                 return -1;
             }
 
-            if (bytes_written == 0)
-            {
-                Hamster::error = EAGAIN; // No data written
-                return -1;
-            }
-
             // trace if tracing is enabled
             if (trace_file)
             {
@@ -836,11 +779,6 @@ namespace
             {
                 Hamster::error = errno;
                 errno = 0;
-                return -1;
-            }
-            if (bytes_read == 0)
-            {
-                Hamster::error = EAGAIN; // No data read
                 return -1;
             }
             return bytes_read;
@@ -899,25 +837,10 @@ int Hamster::_init_platform()
         trace_file = nullptr;
     }
 
-    if (isatty(ttyfd))
-    {
-        /* store current tty settings in orig_termios */
-        if (tcgetattr(ttyfd, &orig_termios) < 0)
-        {
-            printf("Warning: Can't get tty settings, not setting to raw mode\n");
-            return 0;
-        }
+    fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK);
+    fcntl(STDOUT_FILENO, F_SETFL, O_NONBLOCK);
+    fcntl(STDERR_FILENO, F_SETFL, O_NONBLOCK);
 
-        /* register the tty reset with the exit handler */
-        if (atexit(tty_atexit) != 0)
-        {
-            printf("Error: Cannot register tty reset with atexit, exiting now.\n");
-            tty_atexit();
-            exit(1);
-        }
-
-        tty_raw();  /* put tty in raw mode */
-    }
     return 0;
 }
 

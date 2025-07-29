@@ -22,6 +22,9 @@ namespace Hamster
         
         // Call the system call
 
+        // Load the blocking file descriptor
+        current_task->emulator.x[10] = current_task->io_block_fd;
+
         int32_t result = syscall(sys_read);
 
         if (result < 0 && result == -EAGAIN)
@@ -49,6 +52,9 @@ namespace Hamster
         assert(current_task->blocking_operation == BlockingOperation::IO_WRITE && "Not a blocking write operation");
 
         // Call the system call
+
+        // Load the blocking file descriptor
+        current_task->emulator.x[10] = current_task->io_block_fd;
 
         int32_t result = syscall(sys_write);
         if (result < 0 && result == -EAGAIN)
@@ -88,25 +94,27 @@ namespace Hamster
             ssize_t bytes_read = vfs.read(vfs_fd, IO_BUFFER, to_read);
             if (bytes_read < 0)
             {
-                if (bytes_read == -EAGAIN)
+                if (total_read > 0)
+                {
+                    // Return the total bytes read so far
+                    return total_read;
+                }
+
+                if (error == EAGAIN)
                 {
                     // Blocking read
-                    current_task->blocking_operation = BlockingOperation::IO_READ;
-                    current_task->io_block_fd = fd;
+                    if ((vfs.get_flags(vfs_fd) & OPEN_NONBLOCK) == 0)
+                    {
+                        if (current_task->blocking_operation == BlockingOperation::NONE)
+                            _trace("sys_read: blocking read on Thread FD %d, count %u\n", fd, count);
 
-                    // Move back, if possible
-                    vfs.seek(vfs_fd, -total_read, H_SEEK_CUR);
-
-                    _trace("sys_read: blocking read on Thread FD %d, total_read %zu, count %u\n",
-                           fd, total_read, count);
+                        current_task->blocking_operation = BlockingOperation::IO_READ;
+                        current_task->io_block_fd = fd;
+                    }
 
                     return -EAGAIN;
                 }
-                if (total_read == 0)
-                {
-                    return cvt_error(); // Return error if no bytes read
-                }
-                return total_read; // Return total bytes read so far
+                return cvt_error(); // Return error if no bytes read
             }
 
             if (bytes_read == 0)
@@ -150,22 +158,27 @@ namespace Hamster
             ssize_t bytes_written = vfs.write(vfs_fd, IO_BUFFER, to_write);
             if (bytes_written < 0)
             {
-                if (bytes_written == -EAGAIN)
+                if (total_written > 0)
+                {
+                    // Return the total bytes written so far
+                    return total_written;
+                }
+
+                if (error == EAGAIN)
                 {
                     // Blocking write
-                    current_task->blocking_operation = BlockingOperation::IO_WRITE;
-                    current_task->io_block_fd = fd;
+                    if (current_task->blocking_operation == BlockingOperation::NONE &&
+                        (vfs.get_flags(vfs_fd) & OPEN_NONBLOCK) == 0)
+                    {
+                        _trace("sys_write: blocking write on Thread FD %d, count %u\n", fd, count);
 
-                    // Move back if possible
-                    vfs.seek(vfs_fd, -total_written, H_SEEK_CUR);
+                        current_task->blocking_operation = BlockingOperation::IO_WRITE;
+                        current_task->io_block_fd = fd;
+                    }
 
                     return -EAGAIN;
                 }
-                if (total_written == 0)
-                {
-                    return cvt_error(); // Return error if no bytes written
-                }
-                return total_written; // Return total bytes written so far
+                return cvt_error(); // Return error if no bytes written
             }
 
             total_written += bytes_written;

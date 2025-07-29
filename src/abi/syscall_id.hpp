@@ -135,7 +135,7 @@ namespace Hamster
              * guaranteed to be cryptographically secure.
              * @note Userspace sig: `int getrandom(void *buf, size_t buflen, unsigned int flags);`, `size_t` = `unsigned long`
              */
-            GETRANDOM = 278,
+            GETRANDOM = 278,//
 
             /**
              * @brief Set the user ID of the calling process
