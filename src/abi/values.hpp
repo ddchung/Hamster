@@ -238,6 +238,10 @@ namespace Hamster
     inline constexpr int H_P_PGID = 2;
     inline constexpr int H_P_PIDFD = 3;
 
+    inline constexpr int H_AT_EMPTY_PATH = 0x1000;
+    inline constexpr int H_AT_SYMLINK_NOFOLLOW = 0x100;
+    inline constexpr int H_STATX_BASIC_STATS = 0x000007ff;
+
     inline bool is_directory(int mode) { return (mode & STAT_IFMT) == STAT_IFDIR; }
     inline bool is_character_device(int mode) { return (mode & STAT_IFMT) == STAT_IFCHR; }
     inline bool is_block_device(int mode) { return (mode & STAT_IFMT) == STAT_IFBLK; }
