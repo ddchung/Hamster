@@ -94,7 +94,7 @@ namespace Hamster
         statxbuf.ctime.nsec = statbuf.ctime_nsec;
 
         // Copy to user memory
-        if (!task->memory->obj.memory.memcpy(statxbuf_loc, &statxbuf, sizeof(statxbuf)))
+        if (task->memory->obj.memory.memcpy(statxbuf_loc, &statxbuf, sizeof(statxbuf)) < 0)
         {
             error = EFAULT; // Bad address
             return cvt_error();
