@@ -417,12 +417,18 @@ namespace Hamster
         }
         else
         {
-            BaseDirectory *parent_dir = (BaseDirectory *)data->fd_manager.get_fd(dfd);
-            if (!parent_dir)
+            BaseFile *parent = data->fd_manager.get_fd(dfd);
+            if (!parent)
             {
                 error = EBADF;
                 return -1;
             }
+            if (parent->type() != FileType::Directory)
+            {
+                error = ENOTDIR;
+                return -1;
+            }
+            BaseDirectory *parent_dir = (BaseDirectory *)parent;
 
             file = parent_dir->get(path, OPEN_RDONLY, 0);
         }
