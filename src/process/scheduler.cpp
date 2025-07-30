@@ -175,8 +175,11 @@ namespace Hamster
         return nullptr;
     }
 
-    int Scheduler::do_tick(Task &task)
+    int Scheduler::do_tick(Task &task, uint16_t tick_count)
     {
+        if (tick_count == 0)
+            return 0;
+
         if (task.is_dead)
             return 0; // Skip dead tasks
 
@@ -222,7 +225,7 @@ namespace Hamster
         if (result.status == RiscVEmulator::ExecuteResult::Status::Success)
         {
             // Successful execution, continue
-            return 0;
+            return do_tick(task, tick_count - 1);
         }
         else if (result.status == RiscVEmulator::ExecuteResult::Status::ECALL)
         {
