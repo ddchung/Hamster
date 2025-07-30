@@ -135,7 +135,11 @@ namespace Hamster
 
         // The current working directory of the process
         // This is relative to the absolute root path, not the process root path
-        String cwd_path = "/";
+        //
+        // Note: Due to the way getcwd works, we must initialize this to "//" instead of "/"
+        // ( It subtracts the root path from the CWD to get what the CWD is relative to the root, so
+        //   "//", removing the root path at the beginning, which is "/", results in "/". )
+        String cwd_path = "//";
 
         int umask = 0;
     };
