@@ -6,6 +6,7 @@
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
 #include <filesystem/device_manager.hpp>
+#include <abi/values.hpp>
 #include <memory/allocator.hpp>
 #include <errno/errno.h>
 #include <cstdio>
@@ -90,7 +91,7 @@ namespace
 
             buf->dev = st.st_dev;
             buf->ino = st.st_ino;
-            buf->mode = st.st_mode;
+            buf->mode = st.st_mode & 07777;
             buf->nlink = st.st_nlink;
             buf->uid = st.st_uid;
             buf->gid = st.st_gid;
@@ -98,6 +99,28 @@ namespace
             buf->atime = st.st_atime;
             buf->mtime = st.st_mtime;
             buf->ctime = st.st_ctime;
+
+            if (S_ISREG(st.st_mode))
+            {
+                buf->mode |= STAT_IFREG;
+            }
+            else if (S_ISDIR(st.st_mode))
+            {
+                buf->mode |= STAT_IFDIR;
+            }
+            // Skip Character and Block devices
+            else if (S_ISFIFO(st.st_mode))
+            {
+                buf->mode |= STAT_IFIFO;
+            }
+            else if (S_ISLNK(st.st_mode))
+            {
+                buf->mode |= STAT_IFLNK;
+            }
+            else if (S_ISSOCK(st.st_mode))
+            {
+                buf->mode |= STAT_IFSOCK;
+            }
 
             return 0; // Success
         }
@@ -507,7 +530,7 @@ namespace
                 }
                 else if (errno == ELOOP)
                 {
-                    new_fd = openat(fd, name, O_PATH | O_NONBLOCK | O_NOFOLLOW);
+                    new_fd = openat(fd, name, O_PATH | O_NOFOLLOW);
                     if (new_fd < 0)
                     {
                         swap_error();

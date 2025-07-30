@@ -379,7 +379,7 @@ namespace Hamster
              * buffer.
              * @note Userspace sig: `ssize_t getdents(int fd, struct dirent *dirp, size_t count);`, `ssize_t` = `long`
              */
-            GETDENTS64 = 61,
+            GETDENTS64 = 61,//
 
             /**
              * @brief Change the current working directory
