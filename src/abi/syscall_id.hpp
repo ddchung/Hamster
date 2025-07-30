@@ -386,14 +386,14 @@ namespace Hamster
              * This system call changes the current working directory of the calling process to the specified path.
              * @note Userspace sig: `int chdir(const char *path);`
              */
-            CHDIR = 49,
+            CHDIR = 49,//
 
             /**
              * @brief Get the current working directory
              * This system call retrieves the current working directory of the calling process.
              * @note Userspace sig: `char *getcwd(char *buf, size_t size);`, `size_t` = `unsigned long`
              */
-            GETCWD = 17,
+            GETCWD = 17,//
 
             /**
              * @brief Check if a file exists, and potentially if it is read|write|execute accessible
@@ -457,14 +457,14 @@ namespace Hamster
              * for a file or directory.
              * @note Userspace sig: `int statx(int dirfd, const char *pathname, int flags, unsigned int mask, struct statx *statxbuf);`
              */
-            STATX = 291,
+            STATX = 291,//
 
             /**
              * @brief Read a symbolic link
              * This system call reads the target of a symbolic link and returns it in a buffer.
              * @note Userspace sig: `ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);`, `ssize_t` = `long`
              */
-            READLINKAT = 78,
+            READLINKAT = 78,//
 
             /**
              * @brief Create a symbolic link
