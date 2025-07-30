@@ -60,9 +60,9 @@ namespace Hamster
             }
             
             if (flags & H_AT_SYMLINK_NOFOLLOW)
-                ret = vfs.statat(vfs_relfd, path_str, &statbuf);
-            else
                 ret = vfs.lstatat(vfs_relfd, path_str, &statbuf);
+            else
+                ret = vfs.statat(vfs_relfd, path_str, &statbuf);
             dealloc(path_str);
         }
 
