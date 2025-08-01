@@ -54,6 +54,17 @@ namespace Hamster
 
         return it->second->create_handle(flags);
     }
+
+    BaseSpecialDriver *DeviceManager::get_driver(const DeviceID &id)
+    {
+        auto it = drivers.find(id);
+        if (it == drivers.end())
+        {
+            return nullptr;
+        }
+
+        return it->second;
+    }
 } // namespace Hamster
 
 
