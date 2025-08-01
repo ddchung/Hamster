@@ -354,7 +354,7 @@ namespace
 
         DeviceID get_device_id() override
         {
-            sys_stat st;
+            sys_stat st = {};
             if (stat(&st) < 0)
             {
                 return {0, 0}; // Return invalid device ID on error
@@ -759,8 +759,6 @@ namespace
 namespace
 {
     FILE *trace_file = nullptr;
-    
-    std::string trace_write_buf;
 
     void trace_atexit_handler()
     {
@@ -877,20 +875,6 @@ void Hamster::_trace(const char *fmt, ...)
     va_start(args, fmt);
     vfprintf(trace_file, fmt, args);
     va_end(args);
-}
-
-void Hamster::_flush_trace()
-{
-    while (true)
-    {
-        size_t pos = trace_write_buf.find('\n');
-        if (pos == std::string::npos)
-            break; // No more complete lines
-
-        std::string line = trace_write_buf.substr(0, pos + 1);
-        _trace("[OUTPUT] %s", line.c_str());
-        trace_write_buf.erase(0, pos + 1);
-    }
 }
 
 int Hamster::_mount_rootfs()
