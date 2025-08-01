@@ -253,6 +253,22 @@ namespace Hamster
         int set_signal_handler(int signo, SignalHandler handler);
 
         /**
+         * @brief Ignore a signal for the process
+         * @param signo The signal number to ignore
+         * @return 0 on success, -1 on failure and set `error`
+         * @note This will set the signal handler to a handler that does nothing
+         */
+        int ignore_signal(int signo);
+
+        /**
+         * @brief Set the handler for a signal to the default handler of that signal
+         * @param signo The signal number to set the handler for
+         * @return 0 on success, -1 on failure and set `error`
+         * @note This will set it to the default handler, such as terminating for SIGINT, or doing nothing for SIGCHLD
+         */
+        int default_signal(int signo);
+
+        /**
          * @brief Load an ELF executable into the process memory space
          * @param path The path to the ELF executable
          * @param argv The command line arguments for the ELF executable
@@ -422,6 +438,13 @@ namespace Hamster
         int send_signal(const sys_siginfo &siginfo);
 
         /**
+         * @brief Check if a signal is blocked or ignored
+         * @param signo The signal number to check
+         * @return 1 if blocked/ignored, 0 if not, -1 on error and set `error`
+         */
+        int is_signal_blocked(int signo);
+
+        /**
          * @brief Get a VFS-level file descriptor to use for relative lookup preprocessing
          * @param path The path to use for the relative lookup
          * @param at_fd The VFS file descriptor to use as the base for relative lookups, or -100 to use the current working directory
@@ -447,6 +470,8 @@ namespace Hamster
         uint32_t ptid = 0;
         
         // Signal bitmask, bits calculated as (1 << (signo - 1))
+        // Warning: A signal is blocked if the bit is 0, and it is not blocked if the bit is 1
+        // This is the opposite of the `sigprocmask` behavior, so be careful
         uint32_t sig_mask = 0xFFFFFFFF;
         
         int io_block_fd = -1;

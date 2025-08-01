@@ -348,6 +348,32 @@ namespace Hamster
         return 0;
     }
 
+    int Process::ignore_signal(int signo)
+    {
+        if (signo < 0 || signo >= 32)
+        {
+            error = EINVAL; // Invalid signal number
+            return -1;
+        }
+
+        // Set the handler to a no-op
+        signal_handlers->obj.sig_handlers[signo] = {sighand_nop, nullptr};
+        return 0;
+    }
+
+    int Process::default_signal(int signo)
+    {
+        if (signo < 0 || signo >= 32)
+        {
+            error = EINVAL; // Invalid signal number
+            return -1;
+        }
+
+        // Set the handler to the default handler
+        signal_handlers->obj.sig_handlers[signo] = default_signal_handlers[signo];
+        return 0;
+    }
+
     int Process::join_process_group(TaskMember<ProcessGroup> *pg)
     {
         // Leave current process group if any
@@ -643,5 +669,28 @@ namespace Hamster
     {
         sig_queue.push_back(siginfo);
         return 0;
+    }
+
+    int Task::is_signal_blocked(int signo)
+    {
+        if (signo < 0 || signo >= 32)
+        {
+            error = EINVAL; // Invalid signal number
+            return -1;
+        }
+
+        // Check if the signal is blocked
+        if ((sig_mask & (1U << signo)) == 0)
+        {
+            return 1; // Signal is blocked
+        }
+
+        // Check if the signal is ignored
+        if (process->obj.signal_handlers->obj.sig_handlers[signo].fn == sighand_nop)
+        {
+            return 1; // Signal is ignored
+        }
+
+        return 0; // Signal is not blocked or ignored
     }
 } // namespace Hamster
