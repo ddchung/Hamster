@@ -190,4 +190,22 @@ namespace Hamster
         uint32_t flags;
         uint32_t spare[4];
     };
+
+    struct sys_termios
+    {
+        uint32_t iflag;
+        uint32_t oflag;
+        uint32_t cflag;
+        uint32_t lflag;
+        uint8_t line;
+        uint8_t cc[19];
+    };
+
+    struct sys_winsize
+    {
+        uint16_t row;
+        uint16_t col;
+        uint16_t xpixel;
+        uint16_t ypixel;
+    };
 } // namespace Hamster

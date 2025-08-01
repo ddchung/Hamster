@@ -76,6 +76,133 @@ namespace Hamster
     inline constexpr int H_TIOCCBRK = 0x5428;
     inline constexpr int H_TIOCGSID = 0x5429;
 
+    /* c_cc characters */
+    inline constexpr int H_VINTR = 0;
+    inline constexpr int H_VQUIT = 1;
+    inline constexpr int H_VERASE = 2;
+    inline constexpr int H_VKILL = 3;
+    inline constexpr int H_VEOF = 4;
+    inline constexpr int H_VTIME = 5;
+    inline constexpr int H_VMIN = 6;
+    inline constexpr int H_VSWTC = 7;
+    inline constexpr int H_VSTART = 8;
+    inline constexpr int H_VSTOP = 9;
+    inline constexpr int H_VSUSP = 10;
+    inline constexpr int H_VEOL = 11;
+    inline constexpr int H_VREPRINT = 12;
+    inline constexpr int H_VDISCARD = 13;
+    inline constexpr int H_VWERASE = 14;
+    inline constexpr int H_VLNEXT = 15;
+    inline constexpr int H_VEOL2 = 16;
+
+    /* c_iflag bits */
+    inline constexpr int H_IUCLC = 0x0200;
+    inline constexpr int H_IXON = 0x0400;
+    inline constexpr int H_IXOFF = 0x1000;
+    inline constexpr int H_IMAXBEL = 0x2000;
+    inline constexpr int H_IUTF8 = 0x4000;
+
+    /* c_oflag bits */
+    inline constexpr int H_OLCUC = 0x00002;
+    inline constexpr int H_ONLCR = 0x00004;
+    inline constexpr int H_NLDLY = 0x00100;
+    inline constexpr int H_NL0 = 0x00000;
+    inline constexpr int H_NL1 = 0x00100;
+    inline constexpr int H_CRDLY = 0x00600;
+    inline constexpr int H_CR0 = 0x00000;
+    inline constexpr int H_CR1 = 0x00200;
+    inline constexpr int H_CR2 = 0x00400;
+    inline constexpr int H_CR3 = 0x00600;
+    inline constexpr int H_TABDLY = 0x01800;
+    inline constexpr int H_TAB0 = 0x00000;
+    inline constexpr int H_TAB1 = 0x00800;
+    inline constexpr int H_TAB2 = 0x01000;
+    inline constexpr int H_TAB3 = 0x01800;
+    inline constexpr int H_XTABS = 0x01800;
+    inline constexpr int H_BSDLY = 0x02000;
+    inline constexpr int H_BS0 = 0x00000;
+    inline constexpr int H_BS1 = 0x02000;
+    inline constexpr int H_VTDLY = 0x04000;
+    inline constexpr int H_VT0 = 0x00000;
+    inline constexpr int H_VT1 = 0x04000;
+    inline constexpr int H_FFDLY = 0x08000;
+    inline constexpr int H_FF0 = 0x00000;
+    inline constexpr int H_FF1 = 0x08000;
+
+    /* c_cflag bit meaning */
+    inline constexpr int H_CBAUD = 0x0000100f;
+    inline constexpr int H_CSIZE = 0x00000030;
+    inline constexpr int H_CS5 = 0x00000000;
+    inline constexpr int H_CS6 = 0x00000010;
+    inline constexpr int H_CS7 = 0x00000020;
+    inline constexpr int H_CS8 = 0x00000030;
+    inline constexpr int H_CSTOPB = 0x00000040;
+    inline constexpr int H_CREAD = 0x00000080;
+    inline constexpr int H_PARENB = 0x00000100;
+    inline constexpr int H_PARODD = 0x00000200;
+    inline constexpr int H_HUPCL = 0x00000400;
+    inline constexpr int H_CLOCAL = 0x00000800;
+    inline constexpr int H_CBAUDEX = 0x00001000;
+    inline constexpr int H_BOTHER = 0x00001000;
+    inline constexpr int H_B57600 = 0x00001001;
+    inline constexpr int H_B115200 = 0x00001002;
+    inline constexpr int H_B230400 = 0x00001003;
+    inline constexpr int H_B460800 = 0x00001004;
+    inline constexpr int H_B500000 = 0x00001005;
+    inline constexpr int H_B576000 = 0x00001006;
+    inline constexpr int H_B921600 = 0x00001007;
+    inline constexpr int H_B1000000 = 0x00001008;
+    inline constexpr int H_B1152000 = 0x00001009;
+    inline constexpr int H_B1500000 = 0x0000100a;
+    inline constexpr int H_B2000000 = 0x0000100b;
+    inline constexpr int H_B2500000 = 0x0000100c;
+    inline constexpr int H_B3000000 = 0x0000100d;
+    inline constexpr int H_B3500000 = 0x0000100e;
+    inline constexpr int H_B4000000 = 0x0000100f;
+    inline constexpr int H_CIBAUD = 0x100f0000; /* input baud rate */
+
+    /* c_lflag bits */
+    inline constexpr int H_ISIG = 0x00001;
+    inline constexpr int H_ICANON = 0x00002;
+    inline constexpr int H_XCASE = 0x00004;
+    inline constexpr int H_ECHO = 0x00008;
+    inline constexpr int H_ECHOE = 0x00010;
+    inline constexpr int H_ECHOK = 0x00020;
+    inline constexpr int H_ECHONL = 0x00040;
+    inline constexpr int H_NOFLSH = 0x00080;
+    inline constexpr int H_TOSTOP = 0x00100;
+    inline constexpr int H_ECHOCTL = 0x00200;
+    inline constexpr int H_ECHOPRT = 0x00400;
+    inline constexpr int H_ECHOKE = 0x00800;
+    inline constexpr int H_FLUSHO = 0x01000;
+    inline constexpr int H_PENDIN = 0x04000;
+    inline constexpr int H_IEXTEN = 0x08000;
+    inline constexpr int H_EXTPROC = 0x10000;
+
+    /* tcsetattr uses these */
+    inline constexpr int H_TCSANOW = 0;
+    inline constexpr int H_TCSADRAIN = 1;
+    inline constexpr int H_TCSAFLUSH = 2;
+
+    /* c_iflag bits */
+    inline constexpr int H_IGNBRK = 0x001; /* Ignore break condition */
+    inline constexpr int H_BRKINT = 0x002; /* Signal interrupt on break */
+    inline constexpr int H_IGNPAR = 0x004; /* Ignore characters with parity errors */
+    inline constexpr int H_PARMRK = 0x008; /* Mark parity and framing errors */
+    inline constexpr int H_INPCK = 0x010;  /* Enable input parity check */
+    inline constexpr int H_ISTRIP = 0x020; /* Strip 8th bit off characters */
+    inline constexpr int H_INLCR = 0x040;  /* Map NL to CR on input */
+    inline constexpr int H_IGNCR = 0x080;  /* Ignore CR */
+    inline constexpr int H_ICRNL = 0x100;  /* Map CR to NL on input */
+    inline constexpr int H_IXANY = 0x800;  /* Any character will restart after stop */
+
+    /* c_oflag bits */
+    inline constexpr int H_OPOST = 0x01; /* Perform output processing */
+    inline constexpr int H_OCRNL = 0x08;
+    inline constexpr int H_ONOCR = 0x10;
+    inline constexpr int H_ONLRET = 0x20;
+    inline constexpr int H_OFILL = 0x40;
+
     inline constexpr int FILE_DUPFD = 0;            /* dup */
     inline constexpr int FILE_DUPFD_CLOEXEC = 1030; /* dup with close-on-exec */
     inline constexpr int FILE_GETFD = 1;            /* get close_on_exec */
@@ -232,7 +359,7 @@ namespace Hamster
     inline constexpr int H_WEXITED = 0x00000004;
     inline constexpr int H_WCONTINUED = 0x00000008;
     inline constexpr int H_WNOWAIT = 0x01000000;
-    
+
     inline constexpr int H_P_ALL = 0;
     inline constexpr int H_P_PID = 1;
     inline constexpr int H_P_PGID = 2;
