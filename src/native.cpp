@@ -6,6 +6,7 @@
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
 #include <filesystem/device_manager.hpp>
+#include <driver/base_tty.hpp>
 #include <abi/values.hpp>
 #include <memory/allocator.hpp>
 #include <errno/errno.h>
@@ -771,70 +772,69 @@ namespace
 
     // Console device
 
-    class ConsoleCharDeviceHandle : public Hamster::BaseCharacterDeviceHandle
+    class ConsoleTTYBackend
     {
     public:
-        ssize_t write(const uint8_t *buf, size_t size) override
+        ConsoleTTYBackend()
         {
-            ssize_t bytes_written = ::write(STDOUT_FILENO, buf, size);
-            if (bytes_written < 0)
+            if (tcgetattr(STDIN_FILENO, &old_termios) == 0)
             {
-                Hamster::error = errno;
-                errno = 0;
+                struct termios new_termios = old_termios;
+                new_termios.c_lflag &= ~(ICANON | ECHO | ISIG); // Disable canonical mode, echo, and signals
+                new_termios.c_iflag &= ~(IXON | ICRNL); // Disable flow control and CR to NL translation
+                new_termios.c_oflag &= ~(OPOST); // Disable output processing
+                new_termios.c_cflag |= (CS8 | CREAD); // 8-bit characters and enable receiver
+                new_termios.c_cc[VMIN] = 0;
+                new_termios.c_cc[VTIME] = 0; 
+                tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
+            }
+        }
+        ~ConsoleTTYBackend()
+        {
+            tcsetattr(STDIN_FILENO, TCSANOW, &old_termios);
+        }
+
+        ssize_t read(void *buf, size_t size)
+        {
+            ssize_t ret = ::read(STDIN_FILENO, buf, size);
+            if (ret < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return ret;
+        }
+
+        ssize_t write(const void *buf, size_t size)
+        {
+            ssize_t ret = ::write(STDOUT_FILENO, buf, size);
+            if (ret < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return ret;
+        }
+        int get_win_sz(sys_winsize *ws)
+        {
+            struct winsize w;
+            if (ioctl(STDIN_FILENO, TIOCGWINSZ, &w) < 0)
+            {
+                swap_error();
                 return -1;
             }
 
-            // trace if tracing is enabled
-            if (trace_file)
-            {
-                trace_write_buf.append(reinterpret_cast<const char *>(buf), bytes_written);
-            }
-
-            return bytes_written;
-        }
-
-        ssize_t read(uint8_t *buf, size_t size) override
-        {
-            ssize_t bytes_read = ::read(STDIN_FILENO, buf, size);
-            if (bytes_read < 0)
-            {
-                Hamster::error = errno;
-                errno = 0;
-                return -1;
-            }
-            return bytes_read;
-        }
-
-        int ioctl(int req, Hamster::IoctlArg args) override
-        {
-            Hamster::error = ENOTTY;
-            return -1;
-        }
-
-        int get_flags() override
-        {
-            return flags;
-        }
-
-        int set_flags(int new_flags) override
-        {
-            flags = new_flags;
+            ws->row = w.ws_row;
+            ws->col = w.ws_col;
+            ws->xpixel = w.ws_xpixel;
+            ws->ypixel = w.ws_ypixel;
             return 0; // Success
         }
-
-        int flags = 0;
+    private:
+        struct ::termios old_termios;
     };
 
-    class ConsoleCharDevice : public Hamster::BaseSpecialDriver
-    {
-    public:
-        Hamster::BaseSpecialDriverHandle *create_handle(int flags) override
-        {
-            auto *handle = Hamster::alloc<ConsoleCharDeviceHandle>();
-            handle->set_flags(flags);
-            return handle;
-        }
-    };
+    using ConsoleCharDevice = BaseTTYDriver<ConsoleTTYBackend>;
 }
 
 int Hamster::_init_platform()
@@ -857,10 +857,6 @@ int Hamster::_init_platform()
     {
         trace_file = nullptr;
     }
-
-    fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK);
-    fcntl(STDOUT_FILENO, F_SETFL, O_NONBLOCK);
-    fcntl(STDERR_FILENO, F_SETFL, O_NONBLOCK);
 
     return 0;
 }
@@ -892,6 +888,7 @@ int Hamster::_mount_rootfs()
     auto console_device = Hamster::alloc<ConsoleCharDevice>();
     Hamster::device_manager.register_device({5, 1}, console_device);
     Hamster::vfs.mknod("/dev/console", {5, 1}, 0666);
+    Hamster::vfs.symlink("/dev/tty", "/dev/console");
 
     return 0;
 }

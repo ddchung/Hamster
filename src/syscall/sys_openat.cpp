@@ -37,6 +37,26 @@ namespace Hamster
             return cvt_error();
         }
 
+        // Make it the controlling TTY if it is a terminal, and we don't have one
+        if ((flags & OPEN_NOCTTY) == 0)
+        {
+            auto &session = current_task->process->obj.pg->obj.session->obj;
+            if (session.controlling_tty == DeviceID{0, 0})
+            {
+                if (vfs.is_tty(new_fd) == 1)
+                {
+                    DeviceID dev_id = vfs.get_device_id(new_fd);
+                    if (dev_id.major != 0 || dev_id.minor != 0)
+                    {
+                        session.controlling_tty = dev_id;
+                        IoctlArg arg;
+                        arg.i = 0;
+                        vfs.ioctl(new_fd, H_TIOCSCTTY, arg);
+                    }
+                }
+            }
+        }
+
         // Set its reference count to 1, since we just opened it
         fd_refcount[new_fd] = 1;
 

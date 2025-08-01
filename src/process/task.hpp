@@ -149,6 +149,7 @@ namespace Hamster
     public:
         Vector<class ProcessGroup*> pgroups;
         uint32_t sid;
+        DeviceID controlling_tty = {};
     };
 
     class ProcessGroup
