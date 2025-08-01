@@ -61,6 +61,26 @@ namespace Hamster
         Process *get_process(uint32_t pid);
 
         /**
+         * @brief Get a process group by PGID
+         * @param pgid The PGID of the process group
+         * @return A non-owning pointer to the process group, or nullptr on error
+         * @note This will first check TID `pgid` for quick access, but
+         *     * if not found, then it will linearly check all tasks.
+         *     * If still not found, return nullptr
+         */
+        ProcessGroup *get_process_group(uint32_t pgid);
+
+        /**
+         * @brief Get a session by SID
+         * @param sid The SID of the session
+         * @return A non-owning pointer to the session, or nullptr on error
+         * @note This will first check TID `sid` for quick access, but
+         *     * if not found, then it will linearly check all tasks.
+         *     * If still not found, return nullptr
+         */
+        Session *get_session(uint32_t sid);
+
+        /**
          * @brief Get the currently running task
          * @return A non-owning pointer to the currently running task, or nullptr if no task is running
          * @note This will return the currently running task

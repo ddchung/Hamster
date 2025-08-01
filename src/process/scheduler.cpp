@@ -175,6 +175,58 @@ namespace Hamster
         return nullptr;
     }
 
+    ProcessGroup *Scheduler::get_process_group(uint32_t pgid)
+    {
+        // First check TID for quick access
+        auto it = tasks.find(pgid);
+        if (it != tasks.end())
+        {
+            if (it->second->process->obj.pg->obj.pgid == pgid)
+            {
+                return &it->second->process->obj.pg->obj;
+            }
+        }
+
+        // If not found, check all tasks
+        for (auto &[_, task] : tasks)
+        {
+            if (task->process->obj.pg->obj.pgid == pgid)
+            {
+                return &task->process->obj.pg->obj;
+            }
+        }
+
+        // Still not found, no process group with that PGID
+        error = ESRCH;
+        return nullptr;
+    }
+
+    Session *Scheduler::get_session(uint32_t sid)
+    {
+        // First check TID for quick access
+        auto it = tasks.find(sid);
+        if (it != tasks.end())
+        {
+            if (it->second->process->obj.pg->obj.session->obj.sid == sid)
+            {
+                return &it->second->process->obj.pg->obj.session->obj;
+            }
+        }
+
+        // If not found, check all tasks
+        for (auto &[_, task] : tasks)
+        {
+            if (task->process->obj.pg->obj.session->obj.sid == sid)
+            {
+                return &task->process->obj.pg->obj.session->obj;
+            }
+        }
+
+        // Still not found, no session with that SID
+        error = ESRCH;
+        return nullptr;
+    }
+
     int Scheduler::do_tick(Task &task, uint16_t tick_count)
     {
         if (tick_count == 0)
