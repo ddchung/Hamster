@@ -466,6 +466,22 @@ namespace Hamster
          */
         int set_flags(int fd, int flags);
 
+        /**
+         * @brief Check if a special file is a TTY
+         * @param fd The file descriptor of the special file
+         * @return 1 if it is, 0 if it's not, and on error return -1 and set `error`
+         * @note On a non-special file, this will return -1 and set `error` to ENOTTY
+         */
+        int is_tty(int fd);
+
+        /**
+         * @brief Get the device ID of a special file
+         * @param fd The file descriptor of the special file
+         * @return The device ID of the special file, or on error return DeviceID{0, 0} and set `error`
+         * @note This is only valid for special files, not regular files or directories
+         */
+        DeviceID get_device_id(int fd);
+
     private:
         VFSData *data;
     };

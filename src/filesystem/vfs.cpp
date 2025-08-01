@@ -1305,14 +1305,7 @@ namespace Hamster
         }
         
         BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
-        BaseSpecialDriverHandle *handle = sp_file->get_handle();
-        if (!handle)
-        {
-            // Try to open the handle
-            if (open_special_handle(sp_file) < 0)
-                return -1;
-            handle = sp_file->get_handle();
-        }
+        auto handle = get_special_handle(sp_file);
         if (!handle)
             return -1;
         return handle->ioctl(req, arg);
@@ -1349,5 +1342,46 @@ namespace Hamster
             return -1;
 
         return file->set_flags(flags);
+    }
+
+    int VFS::is_tty(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return 0;
+
+        if (file->type() != FileType::Special)
+        {
+            error = ENOTTY;
+            return 0;
+        }
+
+        BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
+        auto handle = get_special_handle(sp_file);
+        if (!handle)
+            return -1;
+        
+        if (handle->special_type() != SpecialFileType::CharacterDevice)
+        {
+            dealloc(handle);
+            error = ENOTTY;
+            return 0;
+        }
+        return ((BaseCharacterDeviceHandle *)handle)->is_tty();
+    }
+
+    DeviceID VFS::get_device_id(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return {0, 0};
+        if (file->type() != FileType::Special)
+        {
+            error = ENOTTY;
+            return {0, 0};
+        }
+
+        BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
+        return sp_file->get_device_id();
     }
 } // namespace Hamster

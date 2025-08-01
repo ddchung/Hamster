@@ -429,6 +429,12 @@ namespace Hamster
     {
     public:
         virtual SpecialFileType special_type() override { return SpecialFileType::CharacterDevice; }
+
+        /**
+         * @brief Check if the device is a TTY
+         * @return true if the device is a TTY, false otherwise
+         */
+        virtual bool is_tty() { return false; }
     };
 
     class BaseFifoHandle : public BaseSpecialDriverHandle
