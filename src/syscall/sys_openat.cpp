@@ -52,6 +52,9 @@ namespace Hamster
                         IoctlArg arg;
                         arg.i = 0;
                         vfs.ioctl(new_fd, H_TIOCSCTTY, arg);
+
+                        arg.p = &current_task->process->obj.pg->obj.pgid;
+                        vfs.ioctl(new_fd, H_TIOCSPGRP, arg);
                     }
                 }
             }

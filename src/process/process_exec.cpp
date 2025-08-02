@@ -232,7 +232,7 @@ namespace Hamster
 
             interpreter.reserve(32);
 
-            if (file.seek(2, H_SEEK_SET) < 0)
+            if (file.seek(1, H_SEEK_SET) < 0)
                 return -1;
             
             char c;
@@ -253,15 +253,15 @@ namespace Hamster
             arg.reserve(4);
 
             // Skip more whitespace
-            while (file.read(&c, 1) == 1 && (c == ' ' || c == '\t'))
+            while ((c == ' ' || c == '\t') && file.read(&c, 1) == 1)
                 ;
-
-            while (file.read(&c, 1) == 1)
-            {
-                if (isspace(c))
-                    break;
-                arg.push_back(c);
-            }
+            if (!isspace(c))
+                while (file.read(&c, 1) == 1)
+                {
+                    if (isspace(c))
+                        break;
+                    arg.push_back(c);
+                }
 
             bool has_arg = !arg.empty();
             if (interpreter.empty())

@@ -117,6 +117,8 @@ namespace Hamster
         task->process->obj.egid = 0;
 
         task->process->obj.tasks.push_back(task);
+        task->process->obj.pg->obj.processes.push_back(&task->process->obj);
+        task->process->obj.pg->obj.session->obj.pgroups.push_back(&task->process->obj.pg->obj);
 
         uint32_t tid = add_task(task);
 
@@ -249,7 +251,7 @@ namespace Hamster
             }
 
             // Run if not blocked
-            if (task.sig_mask & (1 << (siginfo.signo - 1)))
+            if (task.is_signal_blocked(siginfo.signo) == 0)
             {
                 auto &handler = task.process->obj.signal_handlers->obj.sig_handlers[siginfo.signo];
                 if (handler.fn)
@@ -257,6 +259,28 @@ namespace Hamster
             }
 
             return 0;
+        }
+
+        // Handle any pending shared signals
+        if (!task.process->obj.shared_sig_queue.empty())
+        {
+            // Run the first not-blocked signal
+            for (auto it = task.process->obj.shared_sig_queue.begin(); it != task.process->obj.shared_sig_queue.end();)
+            {
+                sys_siginfo &siginfo = *it;
+                if (task.is_signal_blocked(siginfo.signo) == 0)
+                {
+                    auto &handler = task.process->obj.signal_handlers->obj.sig_handlers[siginfo.signo];
+                    if (handler.fn)
+                        handler.fn(&task, &siginfo, handler.data);
+                    it = task.process->obj.shared_sig_queue.erase(it);
+                    return 0; // Handled one signal
+                }
+                else
+                {
+                    ++it; // Skip blocked signals
+                }
+            }
         }
 
         if (task.blocking_operation == BlockingOperation::IO_READ)

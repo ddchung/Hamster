@@ -125,7 +125,7 @@ namespace Hamster
                 return -1;
             }
 
-            if (pg != fg_pgroup)
+            if (fg_pgroup && pg != fg_pgroup)
             {
                 // Check if the process blocks it
                 if (current_task->is_signal_blocked(H_SIGTTIN))
@@ -157,7 +157,7 @@ namespace Hamster
                 return -1;
             }
 
-            if (pg != fg_pgroup)
+            if (fg_pgroup && pg != fg_pgroup)
             {
                 // Check if the process blocks it
                 if (current_task->is_signal_blocked(H_SIGTTOU))
@@ -317,25 +317,12 @@ namespace Hamster
                 continue;
             if (c == '\r' && (driver->termios.iflag & H_ICRNL))
                 c = '\n';
-
-            // Handle special characters (e.g., VEOF, VERASE, etc.)
-            int special_result = driver->handle_special_char(original_c);
-            if (special_result != 1)
-                continue;
-
-            // Add to canonical input buffer
-            driver->input_buffer.push_back(c);
-
+            
             // Echo handling
-            if (driver->termios.lflag & H_ECHO)
-            {
-                if (original_c == driver->termios.cc[H_VEOF] ||
+            if (driver->termios.lflag & H_ECHO && !(original_c == driver->termios.cc[H_VEOF] ||
                     original_c == driver->termios.cc[H_VEOL] ||
-                    original_c == driver->termios.cc[H_VERASE])
-                {
-                    continue; // don't echo these
-                }
-
+                    original_c == driver->termios.cc[H_VERASE]))
+            {
                 if (original_c == '\r' || original_c == '\n')
                 {
                     // Echo CR+LF for newline (mimics Linux behavior)
@@ -359,6 +346,14 @@ namespace Hamster
 
                 driver->flush_output();
             }
+
+            // Handle special characters (e.g., VEOF, VERASE, etc.)
+            int special_result = driver->handle_special_char(original_c);
+            if (special_result != 1)
+                continue;
+
+            // Add to canonical input buffer
+            driver->input_buffer.push_back(c);
         }
 
         // Do buffering
@@ -376,6 +371,7 @@ namespace Hamster
                 if (i == 0 && c == driver->termios.cc[H_VEOF])
                 {
                     // EOF character, return 0
+                    driver->input_buffer.pop_front();
                     return 0;
                 }
                 if (c == '\n' || c == driver->termios.cc[H_VEOL] || c == driver->termios.cc[H_VEOF])

@@ -88,7 +88,4 @@ int main()
             break;
         }
     }
-
-    Hamster::_log("\n\n========== [ END USERSPACE OUTPUT  ] ==========\n");
-    Hamster::_log("All threads ended\n");
 }
