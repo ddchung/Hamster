@@ -308,11 +308,12 @@ namespace Hamster
         Vector<Task*> tasks;
         Deque<sys_siginfo> shared_sig_queue;
         Map<uint32_t, ProcessStateChange> children_state_changes;
+        Vector<uint32_t> supplementary_gids; // Supplementary group IDs
 
         uint32_t pid; // Process ID
         uint32_t ppid; // Parent Process ID
-        uint32_t uid, euid;
-        uint32_t gid, egid;
+        uint32_t uid, euid, suid;
+        uint32_t gid, egid, sgid;
     };
 
     enum class BlockingOperation : uint8_t

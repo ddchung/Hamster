@@ -158,7 +158,7 @@ namespace Hamster
                             siginfo.code = H_CLD_STOPPED;
 
                         siginfo.fields.child.pid = process->obj.pid;
-                        siginfo.fields.child.uid = process->obj.uid;
+                        siginfo.fields.child.uid = process->obj.euid;
                         siginfo.fields.child.status = exit_code;
                         siginfo.fields.child.utime = 0;
                         siginfo.fields.child.stime = 0;
@@ -167,7 +167,7 @@ namespace Hamster
                     {
                         siginfo.code = H_SI_USER;
                         siginfo.fields.kill.pid = process->obj.pid;
-                        siginfo.fields.kill.uid = process->obj.uid;
+                        siginfo.fields.kill.uid = process->obj.euid;
                     }
                     parent->send_signal(siginfo);
                 }
@@ -294,12 +294,15 @@ namespace Hamster
         std::swap(tasks, other.tasks);
         std::swap(shared_sig_queue, other.shared_sig_queue);
         std::swap(children_state_changes, other.children_state_changes);
+        std::swap(supplementary_gids, other.supplementary_gids);
         std::swap(pid, other.pid);
         std::swap(ppid, other.ppid);
         std::swap(uid, other.uid);
         std::swap(euid, other.euid);
+        std::swap(suid, other.suid);
         std::swap(gid, other.gid);
         std::swap(egid, other.egid);
+        std::swap(sgid, other.sgid);
 
         return *this;
     }
@@ -572,16 +575,20 @@ namespace Hamster
             new_task->process = make_task_member<Process>();
             Process &proc = new_task->process->obj;
             proc.pg = ref_task_member(process->obj.pg);
+            proc.pg->obj.processes.push_back(&proc);
             proc.signal_handlers = clone_flags & H_CLONE_SIGHAND ? ref_task_member(process->obj.signal_handlers) : copy_task_member(process->obj.signal_handlers);
             proc.fs_info = clone_flags & H_CLONE_FS ? ref_task_member(process->obj.fs_info) : copy_task_member(process->obj.fs_info);
             proc.ppid = clone_flags & H_CLONE_PARENT ? process->obj.ppid : process->obj.pid;
             proc.pid = 0;
             proc.tasks.push_back(new_task);
 
+            proc.supplementary_gids = process->obj.supplementary_gids;
             proc.uid = process->obj.uid;
             proc.euid = process->obj.euid;
+            proc.suid = process->obj.suid;
             proc.gid = process->obj.gid;
             proc.egid = process->obj.egid;
+            proc.sgid = process->obj.sgid;
         }
 
         return new_task;

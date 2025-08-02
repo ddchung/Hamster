@@ -123,12 +123,15 @@ namespace Hamster
     int32_t sys_getegid();
     int32_t sys_getresgid(uint32_t rgid_loc,
                           uint32_t egid_loc, uint32_t sgid_loc);
+    int32_t sys_getgroups(uint32_t size, uint32_t list_loc);
+    int32_t sys_setgroups(uint32_t size, uint32_t list_loc);
     int32_t sys_ioctl(int32_t fd, int32_t request, uint32_t arg);
     int32_t sys_fcntl64(int32_t fd, int32_t cmd,
                       uint32_t arg);
     int32_t sys_prctl(int32_t option, uint32_t arg2,
                       uint32_t arg3, uint32_t arg4,
                       uint32_t arg5);
+    int32_t sys_exit_group(int32_t status);
     
     /**
      * @brief Call a system call

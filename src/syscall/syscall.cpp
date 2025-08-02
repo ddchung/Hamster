@@ -350,6 +350,14 @@ namespace Hamster
             result = syscall(sys_getresgid);
             arg_count = num_args(sys_getresgid);
             break;
+        case SyscallID::GETGROUPS:
+            result = syscall(sys_getgroups);
+            arg_count = num_args(sys_getgroups);
+            break;
+        case SyscallID::SETGROUPS:
+            result = syscall(sys_setgroups);
+            arg_count = num_args(sys_setgroups);
+            break;
         case SyscallID::IOCTL:
             result = syscall(sys_ioctl);
             arg_count = num_args(sys_ioctl);
@@ -357,6 +365,14 @@ namespace Hamster
         case SyscallID::FCNTL64:
             result = syscall(sys_fcntl64);
             arg_count = num_args(sys_fcntl64);
+            break;
+        case SyscallID::PRCTL:
+            result = syscall(sys_prctl);
+            arg_count = num_args(sys_prctl);
+            break;
+        case SyscallID::EXIT_GROUP:
+            result = syscall(sys_exit_group);
+            arg_count = num_args(sys_exit_group);
             break;
         default:
             // Unsupported syscall ID
@@ -500,11 +516,14 @@ namespace Hamster
     __attribute__((weak)) int32_t sys_getegid() { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_getresgid(uint32_t rgid_loc,
                           uint32_t egid_loc, uint32_t sgid_loc) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_getgroups(uint32_t size, uint32_t list_loc) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_setgroups(uint32_t size, uint32_t list_loc) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_ioctl(int32_t fd, int32_t request, uint32_t arg) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_fcntl64(int32_t fd, int32_t cmd,
                       uint32_t arg) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_prctl(int32_t option, uint32_t arg2,
                       uint32_t arg3, uint32_t arg4,
                       uint32_t arg5) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_exit_group(int32_t status) { return -ENOSYS; }
 } // namespace Hamster
 

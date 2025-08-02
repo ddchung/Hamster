@@ -488,7 +488,6 @@ namespace Hamster
             /**
              * @brief Get the real, effective, and saved set user IDs of the calling process
              * This system call retrieves the real, effective, and saved set user IDs of the calling process.
-             * Note that on Hamster, the saved set user ID is not implemented yet, so it is equal to the effective user ID
              * @note Userspace sig: `int getresuid(uid_t *ruid, uid_t *euid, uid_t *suid);`, `uid_t`
              */
             GETRESUID = 148,//
@@ -508,10 +507,23 @@ namespace Hamster
             /**
              * @brief Get the real, effective, and saved set group IDs of the calling process
              * This system call retrieves the real, effective, and saved set group IDs of the calling process.
-             * Note that on Hamster, the saved set group ID is not implemented yet, so it is equal to the effective group ID
              * @note Userspace sig: `int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid);`, `gid_t` = `unsigned int`
              */
             GETRESGID = 150,//
+
+            /**
+             * @brief Get the supplementary group IDs of the calling process
+             * This system call retrieves the supplementary group IDs of the calling process.
+             * @note Userspace sig: `int getgroups(int size, gid_t *list);`, `gid_t` = `unsigned int`
+             */
+            GETGROUPS = 158,
+
+            /**
+             * @brief Set the supplementary group IDs of the calling process
+             * This system call sets the supplementary group IDs of the calling process.
+             * @note Userspace sig: `int setgroups(int size, const gid_t *list);`, `gid_t` = `unsigned int`
+             */
+            SETGROUPS = 159,
 
             /**
              * ioctl.
@@ -534,6 +546,12 @@ namespace Hamster
              * @note Userspace sig: `int prctl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5);`
              */
             PRCTL = 167,//
+
+            /**
+             * @brief End all threads in the calling process
+             * @note Userspace sig: `void exit_group(int status);`
+             */
+            EXIT_GROUP = 94,
         };
     } // namespace SyscallID
 } // namespace Hamster

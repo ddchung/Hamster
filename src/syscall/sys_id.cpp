@@ -31,12 +31,26 @@ namespace Hamster
         return current_task->process->obj.ppid;
     }
 
-    int32_t sys_getpgid()
+    int32_t sys_getpgid(int32_t pid)
     {
-        Task *current_task = scheduler.get_current_task();
-        assert(current_task != nullptr);
+        if (pid == 0)
+        {
+            Task *current_task = scheduler.get_current_task();
+            assert(current_task != nullptr);
 
-        return current_task->get_pgid();
+            return current_task->get_pgid();
+        }
+        else
+        {
+            Process *process = scheduler.get_process(pid);
+            if (!process)
+            {
+                error = ESRCH;
+                return cvt_error();
+            }
+
+            return process->get_pgid();
+        }
     }
 
     int32_t sys_getsid()
