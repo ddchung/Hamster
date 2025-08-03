@@ -407,6 +407,13 @@ namespace Hamster
         size_t get_unused_fd_index(int start = 0);
 
         /**
+         * @brief Get a UserFD from the file descriptor table
+         * @param fd The file descriptor to get
+         * @return A pointer to the UserFD, or nullptr if the file descriptor is invalid, and set `error`
+         */
+        UserFD *get_user_fd(int fd);
+
+        /**
          * @brief Make a new task
          * @param clone_flags The flags controlling which parts to reference or copy
          * @return A newly allocated task, or nullptr on failure and set `error`

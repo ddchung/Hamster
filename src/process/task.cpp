@@ -535,6 +535,18 @@ namespace Hamster
         return fd_table->obj.fds.size() - 1; // Return the index of the new fd
     }
 
+    UserFD *Task::get_user_fd(int fd)
+    {
+        assert(fd_table);
+        if (fd < 0 || fd >= (int)fd_table->obj.fds.size())
+        {
+            error = EBADF; // Invalid file descriptor
+            return nullptr;
+        }
+
+        return &fd_table->obj.fds[fd];
+    }
+
     Task *Task::clone(uint32_t clone_flags)
     {
         Task *new_task = alloc<Task>();
