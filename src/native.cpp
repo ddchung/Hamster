@@ -457,7 +457,6 @@ namespace
             }
 
             int dup_fd = dup(fd);
-
             DIR *dir = fdopendir(dup_fd);
             if (!dir)
             {
@@ -465,8 +464,17 @@ namespace
                 return nullptr;
             }
 
+            rewinddir(dir); // Reset the directory stream
+
             std::queue<char *> entries;
             struct dirent *entry;
+
+            // Go to position in directory
+            for (int64_t i = 0; i < pos && (entry = readdir(dir)) != nullptr; ++i)
+            {
+                // Just read entries until we reach the desired position
+            }
+
             while ((entry = readdir(dir)) != nullptr)
             {
                 if (count == 0)
@@ -477,6 +485,7 @@ namespace
                 strcpy(name_copy, name);
                 entries.push(name_copy);
 
+                ++pos;
                 --count;
             }
 
@@ -497,19 +506,38 @@ namespace
 
         int64_t seek(int64_t offset, int whence) override
         {
-            if (fd < 0)
+            switch (whence)
             {
-                errno = EBADF;
-                return -1;
+            case H_SEEK_SET:
+                if (offset < 0)
+                {
+                    errno = EINVAL;
+                    return -1; // Invalid offset
+                }
+                pos = offset;
+                break;
+            case H_SEEK_CUR:
+                if (pos + offset < 0)
+                {
+                    errno = EINVAL;
+                    return -1; // Invalid offset
+                }
+                pos += offset;
+                break;
+            case H_SEEK_END:
+                error = ENOTSUP;
+                return -1; // Not supported for directories
+            default:
+                errno = EINVAL;
+                return -1; // Invalid whence
             }
 
-            off_t ret = lseek(fd, offset, whence);
-            if (ret < 0)
-            {
-                swap_error();
-                return -1;
-            }
-            return ret;
+            return pos;
+        }
+
+        int64_t tell() override
+        {
+            return pos;
         }
 
         BaseFile *get(const char *name, int flags, int mode) override
@@ -736,6 +764,8 @@ namespace
             swap_error();
             return -1;
         }
+    private:
+        off_t pos = 0;
     };
 
     class NativeFilesystem : public BaseFilesystem
