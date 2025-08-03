@@ -516,14 +516,14 @@ namespace Hamster
              * This system call retrieves the supplementary group IDs of the calling process.
              * @note Userspace sig: `int getgroups(int size, gid_t *list);`, `gid_t` = `unsigned int`
              */
-            GETGROUPS = 158,
+            GETGROUPS = 158,//
 
             /**
              * @brief Set the supplementary group IDs of the calling process
              * This system call sets the supplementary group IDs of the calling process.
              * @note Userspace sig: `int setgroups(int size, const gid_t *list);`, `gid_t` = `unsigned int`
              */
-            SETGROUPS = 159,
+            SETGROUPS = 159,//
 
             /**
              * ioctl.
@@ -551,7 +551,7 @@ namespace Hamster
              * @brief End all threads in the calling process
              * @note Userspace sig: `void exit_group(int status);`
              */
-            EXIT_GROUP = 94,
+            EXIT_GROUP = 94,//
         };
     } // namespace SyscallID
 } // namespace Hamster
