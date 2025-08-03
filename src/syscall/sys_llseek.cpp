@@ -26,10 +26,38 @@ namespace Hamster
         }
 
         int64_t offset = ((int64_t)off_high << 32) | (int64_t)off_low;
-        int64_t new_offset = vfs.seek(vfs_fd, offset, whence);
-        if (new_offset < 0)
+        int64_t new_offset = 0;
+
+        if (vfs.is_directory(vfs_fd) == 1)
         {
-            return cvt_error();
+            // Modify the directory offset instead of the file offset
+            UserFD &user_fd = current_task->fd_table->obj.fds[fd];
+            switch (whence)
+            {
+                case H_SEEK_SET:
+                    user_fd.dir_offset = offset;
+                    new_offset = user_fd.dir_offset;
+                    break;
+                case H_SEEK_CUR:
+                    user_fd.dir_offset += offset;
+                    new_offset = user_fd.dir_offset;
+                    break;
+                case H_SEEK_END:
+                    // For directories, we don't have an end, so we just ignore this
+                    error = ENOTSUP; // Invalid argument
+                    return -1;
+                default:
+                    error = EINVAL; // Invalid argument
+                    return -1;
+            }
+        }
+        else
+        {
+            new_offset = vfs.seek(vfs_fd, offset, whence);
+            if (new_offset < 0)
+            {
+                return cvt_error();
+            }
         }
 
         // Copy the new offset back to userspace

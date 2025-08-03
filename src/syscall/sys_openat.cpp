@@ -74,6 +74,7 @@ namespace Hamster
         auto &fd = current_task->fd_table->obj.fds[new_thread_fd];
         fd.type = UserFDType::VFS;
         fd.vfs_fd = new_fd;
+        fd.dir_offset = 0;
 
         // Set appropriate CLOEXEC flag
         if (flags & OPEN_CLOEXEC)

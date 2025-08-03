@@ -104,6 +104,9 @@ namespace Hamster
         int flags;
         UserFDType type;
 
+        // Offset, only used for directories
+        int64_t dir_offset = 0;
+
         union
         {
             int vfs_fd;

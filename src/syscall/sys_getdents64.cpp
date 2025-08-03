@@ -26,8 +26,8 @@ namespace Hamster
             error = EFAULT; // Bad address
             return cvt_error();
         }
-
-        char *const *list = vfs.list(vfs_fd, count);
+        vfs.seek(vfs_fd, 0, H_SEEK_SET);
+        char *const *list = vfs.list(vfs_fd);
         if (!list)
         {
             return cvt_error();
@@ -35,15 +35,23 @@ namespace Hamster
 
         bool ok = true;
         uint32_t bytes_read = 0;
+        int64_t to_skip = task->fd_table->obj.fds[fd].dir_offset;
+        int64_t off = to_skip;
 
         for (const char * const *entry = list; *entry != nullptr; ++entry)
         {
             const char *name = *entry;
             size_t name_len = strlen(name);
 
+            if (to_skip > 0)
+            {
+                to_skip -= sizeof(sys_dirent) + name_len;
+                continue;
+            }
+
             if (bytes_read + sizeof(sys_dirent) + name_len > count)
             {
-                // Not enough space in the buffer
+                // End of buffer
                 break;
             }
 
@@ -63,7 +71,7 @@ namespace Hamster
             assert(dirent != nullptr);
 
             dirent->ino = st.ino;
-            dirent->offset = bytes_read;
+            dirent->offset = off + bytes_read;
             dirent->reclen = sizeof(sys_dirent) + name_len;
             dirent->type = st.mode & STAT_IFMT; // Use the file type from mode
             
@@ -94,6 +102,8 @@ namespace Hamster
             return cvt_error();
         }
 
+        // Update the directory offset in the UserFD
+        task->fd_table->obj.fds[fd].dir_offset += bytes_read;
         return bytes_read; // Return the number of bytes read
     }
 } // namespace Hamster
