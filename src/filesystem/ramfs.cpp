@@ -746,6 +746,11 @@ namespace Hamster
                 return this->offset;
             }
 
+            int64_t tell() override
+            {
+                return this->offset;
+            }
+
             BaseFile *get(const char *name, int flags, int mode) override
             {
                 auto *dir_node = get_node();

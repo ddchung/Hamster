@@ -249,9 +249,17 @@ namespace Hamster
          * @param offset The new offset
          * @param whence One of H_SEEK_SET, H_SEEK_CUR, or H_SEEK_END
          * @return The new offset in the directory, or on error return -1 and set `error`
-         * @note Equivelant to POSIX `lseek` on a directory
+         * @note Not equivelant to POSIX `lseek`, as this uses well-defined increments of 1,
+         *     * so offset 0 would be the first entry, 1 would be the second entry, etc.
          */
         virtual int64_t seek(int64_t offset, int whence) = 0;
+
+        /**
+         * @brief Get the current offset of the directory.
+         * @return The current offset in the directory
+         * @note See `seek` for the definition of the offset, as it is not equivelant to POSIX `lseek`
+         */
+        virtual int64_t tell() = 0;
 
         /**
          * @brief Get a file in the directory.

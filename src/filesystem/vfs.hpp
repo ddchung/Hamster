@@ -482,6 +482,13 @@ namespace Hamster
          */
         DeviceID get_device_id(int fd);
 
+        /**
+         * @brief Check if a file is a directory
+         * @param fd The file descriptor of the file to check
+         * @return 1 if it is a directory, 0 if it is not, -1 on error and set `error`
+         */
+        int is_directory(int fd);
+
     private:
         VFSData *data;
     };
