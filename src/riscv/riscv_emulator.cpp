@@ -469,7 +469,7 @@ namespace Hamster
             return result;
         }
 
-        pc += 4;
+        uint32_t old_pc = pc;
 
         x[0] = 0;
         switch (extract_opcode(inst))
@@ -773,7 +773,7 @@ namespace Hamster
             case FUNCT3_BEQ:
                 if (x[extract_rs1(inst)] == x[extract_rs2(inst)])
                 {
-                    auto new_pc = pc + extract_imm_b(inst) - 4;
+                    auto new_pc = pc + extract_imm_b(inst);
                     // Ensure that it is readable
                     uint32_t dummy;
                     if (read32(new_pc, dummy) != 0)
@@ -788,7 +788,7 @@ namespace Hamster
             case FUNCT3_BNE:
                 if (x[extract_rs1(inst)] != x[extract_rs2(inst)])
                 {
-                    auto new_pc = pc + extract_imm_b(inst) - 4;
+                    auto new_pc = pc + extract_imm_b(inst);
                     // Ensure that it is readable
                     uint32_t dummy;
                     if (read32(new_pc, dummy) != 0)
@@ -803,7 +803,7 @@ namespace Hamster
             case FUNCT3_BLT:
                 if ((int32_t)x[extract_rs1(inst)] < (int32_t)x[extract_rs2(inst)])
                 {
-                    auto new_pc = pc + extract_imm_b(inst) - 4;
+                    auto new_pc = pc + extract_imm_b(inst);
                     // Ensure that it is readable
                     uint32_t dummy;
                     if (read32(new_pc, dummy) != 0)
@@ -818,7 +818,7 @@ namespace Hamster
             case FUNCT3_BGE:
                 if ((int32_t)x[extract_rs1(inst)] >= (int32_t)x[extract_rs2(inst)])
                 {
-                    auto new_pc = pc + extract_imm_b(inst) - 4;
+                    auto new_pc = pc + extract_imm_b(inst);
                     // Ensure that it is readable
                     uint32_t dummy;
                     if (read32(new_pc, dummy) != 0)
@@ -833,7 +833,7 @@ namespace Hamster
             case FUNCT3_BLTU:
                 if (x[extract_rs1(inst)] < x[extract_rs2(inst)])
                 {
-                    auto new_pc = pc + extract_imm_b(inst) - 4;
+                    auto new_pc = pc + extract_imm_b(inst);
                     // Ensure that it is readable
                     uint32_t dummy;
                     if (read32(new_pc, dummy) != 0)
@@ -848,7 +848,7 @@ namespace Hamster
             case FUNCT3_BGEU:
                 if (x[extract_rs1(inst)] >= x[extract_rs2(inst)])
                 {
-                    auto new_pc = pc + extract_imm_b(inst) - 4;
+                    auto new_pc = pc + extract_imm_b(inst);
                     // Ensure that it is readable
                     uint32_t dummy;
                     if (read32(new_pc, dummy) != 0)
@@ -871,8 +871,7 @@ namespace Hamster
         case OP_JAL:
         {
             // JAL
-            x[extract_rd(inst)] = pc; // + 4 - 4
-            auto new_pc = pc + extract_imm_j(inst) - 4;
+            auto new_pc = pc + extract_imm_j(inst);
             // Ensure that it is readable
             uint32_t dummy;
             if (read32(new_pc, dummy) != 0)
@@ -881,13 +880,13 @@ namespace Hamster
                 result.illegal_load.address = new_pc;
                 return result;
             }
+            x[extract_rd(inst)] = pc + 4;
             pc = new_pc;
             break;
         }
         case OP_JALR:
         {
             // JALR
-            x[extract_rd(inst)] = pc;
             auto new_pc = (x[extract_rs1(inst)] + extract_imm_i(inst)) & ~0x1;
             // Ensure that it is readable
             uint32_t dummy;
@@ -897,6 +896,7 @@ namespace Hamster
                 result.illegal_load.address = new_pc;
                 return result;
             }
+            x[extract_rd(inst)] = pc + 4;
             pc = new_pc;
             break;
         }
@@ -909,7 +909,7 @@ namespace Hamster
         case OP_AUIPC:
         {
             // AUIPC
-            x[extract_rd(inst)] = pc + extract_imm_u(inst) - 4;
+            x[extract_rd(inst)] = pc + extract_imm_u(inst);
             break;
         }
         case OP_SYSTEM:
@@ -921,12 +921,14 @@ namespace Hamster
                 if ((extract_imm_i(inst) & 0x1) == 0)
                 {
                     // ECALL
+                    pc += 4;
                     result.status = ExecuteResult::Status::ECALL;
                     return result;
                 }
                 else
                 {
                     // EBREAK
+                    pc += 4;
                     result.status = ExecuteResult::Status::EBREAK;
                     return result;
                 }
@@ -1885,6 +1887,10 @@ namespace Hamster
             result.illegal_instruction.instruction = inst;
             return result;
         }
+
+        // Increment PC if an instruction didn't change it
+        if (old_pc == pc)
+            pc += 4;
 
         result.status = ExecuteResult::Status::Success;
         return result;
