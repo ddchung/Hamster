@@ -122,8 +122,8 @@ namespace Hamster
 
     struct SignalHandler 
     {
-        void (*fn)(struct Task *, sys_siginfo *, void *data);
-        void *data;
+        void (*fn)(struct Task *, sys_siginfo *, sys_sigaction *);
+        sys_sigaction action;
     };
 
     struct SignalHandlers
@@ -424,6 +424,39 @@ namespace Hamster
          *     * and also, if it created a new process, the pid field
          */
         Task *clone(uint32_t clone_flags);
+
+        /**
+         * @brief Get the memory space
+         * @return A reference to the memory space
+         */
+        MemorySpace &get_memory();
+
+        /**
+         * @brief Copy an object to userspace
+         * @param obj The object to copy.
+         * @param addr The userspace address to copy to
+         * @param size The size of the object. Defaults to `sizeof(T)`
+         * @return 0 on success, -1 on error and set `error`
+         * @warning T must be POD
+         */
+        template <typename T>
+        int copy_to_user(const T &obj, uint32_t addr, size_t size = sizeof(T))
+        {
+            return get_memory().memcpy(addr, &obj, size);
+        }
+
+        /**
+         * @brief Copy an object from userspace
+         * @param out Copies here.
+         * @param addr The userspace address of the object
+         * @param size The size of the object. Defaults to `sizeof(T)`
+         * @return 0 on success, -1 on error and set `error`
+         */
+        template <typename T>
+        int copy_from_user(T &out, uint32_t addr, size_t size = sizeof(T))
+        {
+            return get_memory().memcpy(&out, addr, size);
+        }
 
         /**
          * @brief Initialize the thread ID

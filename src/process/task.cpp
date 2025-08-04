@@ -17,14 +17,14 @@ namespace Hamster
     {
         // Default signal handlers
 
-        void sighand_nop(Task *, sys_siginfo *, void *)
+        void sighand_nop(Task *, sys_siginfo *, sys_sigaction *)
         {
             Task *current_task = scheduler.get_current_task();
             if (current_task)
                 _trace("TID %d received signal %d, doing nothing\n", current_task->tid, current_task->emulator.x[17]);
         }
 
-        void sighand_term(Task *task, sys_siginfo *siginfo, void *)
+        void sighand_term(Task *task, sys_siginfo *siginfo, sys_sigaction *)
         {
             assert(task);
             assert(siginfo);
@@ -35,7 +35,7 @@ namespace Hamster
                 _trace("TID %d received signal %d, terminating\n", current_task->tid, siginfo->signo);
         }
 
-        void sighand_dump(Task *task, sys_siginfo *siginfo, void *)
+        void sighand_dump(Task *task, sys_siginfo *siginfo, sys_sigaction *)
         {
             assert(task);
             assert(siginfo);
@@ -46,7 +46,7 @@ namespace Hamster
                 _trace("TID %d received signal %d, terminating with core dump at PC 0x%08x\n", current_task->tid, siginfo->signo, current_task->emulator.pc);
         }
 
-        void sighand_stop(Task *task, sys_siginfo * siginfo, void *)
+        void sighand_stop(Task *task, sys_siginfo * siginfo, sys_sigaction *)
         {
             assert(task);
             assert(siginfo);
@@ -67,7 +67,7 @@ namespace Hamster
                 _trace("TID %d received signal %d, stopping\n", current_task->tid, siginfo->signo);
         }
 
-        void sighand_cont(Task *task, sys_siginfo *siginfo, void *)
+        void sighand_cont(Task *task, sys_siginfo *siginfo, sys_sigaction *)
         {
             assert(task);
             assert(siginfo);
@@ -85,38 +85,38 @@ namespace Hamster
         }
 
         SignalHandler default_signal_handlers[32] = {
-            {nullptr, nullptr},              // 0 — not used
-            {sighand_term, nullptr},         // 1 — SIGHUP (terminate)
-            {sighand_term, nullptr},         // 2 — SIGINT (terminate)
-            {sighand_term, nullptr},         // 3 — SIGQUIT (terminate + core)
-            {sighand_dump, nullptr},         // 4 — SIGILL (terminate + core)
-            {sighand_dump, nullptr},         // 5 — SIGTRAP (terminate + core)
-            {sighand_dump, nullptr},         // 6 — SIGABRT/SIGIOT (terminate + core)
-            {sighand_dump, nullptr},         // 7 — SIGBUS (terminate + core)
-            {sighand_dump, nullptr},         // 8 — SIGFPE (terminate + core)
-            {sighand_term, nullptr},         // 9 — SIGKILL (terminate, cannot catch/ignore)
-            {sighand_term, nullptr},         // 10 — SIGUSR1 (terminate)
-            {sighand_dump, nullptr},         // 11 — SIGSEGV (terminate + core)
-            {sighand_term, nullptr},         // 12 — SIGUSR2 (terminate)
-            {sighand_term, nullptr},         // 13 — SIGPIPE (terminate)
-            {sighand_term, nullptr},         // 14 — SIGALRM (terminate)
-            {sighand_term, nullptr},         // 15 — SIGTERM (terminate)
-            {sighand_term, nullptr},         // 16 — SIGSTKFLT (terminate)
-            {sighand_nop, nullptr},          // 17 — SIGCHLD (ignore)
-            {sighand_cont, nullptr},         // 18 — SIGCONT (continue, if stopped)
-            {sighand_stop, nullptr},         // 19 — SIGSTOP (stop, cannot catch/ignore)
-            {sighand_stop, nullptr},         // 20 — SIGTSTP (stop)
-            {sighand_stop, nullptr},         // 21 — SIGTTIN (stop)
-            {sighand_stop, nullptr},         // 22 — SIGTTOU (stop)
-            {sighand_nop, nullptr},          // 23 — SIGURG (ignore)
-            {sighand_dump, nullptr},         // 24 — SIGXCPU (terminate + core)
-            {sighand_dump, nullptr},         // 25 — SIGXFSZ (terminate + core)
-            {sighand_term, nullptr},         // 26 — SIGVTALRM (terminate)
-            {sighand_term, nullptr},         // 27 — SIGPROF (terminate)
-            {sighand_nop, nullptr},          // 28 — SIGWINCH (ignore)
-            {sighand_nop, nullptr},          // 29 — SIGIO/SIGPOLL (ignore)
-            {sighand_term, nullptr},         // 30 — SIGPWR (terminate)
-            {sighand_dump, nullptr},         // 31 — SIGSYS (terminate + core)
+            {nullptr, {}},              // 0 — not used
+            {sighand_term, {}},         // 1 — SIGHUP (terminate)
+            {sighand_term, {}},         // 2 — SIGINT (terminate)
+            {sighand_term, {}},         // 3 — SIGQUIT (terminate + core)
+            {sighand_dump, {}},         // 4 — SIGILL (terminate + core)
+            {sighand_dump, {}},         // 5 — SIGTRAP (terminate + core)
+            {sighand_dump, {}},         // 6 — SIGABRT/SIGIOT (terminate + core)
+            {sighand_dump, {}},         // 7 — SIGBUS (terminate + core)
+            {sighand_dump, {}},         // 8 — SIGFPE (terminate + core)
+            {sighand_term, {}},         // 9 — SIGKILL (terminate, cannot catch/ignore)
+            {sighand_term, {}},         // 10 — SIGUSR1 (terminate)
+            {sighand_dump, {}},         // 11 — SIGSEGV (terminate + core)
+            {sighand_term, {}},         // 12 — SIGUSR2 (terminate)
+            {sighand_term, {}},         // 13 — SIGPIPE (terminate)
+            {sighand_term, {}},         // 14 — SIGALRM (terminate)
+            {sighand_term, {}},         // 15 — SIGTERM (terminate)
+            {sighand_term, {}},         // 16 — SIGSTKFLT (terminate)
+            {sighand_nop, {}},          // 17 — SIGCHLD (ignore)
+            {sighand_cont, {}},         // 18 — SIGCONT (continue, if stopped)
+            {sighand_stop, {}},         // 19 — SIGSTOP (stop, cannot catch/ignore)
+            {sighand_stop, {}},         // 20 — SIGTSTP (stop)
+            {sighand_stop, {}},         // 21 — SIGTTIN (stop)
+            {sighand_stop, {}},         // 22 — SIGTTOU (stop)
+            {sighand_nop, {}},          // 23 — SIGURG (ignore)
+            {sighand_dump, {}},         // 24 — SIGXCPU (terminate + core)
+            {sighand_dump, {}},         // 25 — SIGXFSZ (terminate + core)
+            {sighand_term, {}},         // 26 — SIGVTALRM (terminate)
+            {sighand_term, {}},         // 27 — SIGPROF (terminate)
+            {sighand_nop, {}},          // 28 — SIGWINCH (ignore)
+            {sighand_nop, {}},          // 29 — SIGIO/SIGPOLL (ignore)
+            {sighand_term, {}},         // 30 — SIGPWR (terminate)
+            {sighand_dump, {}},         // 31 — SIGSYS (terminate + core)
         };
     } // namespace
 
@@ -360,7 +360,7 @@ namespace Hamster
         }
 
         // Set the handler to a no-op
-        signal_handlers->obj.sig_handlers[signo] = {sighand_nop, nullptr};
+        signal_handlers->obj.sig_handlers[signo] = {sighand_nop, {}};
         return 0;
     }
 
@@ -711,5 +711,10 @@ namespace Hamster
         }
 
         return 0; // Signal is not blocked or ignored
+    }
+
+    MemorySpace &Task::get_memory()
+    {
+        return memory->obj.memory;
     }
 } // namespace Hamster

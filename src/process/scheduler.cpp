@@ -255,7 +255,7 @@ namespace Hamster
             {
                 auto &handler = task.process->obj.signal_handlers->obj.sig_handlers[siginfo.signo];
                 if (handler.fn)
-                    handler.fn(&task, &siginfo, handler.data);
+                    handler.fn(&task, &siginfo, &handler.action);
             }
 
             return 0;
@@ -272,7 +272,7 @@ namespace Hamster
                 {
                     auto &handler = task.process->obj.signal_handlers->obj.sig_handlers[siginfo.signo];
                     if (handler.fn)
-                        handler.fn(&task, &siginfo, handler.data);
+                        handler.fn(&task, &siginfo, &handler.action);
                     it = task.process->obj.shared_sig_queue.erase(it);
                     return 0; // Handled one signal
                 }
