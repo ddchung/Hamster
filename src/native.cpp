@@ -818,6 +818,8 @@ namespace
                 new_termios.c_cc[VTIME] = 0; 
                 tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
             }
+            fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK); // Set non-blocking mode
+            fcntl(STDOUT_FILENO, F_SETFL, O_NONBLOCK); // Set non-blocking mode
         }
         ~ConsoleTTYBackend()
         {
