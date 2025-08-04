@@ -96,24 +96,24 @@ namespace Hamster
                 return cvt_error();
             }
         }
-        if (pgid != 0)
+        if (pgid != 0 && pgid != process->pid)
         {
-            Process *pg_process = scheduler.get_process(pgid);
-            if (pg_process == nullptr || pg_process->get_pgid() != pgid)
+            ProcessGroup *pg = scheduler.get_process_group(pgid);
+            if (pg == nullptr)
             {
-                // Process group does not exist
-                error = EPERM;
+                error = ESRCH;
                 return cvt_error();
             }
 
             // Check if the old and new process groups belong to the same session
-            if (process->get_sid() != pg_process->get_sid())
+            if (process->get_sid() != pg->session->obj.sid)
             {
                 error = EPERM;
                 return cvt_error();
             }
 
-            process->join_process_group(pg_process->pg);
+            // FIXME: pointer cast
+            process->join_process_group((TaskMember<ProcessGroup>*)pg);
         }
         else
         {
