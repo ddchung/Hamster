@@ -369,6 +369,20 @@ namespace Hamster
     inline constexpr int H_AT_SYMLINK_NOFOLLOW = 0x100;
     inline constexpr int H_STATX_BASIC_STATS = 0x000007ff;
 
+    inline constexpr int H_SIG_DFL = 0;
+    inline constexpr int H_SIG_IGN = 1;
+
+    inline constexpr uint8_t H_SIGHAND_TRAMPOLINE[] = {
+        // li a7,139 # SyscallID::RT_SIGRETURN
+        0x93, 0x08, 0xb0, 0x08,
+
+        // ecall
+        0x73, 0x00, 0x00, 0x00,
+
+        // unimp # Unreachable, causes a trap
+        0x00, 0x00, 0x00, 0x00,
+    };
+
     inline bool is_directory(int mode) { return (mode & STAT_IFMT) == STAT_IFDIR; }
     inline bool is_character_device(int mode) { return (mode & STAT_IFMT) == STAT_IFCHR; }
     inline bool is_block_device(int mode) { return (mode & STAT_IFMT) == STAT_IFBLK; }

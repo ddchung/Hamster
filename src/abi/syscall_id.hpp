@@ -552,6 +552,60 @@ namespace Hamster
              * @note Userspace sig: `void exit_group(int status);`
              */
             EXIT_GROUP = 94,//
+
+            /**
+             * @brief Set a signal handler for a specific signal
+             * @note Userspace sig: `int rt_sigaction(int signum, const struct sigaction *act, struct sigaction *oldact, size_t sigsetsize);`
+             */
+            RT_SIGACTION = 134,
+
+            /**
+             * @brief Get the signals that are pending (waiting to be delivered, but blocked) for the calling process
+             * @note Userspace sig: `int rt_sigpending(sigset_t *set, size_t sigsetsize);`
+             */
+            RT_SIGPENDING = 136,
+
+            /**
+             * @brief Get and/or set the signal mask of the calling process
+             * @note Userspace sig: `int rt_sigprocmask(int how, const sigset_t *set, sigset_t *oldset, size_t sigsetsize);`
+             */
+            RT_SIGPROCMASK = 135,
+
+            /**
+             * @brief Send a signal to a process
+             * @note Userspace sig: `int rt_sigqueueinfo(pid_t tgid, int sig, const siginfo_t *info);`
+             */
+            RT_SIGQUEUEINFO = 138,
+
+            /**
+             * @brief Return from a signal handler
+             * @note Userspace sig: `int rt_sigreturn(void);`
+             */
+            RT_SIGRETURN = 139,
+
+            /**
+             * @brief Temporarily change the signal mask, and wait for a signal to be delivered that either calls a signal handler or terminates the process
+             * @note Userspace sig: `int rt_sigsuspend(const sigset_t *newset, size_t sigsetsize);`
+             */
+            RT_SIGSUSPEND = 133,
+
+            /**
+             * @brief Wait for one of the specified signals to be pending
+             * @note Userspace sig: `int rt_sigtimedwait_time64(const sigset_t *set, siginfo_t *info, const struct timespec *timeout, size_t sigsetsize);`
+             */
+            RT_SIGTIMEDWAIT_TIME64 = 421,
+
+            /**
+             * @brief Send a signal to a thread
+             * @note Userspace sig: `int rt_tgsigqueueinfo(pid_t tgid, pid_t tid, int sig, siginfo_t *info);`
+             */
+            RT_TGSIGQUEUEINFO = 240,
+
+            /**
+             * @brief Get info about the system
+             * @note Userspace sig: `int uname(struct utsname *buf);`
+             */
+            UNAME = 160,
         };
     } // namespace SyscallID
 } // namespace Hamster

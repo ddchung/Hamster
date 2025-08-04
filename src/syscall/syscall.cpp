@@ -374,6 +374,38 @@ namespace Hamster
             result = syscall(sys_exit_group);
             arg_count = num_args(sys_exit_group);
             break;
+        case SyscallID::RT_SIGACTION:
+            result = syscall(sys_rt_sigaction);
+            arg_count = num_args(sys_rt_sigaction);
+            break;
+        case SyscallID::RT_SIGRETURN:
+            result = syscall(sys_rt_sigreturn);
+            arg_count = num_args(sys_rt_sigreturn);
+            break;
+        case SyscallID::RT_SIGPROCMASK:
+            result = syscall(sys_rt_sigprocmask);
+            arg_count = num_args(sys_rt_sigprocmask);
+            break;
+        case SyscallID::RT_SIGPENDING:
+            result = syscall(sys_rt_sigpending);
+            arg_count = num_args(sys_rt_sigpending);
+            break;
+        case SyscallID::RT_SIGTIMEDWAIT_TIME64:
+            result = syscall(sys_rt_sigtimedwait_time64);
+            arg_count = num_args(sys_rt_sigtimedwait_time64);
+            break;
+        case SyscallID::RT_SIGQUEUEINFO:
+            result = syscall(sys_rt_sigqueueinfo);
+            arg_count = num_args(sys_rt_sigqueueinfo);
+            break;
+        case SyscallID::RT_SIGSUSPEND:
+            result = syscall(sys_rt_sigsuspend);
+            arg_count = num_args(sys_rt_sigsuspend);
+            break;
+        case SyscallID::UNAME:
+            result = syscall(sys_uname);
+            arg_count = num_args(sys_uname);
+            break;
         default:
             // Unsupported syscall ID
             result = -ENOSYS;
@@ -525,5 +557,20 @@ namespace Hamster
                       uint32_t arg3, uint32_t arg4,
                       uint32_t arg5) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_exit_group(int32_t status) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_rt_sigaction(int32_t signum, uint32_t act_loc,
+                          uint32_t oldact_loc, uint32_t sigsetsize) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_rt_sigpending(uint32_t sigset_loc, uint32_t sigsetsize) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_rt_sigprocmask(int32_t how, uint32_t set_loc,
+                          uint32_t oldset_loc, uint32_t sigsetsize) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_rt_sigqueueinfo(int32_t pid, int32_t sig,
+                          uint32_t uinfo_loc) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_rt_sigreturn() { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_rt_sigsuspend(uint32_t unewset_loc, uint32_t sigsetsize) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_rt_sigtimedwait_time64(int32_t sigset_loc,
+                          uint32_t info_loc, uint32_t timeout_loc,
+                          uint32_t sigsetsize) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_rt_tgsigqueueinfo(int32_t tgid, int32_t tid, int32_t sig,
+                          uint32_t uinfo_loc) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_uname(uint32_t buf_loc) { return -ENOSYS; }
 } // namespace Hamster
 

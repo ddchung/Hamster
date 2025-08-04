@@ -132,6 +132,21 @@ namespace Hamster
                       uint32_t arg3, uint32_t arg4,
                       uint32_t arg5);
     int32_t sys_exit_group(int32_t status);
+    int32_t sys_rt_sigaction(int32_t signum, uint32_t act_loc,
+                             uint32_t oldact_loc, uint32_t sigsetsize);
+    int32_t sys_rt_sigpending(uint32_t set_loc, uint32_t sigsetsize);
+    int32_t sys_rt_sigprocmask(int32_t how, uint32_t set_loc,
+                               uint32_t oldset_loc, uint32_t sigsetsize);
+    int32_t sys_rt_sigqueueinfo(int32_t tgid, int32_t sig,
+                                uint32_t info_loc);
+    int32_t sys_rt_sigreturn();
+    int32_t sys_rt_sigsuspend(uint32_t unewset_loc, uint32_t sigsetsize);
+    int32_t sys_rt_sigtimedwait_time64(int32_t sigset_loc,
+                                      uint32_t info_loc, uint32_t timeout_loc,
+                                      uint32_t sigsetsize);
+    int32_t sys_rt_tgsigqueueinfo(int32_t tgid, int32_t tid, int32_t sig,
+                              uint32_t info_loc);
+    int32_t sys_uname(uint32_t buf_loc);
     
     /**
      * @brief Call a system call
