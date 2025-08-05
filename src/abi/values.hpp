@@ -372,6 +372,10 @@ namespace Hamster
     inline constexpr int H_SIG_DFL = 0;
     inline constexpr int H_SIG_IGN = 1;
 
+    inline constexpr int H_SIG_BLOCK = 0;
+    inline constexpr int H_SIG_UNBLOCK = 1;
+    inline constexpr int H_SIG_SETMASK = 2;
+
     inline constexpr uint8_t H_SIGHAND_TRAMPOLINE[] = {
         // li a7,139 # SyscallID::RT_SIGRETURN
         0x93, 0x08, 0xb0, 0x08,
