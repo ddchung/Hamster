@@ -128,7 +128,7 @@ namespace Hamster
 
     struct SignalHandlers
     {
-        SignalHandler sig_handlers[32];
+        SignalHandler sig_handlers[64];
     };
 
     struct FSInfo
@@ -145,6 +145,17 @@ namespace Hamster
         String cwd_path = "//";
 
         int umask = 0;
+    };
+
+    struct PendingSignal
+    {
+        sys_siginfo info;
+    };
+
+    struct PendingSignalQueue
+    {
+        Deque<PendingSignal> rt_sigqueue;
+        Map<uint8_t, PendingSignal> normal_signals;
     };
     
     class Session
@@ -309,7 +320,7 @@ namespace Hamster
         TaskMember<SignalHandlers> *signal_handlers;
         TaskMember<FSInfo> *fs_info;
         Vector<Task*> tasks;
-        Deque<sys_siginfo> shared_sig_queue;
+        PendingSignalQueue shared_pending_signals;
         Map<uint32_t, ProcessStateChange> children_state_changes;
         Vector<uint32_t> supplementary_gids; // Supplementary group IDs
 
@@ -483,11 +494,18 @@ namespace Hamster
         int send_signal(const sys_siginfo &siginfo);
 
         /**
-         * @brief Check if a signal is blocked or ignored
+         * @brief Check if a signal is blocked
          * @param signo The signal number to check
-         * @return 1 if blocked/ignored, 0 if not, -1 on error and set `error`
+         * @return 1 if blocked, 0 if not, -1 on error and set `error`
          */
         int is_signal_blocked(int signo);
+
+        /**
+         * @brief Check if a signal is ignored
+         * @param signo The signal number to check
+         * @return 1 if ignored, 0 if not, -1 on error and set `error`
+         */
+        int is_signal_ignored(int signo);
 
         /**
          * @brief Get a VFS-level file descriptor to use for relative lookup preprocessing
@@ -508,16 +526,20 @@ namespace Hamster
         TaskMember<uint32_t> *program_brk;
         TaskMember<FDTable> *fd_table;
         TaskMember<Process> *process;
-        Deque<sys_siginfo> sig_queue;
+        PendingSignalQueue pending_signals;
         RiscVEmulator emulator;
 
-        uint32_t tid = 0;
-        uint32_t ptid = 0;
+        // Last time the task was scheduled
+        // Value is the systick (see platform/platform.hpp)
+        uint64_t last_tick = 0;
         
         // Signal bitmask, bits calculated as (1 << (signo - 1))
         // Warning: A signal is blocked if the bit is 0, and it is not blocked if the bit is 1
         // This is the opposite of the `sigprocmask` behavior, so be careful
-        uint32_t sig_mask = 0xFFFFFFFF;
+        uint64_t sig_mask = 0xFFFFFFFFFFFFFFFF;
+        
+        uint32_t tid = 0;
+        uint32_t ptid = 0;
         
         int io_block_fd = -1;
 

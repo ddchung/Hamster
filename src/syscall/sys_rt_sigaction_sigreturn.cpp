@@ -66,7 +66,7 @@ namespace Hamster
 
     int32_t sys_rt_sigaction(int32_t signum, uint32_t act_loc, uint32_t oldact_loc, uint32_t sigsetsize)
     {
-        if (signum < 1 || signum >= 32 || signum == H_SIGKILL || signum == H_SIGSTOP || signum == H_SIGCONT)
+        if (signum < 1 || signum >= H_SIGRTMAX || signum == H_SIGKILL || signum == H_SIGSTOP || signum == H_SIGCONT)
         {
             errno = EINVAL;
             return -1;

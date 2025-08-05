@@ -14,6 +14,12 @@ namespace Hamster
         Task *current_task = scheduler.get_current_task();
         assert(current_task);
 
+        if (sig < 0 || sig >= H_SIGRTMAX)
+        {
+            error = EINVAL;
+            return cvt_error();
+        }
+
         uint32_t uid = current_task->process->obj.uid;
         uint32_t euid = current_task->process->obj.euid;
 
@@ -128,6 +134,12 @@ namespace Hamster
     {
         Task *current_task = scheduler.get_current_task();
         assert(current_task);
+
+        if (sig < 0 || sig >= H_SIGRTMAX)
+        {
+            error = EINVAL;
+            return cvt_error();
+        }
 
         uint32_t uid = current_task->process->obj.uid;
         uint32_t euid = current_task->process->obj.euid;

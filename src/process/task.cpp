@@ -84,39 +84,79 @@ namespace Hamster
             }
         }
 
-        SignalHandler default_signal_handlers[32] = {
-            {nullptr, {}},              // 0 — not used
-            {sighand_term, {}},         // 1 — SIGHUP (terminate)
-            {sighand_term, {}},         // 2 — SIGINT (terminate)
-            {sighand_term, {}},         // 3 — SIGQUIT (terminate + core)
-            {sighand_dump, {}},         // 4 — SIGILL (terminate + core)
-            {sighand_dump, {}},         // 5 — SIGTRAP (terminate + core)
-            {sighand_dump, {}},         // 6 — SIGABRT/SIGIOT (terminate + core)
-            {sighand_dump, {}},         // 7 — SIGBUS (terminate + core)
-            {sighand_dump, {}},         // 8 — SIGFPE (terminate + core)
-            {sighand_term, {}},         // 9 — SIGKILL (terminate, cannot catch/ignore)
-            {sighand_term, {}},         // 10 — SIGUSR1 (terminate)
-            {sighand_dump, {}},         // 11 — SIGSEGV (terminate + core)
-            {sighand_term, {}},         // 12 — SIGUSR2 (terminate)
-            {sighand_term, {}},         // 13 — SIGPIPE (terminate)
-            {sighand_term, {}},         // 14 — SIGALRM (terminate)
-            {sighand_term, {}},         // 15 — SIGTERM (terminate)
-            {sighand_term, {}},         // 16 — SIGSTKFLT (terminate)
-            {sighand_nop, {}},          // 17 — SIGCHLD (ignore)
-            {sighand_cont, {}},         // 18 — SIGCONT (continue, if stopped)
-            {sighand_stop, {}},         // 19 — SIGSTOP (stop, cannot catch/ignore)
-            {sighand_stop, {}},         // 20 — SIGTSTP (stop)
-            {sighand_stop, {}},         // 21 — SIGTTIN (stop)
-            {sighand_stop, {}},         // 22 — SIGTTOU (stop)
-            {sighand_nop, {}},          // 23 — SIGURG (ignore)
-            {sighand_dump, {}},         // 24 — SIGXCPU (terminate + core)
-            {sighand_dump, {}},         // 25 — SIGXFSZ (terminate + core)
-            {sighand_term, {}},         // 26 — SIGVTALRM (terminate)
-            {sighand_term, {}},         // 27 — SIGPROF (terminate)
-            {sighand_nop, {}},          // 28 — SIGWINCH (ignore)
-            {sighand_nop, {}},          // 29 — SIGIO/SIGPOLL (ignore)
-            {sighand_term, {}},         // 30 — SIGPWR (terminate)
-            {sighand_dump, {}},         // 31 — SIGSYS (terminate + core)
+        constexpr SignalHandler sighand_default_nop = {sighand_nop, {.handler = H_SIG_DFL, .flags = 0, .restorer = 0, .mask = {}}};
+        constexpr SignalHandler sighand_default_term = {sighand_term, {.handler = H_SIG_DFL, .flags = 0, .restorer = 0, .mask = {}}};
+        constexpr SignalHandler sighand_default_dump = {sighand_dump, {.handler = H_SIG_DFL, .flags = 0, .restorer = 0, .mask = {}}};
+        constexpr SignalHandler sighand_default_stop = {sighand_stop, {.handler = H_SIG_DFL, .flags = 0, .restorer = 0, .mask = {}}};
+        constexpr SignalHandler sighand_default_cont = {sighand_cont, {.handler = H_SIG_DFL, .flags = 0, .restorer = 0, .mask = {}}};
+
+        SignalHandler default_signal_handlers[64] = {
+            {nullptr, {}},                // 0 - not used
+            sighand_default_term,         // 1 - SIGHUP (terminate)
+            sighand_default_term,         // 2 - SIGINT (terminate)
+            sighand_default_term,         // 3 - SIGQUIT (terminate + core)
+            sighand_default_dump,         // 4 - SIGILL (terminate + core)
+            sighand_default_dump,         // 5 - SIGTRAP (terminate + core)
+            sighand_default_dump,         // 6 - SIGABRT/SIGIOT (terminate + core)
+            sighand_default_dump,         // 7 - SIGBUS (terminate + core)
+            sighand_default_dump,         // 8 - SIGFPE (terminate + core)
+            sighand_default_term,         // 9 - SIGKILL (terminate, cannot catch/ignore)
+            sighand_default_term,         // 10 - SIGUSR1 (terminate)sighand_default_cont
+            sighand_default_dump,         // 11 - SIGSEGV (terminate + core)
+            sighand_default_term,         // 12 - SIGUSR2 (terminate)
+            sighand_default_term,         // 13 - SIGPIPE (terminate)
+            sighand_default_term,         // 14 - SIGALRM (terminate)
+            sighand_default_term,         // 15 - SIGTERM (terminate)
+            sighand_default_term,         // 16 - SIGSTKFLT (terminate)
+            sighand_default_nop,          // 17 - SIGCHLD (ignore)
+            sighand_default_cont,         // 18 - SIGCONT (continue, if stopped)
+            sighand_default_stop,         // 19 - SIGSTOP (stop, cannot catch/ignore)
+            sighand_default_stop,         // 20 - SIGTSTP (stop)
+            sighand_default_stop,         // 21 - SIGTTIN (stop)
+            sighand_default_stop,         // 22 - SIGTTOU (stop)
+            sighand_default_nop,          // 23 - SIGURG (ignore)
+            sighand_default_dump,         // 24 - SIGXCPU (terminate + core)
+            sighand_default_dump,         // 25 - SIGXFSZ (terminate + core)
+            sighand_default_term,         // 26 - SIGVTALRM (terminate)
+            sighand_default_term,         // 27 - SIGPROF (terminate)
+            sighand_default_nop,          // 28 - SIGWINCH (ignore)
+            sighand_default_nop,          // 29 - SIGIO/SIGPOLL (ignore)
+            sighand_default_term,         // 30 - SIGPWR (terminate)
+            sighand_default_dump,         // 31 - SIGSYS (terminate + core)
+
+            // 32 - 63 Realtime signals, NOP by default
+            sighand_default_nop,          // 32 - SIGRTMIN
+            sighand_default_nop,          // 33 - SIGRTMIN+1
+            sighand_default_nop,          // 34 - SIGRTMIN+2
+            sighand_default_nop,          // 35 - etc.
+            sighand_default_nop,          // 36
+            sighand_default_nop,          // 37
+            sighand_default_nop,          // 38
+            sighand_default_nop,          // 39
+            sighand_default_nop,          // 40
+            sighand_default_nop,          // 41
+            sighand_default_nop,          // 42
+            sighand_default_nop,          // 43
+            sighand_default_nop,          // 44
+            sighand_default_nop,          // 45
+            sighand_default_nop,          // 46
+            sighand_default_nop,          // 47
+            sighand_default_nop,          // 48
+            sighand_default_nop,          // 49
+            sighand_default_nop,          // 50
+            sighand_default_nop,          // 51
+            sighand_default_nop,          // 52
+            sighand_default_nop,          // 53
+            sighand_default_nop,          // 54
+            sighand_default_nop,          // 55
+            sighand_default_nop,          // 56
+            sighand_default_nop,          // 57
+            sighand_default_nop,          // 58
+            sighand_default_nop,          // 59
+            sighand_default_nop,          // 60
+            sighand_default_nop,          // 61
+            sighand_default_nop,          // 62
+            sighand_default_nop,          // 63 - (SIGRTMAX - 1)
         };
     } // namespace
 
@@ -234,7 +274,7 @@ namespace Hamster
         std::swap(program_brk, other.program_brk);
         std::swap(fd_table, other.fd_table);
         std::swap(process, other.process);
-        std::swap(sig_queue, other.sig_queue);
+        std::swap(pending_signals, other.pending_signals);
         std::swap(emulator, other.emulator);
         std::swap(tid, other.tid);
         std::swap(ptid, other.ptid);
@@ -292,7 +332,7 @@ namespace Hamster
         std::swap(fs_info, other.fs_info);
         std::swap(pg, other.pg);
         std::swap(tasks, other.tasks);
-        std::swap(shared_sig_queue, other.shared_sig_queue);
+        std::swap(shared_pending_signals, other.shared_pending_signals);
         std::swap(children_state_changes, other.children_state_changes);
         std::swap(supplementary_gids, other.supplementary_gids);
         std::swap(pid, other.pid);
@@ -321,7 +361,29 @@ namespace Hamster
 
     int Process::send_signal(const sys_siginfo &siginfo)
     {
-        shared_sig_queue.push_back(siginfo);
+        if (siginfo.signo < 0 || siginfo.signo >= 64)
+        {
+            error = EINVAL; // Invalid signal number
+            return -1;
+        }
+
+        if (siginfo.signo >= H_SIGRTMIN && siginfo.signo <= H_SIGRTMAX)
+        {
+            shared_pending_signals.rt_sigqueue.push_back({siginfo});
+        }
+        else
+        {
+            auto it = shared_pending_signals.normal_signals.find(siginfo.signo);
+            if (it != shared_pending_signals.normal_signals.end())
+            {
+                // Signal is already pending, do nothing
+            }
+            else
+            {
+                shared_pending_signals.normal_signals[siginfo.signo] = {siginfo};
+            }
+        }
+
         return 0;
     }
 
@@ -334,7 +396,7 @@ namespace Hamster
 
     int Process::set_signal_handler(int signo, SignalHandler handler)
     {
-        if (signo < 0 || signo >= 32)
+        if (signo < 0 || signo >= 64)
         {
             error = EINVAL; // Invalid signal number
             return -1;
@@ -353,20 +415,20 @@ namespace Hamster
 
     int Process::ignore_signal(int signo)
     {
-        if (signo < 0 || signo >= 32)
+        if (signo < 0 || signo >= 64)
         {
             error = EINVAL; // Invalid signal number
             return -1;
         }
 
         // Set the handler to a no-op
-        signal_handlers->obj.sig_handlers[signo] = {sighand_nop, {}};
+        signal_handlers->obj.sig_handlers[signo] = sighand_default_nop;
         return 0;
     }
 
     int Process::default_signal(int signo)
     {
-        if (signo < 0 || signo >= 32)
+        if (signo < 0 || signo >= 64)
         {
             error = EINVAL; // Invalid signal number
             return -1;
@@ -560,6 +622,7 @@ namespace Hamster
         new_task->exit_signal = exit_signal;
         new_task->is_paused = is_paused;
         new_task->is_dead = is_dead;
+        new_task->last_tick = last_tick;
 
         new_task->emulator = emulator;
 
@@ -686,13 +749,35 @@ namespace Hamster
 
     int Task::send_signal(const sys_siginfo &siginfo)
     {
-        sig_queue.push_back(siginfo);
+        if (siginfo.signo < 1 || siginfo.signo >= 64)
+        {
+            error = EINVAL; // Invalid signal number
+            return -1;
+        }
+
+        if (siginfo.signo >= H_SIGRTMIN && siginfo.signo < H_SIGRTMAX)
+        {
+            pending_signals.rt_sigqueue.push_back({siginfo});
+        }
+        else
+        {
+            auto it = pending_signals.normal_signals.find(siginfo.signo);
+            if (it != pending_signals.normal_signals.end())
+            {
+                // Signal is already pending, do nothing
+            }
+            else
+            {
+                pending_signals.normal_signals[siginfo.signo] = {siginfo};
+            }
+        }
+
         return 0;
     }
 
     int Task::is_signal_blocked(int signo)
     {
-        if (signo < 0 || signo >= 32)
+        if (signo < 1 || signo >= 64)
         {
             error = EINVAL; // Invalid signal number
             return -1;
@@ -704,13 +789,24 @@ namespace Hamster
             return 1; // Signal is blocked
         }
 
+        return 0; // Signal is not blocked
+    }
+
+    int Task::is_signal_ignored(int signo)
+    {
+        if (signo < 1 || signo >= 64)
+        {
+            error = EINVAL; // Invalid signal number
+            return -1;
+        }
+
         // Check if the signal is ignored
         if (process->obj.signal_handlers->obj.sig_handlers[signo].fn == sighand_nop)
         {
             return 1; // Signal is ignored
         }
 
-        return 0; // Signal is not blocked or ignored
+        return 0; // Signal is not ignored
     }
 
     MemorySpace &Task::get_memory()

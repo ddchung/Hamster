@@ -9,6 +9,66 @@
 
 namespace Hamster
 {
+    namespace
+    {
+        // Returns 0 when handled successfully, -1 on error, 1 if nothing to handle
+        int handle_pending_signals(Task &task, PendingSignalQueue &queue)
+        {
+            if (queue.rt_sigqueue.empty() && queue.normal_signals.empty())
+            {
+                return 1; // Nothing to handle
+            }
+
+            // Handle normal signals
+            auto normal_it = queue.normal_signals.begin();
+            while (normal_it != queue.normal_signals.end())
+            {
+                int signo = normal_it->first;
+                sys_siginfo &siginfo = normal_it->second.info;
+
+                // Check if the signal is blocked
+                if (task.is_signal_blocked(signo))
+                {
+                    ++normal_it; // Skip blocked signals
+                    continue;
+                }
+
+                // Call the signal handler
+                SignalHandler handler = task.process->obj.signal_handlers->obj.sig_handlers[signo];
+                handler.fn(&task, &siginfo, &handler.action);
+
+                // Remove the signal from the queue
+                normal_it = queue.normal_signals.erase(normal_it);
+
+                return 0;
+            }
+
+            // Handle real-time signals
+            for (auto &pending_signal : queue.rt_sigqueue)
+            {
+                sys_siginfo &siginfo = pending_signal.info;
+
+                // Check if the signal is blocked
+                if (task.is_signal_blocked(siginfo.signo))
+                {
+                    continue; // Skip blocked signals
+                }
+
+                // Call the signal handler
+                SignalHandler handler = task.process->obj.signal_handlers->obj.sig_handlers[siginfo.signo];
+                handler.fn(&task, &siginfo, &handler.action);
+
+                // Remove the signal from the queue
+                queue.rt_sigqueue.pop_front();
+
+                return 0;
+            }
+
+            return 1; // Nothing to handle
+        }
+    } // namespace
+    
+
     uint32_t Scheduler::add_task(Task *task)
     {
         if (!task)
@@ -238,49 +298,18 @@ namespace Hamster
             return 0; // Skip dead tasks
 
         // Handle any pending signals
-
-        if (!task.sig_queue.empty())
+        int signal_result = handle_pending_signals(task, task.pending_signals);
+        if (signal_result != 1)
         {
-            sys_siginfo siginfo = task.sig_queue.front();
-            task.sig_queue.pop_front();
-
-            // Check if the signal is valid
-            if (siginfo.signo < 1 || siginfo.signo > 31)
-            {
-                return -1;
-            }
-
-            // Run if not blocked
-            if (task.is_signal_blocked(siginfo.signo) == 0)
-            {
-                auto &handler = task.process->obj.signal_handlers->obj.sig_handlers[siginfo.signo];
-                if (handler.fn)
-                    handler.fn(&task, &siginfo, &handler.action);
-            }
-
-            return 0;
+            // Signal handled, or error occurred
+            return signal_result == 1 ? 0 : -1;
         }
 
-        // Handle any pending shared signals
-        if (!task.process->obj.shared_sig_queue.empty())
+        signal_result = handle_pending_signals(task, task.process->obj.shared_pending_signals);
+        if (signal_result != 1)
         {
-            // Run the first not-blocked signal
-            for (auto it = task.process->obj.shared_sig_queue.begin(); it != task.process->obj.shared_sig_queue.end();)
-            {
-                sys_siginfo &siginfo = *it;
-                if (task.is_signal_blocked(siginfo.signo) == 0)
-                {
-                    auto &handler = task.process->obj.signal_handlers->obj.sig_handlers[siginfo.signo];
-                    if (handler.fn)
-                        handler.fn(&task, &siginfo, &handler.action);
-                    it = task.process->obj.shared_sig_queue.erase(it);
-                    return 0; // Handled one signal
-                }
-                else
-                {
-                    ++it; // Skip blocked signals
-                }
-            }
+            // Signal handled, or error occurred
+            return signal_result == 1 ? 0 : -1;
         }
 
         if (task.blocking_operation == BlockingOperation::IO_READ)
