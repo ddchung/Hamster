@@ -286,7 +286,7 @@ namespace Hamster
         else if (memcmp(magic, ELFMAG, SELFMAG) == 0)
         {
             // It's an ELF file, so we can use the exec_elf function
-            return exec_elf(path, argv, envp);
+            return exec_elf(path, argv, envp, dirfd);
         }
         else
         {
