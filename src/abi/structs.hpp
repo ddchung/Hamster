@@ -267,4 +267,14 @@ namespace Hamster
         uint8_t __sigmask_reserved[1024 / 8 - sizeof(sys_sigset)];
         sys_sigcontext context;
     };
+
+    struct sys_utsname
+    {
+        char sysname[65];
+        char nodename[65];
+        char release[65];
+        char version[65];
+        char machine[65];
+        char domainname[65];
+    };
 } // namespace Hamster
