@@ -9,6 +9,7 @@
 #include <process/scheduler.hpp>
 #include <memory/allocator.hpp>
 #include <memory/stl_sequential.hpp>
+#include <kscheduler/kscheduler.hpp>
 #include <abi/values.hpp>
 #include <abi/structs.hpp>
 #include <errno/errno.h>
@@ -96,9 +97,36 @@ namespace Hamster
             termios.cc[H_VSTART] = 0x11; // Ctrl+Q
             termios.cc[H_VSTOP] = 0x13;  // Ctrl+S
             termios.cc[H_VSUSP] = 0x1A;  // Ctrl+Z
+
+            // Create a kernel task to poll input
+            class TTYInputPollTask : public BaseKTask
+            {
+            public:
+                TTYInputPollTask(BaseTTYDriver *driver)
+                    : driver(driver) 
+                {
+                    id = (uint32_t)(uintptr_t)driver;
+                    flags = KSCHED_AUTO_INTERVAL;
+                    interval = 100; // Poll every 100ms
+                }
+
+                void run() override
+                {
+                    driver->read_all_pending();
+                }
+            private:
+                BaseTTYDriver *driver;
+            };
+
+            auto *task = alloc<TTYInputPollTask>(1, this);
+            kscheduler.add_task(task);
         }
 
-        virtual ~BaseTTYDriver() = default;
+        virtual ~BaseTTYDriver()
+        {
+            // Remove the input poll task
+            kscheduler.remove_task((uint32_t)(uintptr_t)this);
+        }
 
         BaseSpecialDriverHandle *create_handle(int flags) override
         {
@@ -177,10 +205,6 @@ namespace Hamster
         // Returns: 0 on success, -1 on error, 1 if not special
         int handle_special_char(char c)
         {
-            Task *current_task = scheduler.get_current_task();
-            if (!current_task)
-                return -1;
-
             if (c == termios.cc[H_VINTR] && (termios.lflag & H_ISIG))
             {
                 return send_sig_to_fg(H_SIGINT);
@@ -278,6 +302,66 @@ namespace Hamster
             return 0;
         }
 
+        void read_all_pending()
+        {
+            static uint8_t buf[1024];
+            ssize_t bytes_read = read(buf, sizeof(buf));
+            if (bytes_read < 0)
+                return;
+
+            // Append to input buffer
+            for (ssize_t i = 0; i < bytes_read; ++i)
+            {
+                char c = buf[i];
+                char original_c = c;
+
+                // Input translation (POSIX input processing)
+                if (c == '\n' && (termios.iflag & H_INLCR))
+                    c = '\r';
+                if (c == '\r' && (termios.iflag & H_IGNCR))
+                    continue;
+                if (c == '\r' && (termios.iflag & H_ICRNL))
+                    c = '\n';
+                
+                // Echo handling
+                if (termios.lflag & H_ECHO && !(original_c == termios.cc[H_VEOF] ||
+                        original_c == termios.cc[H_VEOL] ||
+                        original_c == termios.cc[H_VERASE]))
+                {
+                    if (original_c == '\r' || original_c == '\n')
+                    {
+                        // Echo CR+LF for newline (mimics Linux behavior)
+                        output_buffer.push_back('\r');
+                        output_buffer.push_back('\n');
+                    }
+                    else if ((original_c & 0x1F) == original_c) // Control characters
+                    {
+                        output_buffer.push_back('^');
+                        output_buffer.push_back(original_c + 'A' - 1); // CTRL+A → ^A, etc.
+                    }
+                    else if (original_c == 0x7F) // DEL
+                    {
+                        output_buffer.push_back('^');
+                        output_buffer.push_back('?');
+                    }
+                    else
+                    {
+                        output_buffer.push_back(original_c);
+                    }
+
+                    flush_output();
+                }
+
+                // Handle special characters (e.g., VEOF, VERASE, etc.)
+                int special_result = handle_special_char(original_c);
+                if (special_result != 1)
+                    continue;
+
+                // Add to canonical input buffer
+                input_buffer.push_back(c);
+            }
+        }
+
         // Ensure they are accessible
 
         using Backend::get_win_sz;
@@ -300,61 +384,6 @@ namespace Hamster
         if (driver->check_readable() < 0)
             return -1; // Not allowed to read
 
-        ssize_t bytes_read = driver->read(buf, size);
-        if (bytes_read < 0)
-            return -1;
-
-        // Append to input buffer
-        for (ssize_t i = 0; i < bytes_read; ++i)
-        {
-            char c = buf[i];
-            char original_c = c;
-
-            // Input translation (POSIX input processing)
-            if (c == '\n' && (driver->termios.iflag & H_INLCR))
-                c = '\r';
-            if (c == '\r' && (driver->termios.iflag & H_IGNCR))
-                continue;
-            if (c == '\r' && (driver->termios.iflag & H_ICRNL))
-                c = '\n';
-            
-            // Echo handling
-            if (driver->termios.lflag & H_ECHO && !(original_c == driver->termios.cc[H_VEOF] ||
-                    original_c == driver->termios.cc[H_VEOL] ||
-                    original_c == driver->termios.cc[H_VERASE]))
-            {
-                if (original_c == '\r' || original_c == '\n')
-                {
-                    // Echo CR+LF for newline (mimics Linux behavior)
-                    driver->output_buffer.push_back('\r');
-                    driver->output_buffer.push_back('\n');
-                }
-                else if ((original_c & 0x1F) == original_c) // Control characters
-                {
-                    driver->output_buffer.push_back('^');
-                    driver->output_buffer.push_back(original_c + 'A' - 1); // CTRL+A → ^A, etc.
-                }
-                else if (original_c == 0x7F) // DEL
-                {
-                    driver->output_buffer.push_back('^');
-                    driver->output_buffer.push_back('?');
-                }
-                else
-                {
-                    driver->output_buffer.push_back(original_c);
-                }
-
-                driver->flush_output();
-            }
-
-            // Handle special characters (e.g., VEOF, VERASE, etc.)
-            int special_result = driver->handle_special_char(original_c);
-            if (special_result != 1)
-                continue;
-
-            // Add to canonical input buffer
-            driver->input_buffer.push_back(c);
-        }
 
         // Do buffering
         // Canonical: line buffering

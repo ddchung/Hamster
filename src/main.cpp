@@ -5,6 +5,7 @@
 #include <filesystem/ramfs.hpp>
 #include <memory/allocator.hpp>
 #include <process/scheduler.hpp>
+#include <kscheduler/kscheduler.hpp>
 #include <errno/errno.h>
 #include <cstring>
 
@@ -41,6 +42,27 @@ namespace
         Hamster::_log("]");
         Hamster::_log("\r\n");
     }
+
+    class UserSchedulerTickTask : public Hamster::BaseKTask
+    {
+    public:
+        UserSchedulerTickTask()
+        {
+            flags = Hamster::KSCHED_AUTO_INTERVAL;
+            interval = 0; // Tick as fast as possible
+            id = 1; // Fixed ID
+            next_tick = 0;
+        }
+        ~UserSchedulerTickTask() override = default;
+        void run() override
+        {
+            Hamster::scheduler.tick();
+            if (Hamster::scheduler.num_tasks() == 0)
+            {
+                flags |= Hamster::KSCHED_REMOVE_NOW;
+            }
+        }
+    };
 }
 
 int main()
@@ -78,14 +100,14 @@ int main()
 
     Hamster::scheduler.spawn("/usr/bin/init");
 
+    // Add the user scheduler tick task
+    Hamster::kscheduler.add_task(Hamster::alloc<UserSchedulerTickTask>());
+
     // Run the program
     while (true)
     {
-        Hamster::scheduler.tick();
-
-        if (Hamster::scheduler.num_tasks() == 0)
-        {
+        Hamster::kscheduler.tick();
+        if (!Hamster::kscheduler.has_tasks())
             break;
-        }
     }
 }

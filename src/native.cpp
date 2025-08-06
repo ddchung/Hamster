@@ -23,6 +23,7 @@
 #include <cstdarg>
 #include <queue>
 #include <string>
+#include <time.h>
 
 using namespace Hamster;
 
@@ -949,6 +950,23 @@ int Hamster::_log(char c)
     int out = printf("%c", c);
     fflush(stdout);
     return out;
+}
+
+uint64_t Hamster::_get_sys_time()
+{
+    struct timespec ts;
+
+    // Fall back to CLOCK_REALTIME if CLOCK_MONOTONIC is not available
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0 &&
+        clock_gettime(CLOCK_REALTIME, &ts) < 0)
+    {
+        swap_error();
+        return 0; // Error, return 0
+    }
+
+    // Convert to milliseconds
+    uint64_t time_ms = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    return time_ms;
 }
 
 #endif

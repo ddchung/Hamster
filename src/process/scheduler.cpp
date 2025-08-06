@@ -105,6 +105,9 @@ namespace Hamster
                 continue;
 
             int result = do_tick(*task);
+
+            task->last_tick = _get_sys_time();
+
             if (result < 0)
             {
                 return -1;

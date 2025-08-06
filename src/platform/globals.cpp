@@ -4,6 +4,7 @@
 #include <memory/allocator.hpp>
 #include <filesystem/vfs.hpp>
 #include <filesystem/device_manager.hpp>
+#include <kscheduler/kscheduler.hpp>
 #include <process/scheduler.hpp>
 
 #ifndef NDEBUG
@@ -33,6 +34,13 @@ namespace Hamster
      * provides: error
      */
     int error{0};
+
+    /**
+     * Kernel Scheduler
+     * requires: allocator, error
+     * provides: kscheduler
+     */
+    KScheduler kscheduler;
 
     /**
      * FD Reference Count

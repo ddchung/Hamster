@@ -42,6 +42,11 @@ namespace Hamster
     // returns -1 on failure
     int _free(void *ptr);
 
+    // Get the system time counter
+    // Returns a number, that goes up by 1 every millisecond, but never backwards
+    // This behaves like the `CLOCK_MONOTONIC` clock in POSIX
+    uint64_t _get_sys_time();
+
     // Log
     int _log(const char * msg);
     int _log(char c);
