@@ -7,7 +7,7 @@
 
 namespace Hamster
 {
-    int32_t sys_fchown(int32_t fd, int32_t uid, int32_t gid)
+    int32_t sys_fchown(int32_t fd, uint32_t uid, uint32_t gid)
     {
         Task *current_task = scheduler.get_current_task();
         assert(current_task != nullptr);
