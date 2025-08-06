@@ -266,7 +266,7 @@ namespace Hamster
              * This system call changes the ownership of a file descriptor.
              * @note Userspace sig: `int fchown(int fd, uid_t owner, gid_t group);`, `uid_t` = `unsigned int`, `gid_t` =
              */
-            FCHOWN = 55,
+            FCHOWN = 55,//
 
             /**
              * @brief Change the permissions of a file specified by path relative to a directory file descriptor
