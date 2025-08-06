@@ -271,9 +271,9 @@ namespace Hamster
             /**
              * @brief Change the permissions of a file specified by path relative to a directory file descriptor
              * This system call changes the permissions of a file at the specified path relative to a directory file descriptor.
-             * @note Userspace sig: `int fchmodat(int dirfd, const char *pathname, mode_t mode);`, `mode_t` = `unsigned int`
+             * @note Userspace sig: `int fchmodat(int dirfd, const char *pathname, mode_t mode, int flags);`, `mode_t` = `unsigned int`
              */
-            FCHMODAT = 53,
+            FCHMODAT = 53,//
 
             /**
              * @brief Change the permissions of a file specified by a file descriptor

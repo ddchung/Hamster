@@ -491,7 +491,7 @@ namespace Hamster
                          uint32_t owner, uint32_t group, int32_t flags) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_fchown(int32_t fd, uint32_t owner, uint32_t group) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_fchmodat(int32_t dirfd, uint32_t pathname_loc,
-                         uint32_t mode) { return -ENOSYS; }
+                         uint32_t mode, int32_t flags) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_fchmod(int32_t fd, uint32_t mode) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_ftruncate64(int32_t fd, uint32_t off_high, uint32_t off_low) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_truncate64(uint32_t path_loc, uint32_t off_high,
