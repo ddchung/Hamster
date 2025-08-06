@@ -28,6 +28,7 @@ namespace Hamster
         }
 
         char *target = vfs.get_targetat(vfs_rel_fd, pathname);
+        vfs.close(vfs_rel_fd);
         dealloc(pathname);
         if (!target)
             return cvt_error();

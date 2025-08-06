@@ -64,6 +64,7 @@ namespace Hamster
             else
                 ret = vfs.statat(vfs_relfd, path_str, &statbuf);
             dealloc(path_str);
+            vfs.close(vfs_relfd);
         }
 
         if (ret < 0)

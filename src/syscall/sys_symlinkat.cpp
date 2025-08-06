@@ -41,6 +41,7 @@ namespace Hamster
         int ret = vfs.symlinkat(vfs_rel_fd, linkpath_str, target_str);
         dealloc(target_str);
         dealloc(linkpath_str);
+        vfs.close(vfs_rel_fd);
 
         if (ret < 0)
             return cvt_error();

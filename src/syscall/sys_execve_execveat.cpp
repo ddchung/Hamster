@@ -93,6 +93,7 @@ namespace Hamster
 
         // Do the exec
         int ret = current_task->process->obj.exec(path, argv_strings, envp_strings, vfs_at_fd);
+        vfs.close(vfs_at_fd);
 
         // Clean up
         dealloc(path);
