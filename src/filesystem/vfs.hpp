@@ -191,6 +191,46 @@ namespace Hamster
         int chown(int fd, int uid, int gid);
 
         /**
+         * @brief Change the file ownership of a file at a given path, without following symlinks
+         * @param path The path to the file to change ownership of
+         * @param uid The new user ID of the file
+         * @param gid The new group ID of the file
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This does not follow symlinks, it changes the ownership of the symlink itself
+         */
+        int lchown(const char *path, int uid, int gid);
+
+        /**
+         * @brief Change the file ownership of a file at a given path relative to a directory, without following symlinks
+         * @param dir The file descriptor of the directory to change ownership in
+         * @param path The path to the file to change ownership of, starting from the directory
+         * @param uid The new user ID of the file
+         * @param gid The new group ID of the file
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This does not follow symlinks, it changes the ownership of the symlink itself
+         */
+        int lchownat(int dir, const char *path, int uid, int gid);
+
+        /**
+         * @brief Change the file ownership of a file at a given path
+         * @param path The path to the file to change ownership of
+         * @param uid The new user ID of the file
+         * @param gid The new group ID of the file
+         * @return 0 on success, or on error return -1 and set `error
+         */
+        int chown(const char *path, int uid, int gid);
+
+        /**
+         * @brief Change the file ownership of a file at a given path relative to a directory
+         * @param dir The file descriptor of the directory to change ownership in
+         * @param path The path to the file to change ownership of, starting from the directory
+         * @param uid The new user ID of the file
+         * @param gid The new group ID of the file
+         * @return 0 on success, or on error return -1 and set `error`
+         */
+        int chownat(int dir, const char *path, int uid, int gid);
+
+        /**
          * @brief Read from a file
          * @param fd The file descriptor to read from
          * @param buf The buffer to read into

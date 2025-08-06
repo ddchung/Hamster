@@ -624,6 +624,98 @@ namespace Hamster
         return ret;
     }
 
+    int VFS::lchownat(int dfd, const char *path, int uid, int gid)
+    {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file || file->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return -1;
+        }
+
+        BaseDirectory *dir = (BaseDirectory *)file->clone();
+        if (!dir)
+            return -1;
+
+        file = data->mounts.lopen(path, OPEN_NOFOLLOW | OPEN_RDWR, 0, dir);
+        if (!file)
+            return -1;
+
+        int ret = file->chown(uid, gid);
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::lchown(const char *path, int uid, int gid)
+    {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        int rootfd = open("/", OPEN_RDWR | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return -1;
+
+        int res = lchownat(rootfd, path, uid, gid);
+        close(rootfd);
+
+        return res;
+    }
+
+    int VFS::chownat(int dfd, const char *path, int uid, int gid)
+    {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file || file->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return -1;
+        }
+
+        BaseDirectory *dir = (BaseDirectory *)file->clone();
+        if (!dir)
+            return -1;
+
+        file = data->mounts.lopen(path, OPEN_RDWR, 0, dir);
+        if (!file)
+            return -1;
+
+        int ret = file->chown(uid, gid);
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::chown(const char *path, int uid, int gid)
+    {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        int rootfd = open("/", OPEN_RDWR | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return -1;
+
+        int res = chownat(rootfd, path, uid, gid);
+        close(rootfd);
+
+        return res;
+    }
+
     ssize_t VFS::read(int fd, void *buf, size_t size)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
