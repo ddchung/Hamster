@@ -59,7 +59,8 @@ namespace
             Hamster::scheduler.tick();
             if (Hamster::scheduler.num_tasks() == 0)
             {
-                flags |= Hamster::KSCHED_REMOVE_NOW;
+                Hamster::_trace("No tasks left, exiting...\n");
+                flags |= Hamster::KSCHED_REMOVE_NOW | Hamster::KSCHED_REMOVE_ALL;
             }
         }
     };

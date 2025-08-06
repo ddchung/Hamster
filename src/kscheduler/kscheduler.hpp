@@ -12,6 +12,7 @@ namespace Hamster
     inline constexpr int KSCHED_REMOVE_NEXT_TICK = 1 << 0; // Remove this task after the next tick, like a one-shot
     inline constexpr int KSCHED_AUTO_INTERVAL = 1 << 1; // Automatically set the next tick to the current time + interval
     inline constexpr int KSCHED_REMOVE_NOW = 1 << 2; // Remove as soon as the scheduler sees it
+    inline constexpr int KSCHED_REMOVE_ALL = 1 << 3; // Remove all tasks, used for shutdown
 
     class BaseKTask
     {

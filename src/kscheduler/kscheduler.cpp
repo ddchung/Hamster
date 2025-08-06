@@ -92,12 +92,22 @@ namespace Hamster
         // Remove loop
         for (auto it = tasks.begin(); it != tasks.end();)
         {
-            if (it->second->flags & KSCHED_REMOVE_NOW)
+            if (it->second->flags & KSCHED_REMOVE_ALL)
+            {
+                // Remove all tasks
+                for (auto &task : tasks)
+                {
+                    dealloc(task.second);
+                }
+                tasks.clear();
+                return 0; // All tasks removed
+            }
+            else if (it->second->flags & KSCHED_REMOVE_NOW)
             {
                 dealloc(it->second);
                 it = tasks.erase(it);
             }
-            else
+            else 
             {
                 ++it;
             }
