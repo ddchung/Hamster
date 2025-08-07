@@ -1,50 +1,54 @@
-// Hamster close syscall
+// Hamster close system call
 
 #include <syscall/syscall.hpp>
-#include <abi/syscall_id.hpp>
-#include <errno/errno.h>
+#include <process/scheduler.hpp>
 #include <filesystem/vfs.hpp>
-#include <process/process.hpp>
-#include <cassert>
+#include <errno/errno.h>
 
 namespace Hamster
 {
-    int sys_close(Thread &thread)
+    int32_t sys_close(int32_t fd)
     {
-        int32_t fd = get_arg(thread, 0);
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
 
-        int vfs_fd = deref_fd(thread, fd);
-        if (vfs_fd < 0)
+        auto &fds = current_task->fd_table->obj.fds;
+        if (fd < 0 || fd >= (int32_t)fds.size())
         {
-            error = EBADF;
-            return transfer_error(thread);
+            error = EBADF; // Bad file descriptor
+            return -1;
         }
 
-        Process *process = thread.get_process();
-        if (vfs_fd < 0)
+        UserFD &user_fd = fds[fd];
+
+        if (user_fd.type == UserFDType::VFS)
         {
-            error = EBADF;
-            return transfer_error(thread);
+            // Close the VFS file descriptor
+            int vfs_fd = user_fd.vfs_fd;
+
+            user_fd.vfs_fd = -1; // Reset the VFS file descriptor
+            
+            fd_refcount[vfs_fd]--;
+            if (fd_refcount[vfs_fd] == 0)
+            {
+                fd_refcount.erase(vfs_fd);
+
+                int res = vfs.close(vfs_fd);
+                if (res < 0)
+                {
+                    return cvt_error();
+                }
+                return 0;
+            }
+        }
+        else if (user_fd.type == UserFDType::PID)
+        {
+            // Mark as closed
+
+            user_fd.type = UserFDType::VFS;
+            user_fd.vfs_fd = -1; // Reset the VFS file descriptor
         }
 
-        fd_refcount[vfs_fd]--;
-        process->fds[fd].fd = -1; // Mark as closed
-
-        int ret = 0;
-
-        if (fd_refcount[vfs_fd] <= 0)
-        {
-            ret = vfs.close(vfs_fd);
-            fd_refcount.erase(vfs_fd);
-        }
-
-        if (ret < 0)
-        {
-            // error set in `vfs.close`
-            return transfer_error(thread);
-        }
-
-        return set_return(thread, 0);
+        return 0;
     }
 } // namespace Hamster
-

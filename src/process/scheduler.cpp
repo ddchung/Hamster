@@ -1,212 +1,400 @@
 // Hamster scheduler
 
 #include <process/scheduler.hpp>
-#include <memory/allocator.hpp>
-#include <platform/config.hpp>
+#include <process/task.hpp>
 #include <errno/errno.h>
-#include <utility>
+#include <memory/allocator.hpp>
+#include <syscall/syscall.hpp>
+#include <cstring>
 
 namespace Hamster
 {
-    Scheduler::Scheduler()
-        : processes()
+    namespace
     {
-        // PID 0 doesn't exist
-        processes.push_back(nullptr);
-    }
-
-    Scheduler::~Scheduler()
-    {
-        for (Process *process : processes)
+        // Returns 0 when handled successfully, -1 on error, 1 if nothing to handle
+        int handle_pending_signals(Task &task, PendingSignalQueue &queue)
         {
-            dealloc(process);
+            if (queue.rt_sigqueue.empty() && queue.normal_signals.empty())
+            {
+                return 1; // Nothing to handle
+            }
+
+            // Handle normal signals
+            auto normal_it = queue.normal_signals.begin();
+            while (normal_it != queue.normal_signals.end())
+            {
+                int signo = normal_it->first;
+                sys_siginfo &siginfo = normal_it->second.info;
+
+                // Check if the signal is blocked
+                if (task.is_signal_blocked(signo))
+                {
+                    ++normal_it; // Skip blocked signals
+                    continue;
+                }
+
+                // Call the signal handler
+                SignalHandler handler = task.process->obj.signal_handlers->obj.sig_handlers[signo];
+                handler.fn(&task, &siginfo, &handler.action);
+
+                // Remove the signal from the queue
+                normal_it = queue.normal_signals.erase(normal_it);
+
+                return 0;
+            }
+
+            // Handle real-time signals
+            for (auto &pending_signal : queue.rt_sigqueue)
+            {
+                sys_siginfo &siginfo = pending_signal.info;
+
+                // Check if the signal is blocked
+                if (task.is_signal_blocked(siginfo.signo))
+                {
+                    continue; // Skip blocked signals
+                }
+
+                // Call the signal handler
+                SignalHandler handler = task.process->obj.signal_handlers->obj.sig_handlers[siginfo.signo];
+                handler.fn(&task, &siginfo, &handler.action);
+
+                // Remove the signal from the queue
+                queue.rt_sigqueue.pop_front();
+
+                return 0;
+            }
+
+            return 1; // Nothing to handle
         }
-        processes.clear();
-    }
+    } // namespace
+    
 
-    Scheduler::Scheduler(Scheduler &&other)
-        : processes(std::move(other.processes))
+    uint32_t Scheduler::add_task(Task *task)
     {
-        other.processes = List<Process *>();
-    }
-
-    Scheduler &Scheduler::operator=(Scheduler &&other)
-    {
-        if (this == &other)
-            return *this;
-        std::swap(processes, other.processes);
-        return *this;
-    }
-
-    int Scheduler::add_process(Process *process)
-    {
-        if (!process)
+        if (!task)
         {
             error = EINVAL;
-            return -1;
+            return 0;
         }
 
-        // Get a new PID
-        int new_pid = -1;
-        size_t counter = 0;
-        for (auto process : processes)
+        tasks[next_tid] = task;
+        task->init_tid(next_tid);
+
+        return next_tid++;
+    }
+
+    Task *Scheduler::get_task(uint32_t tid)
+    {
+        auto it = tasks.find(tid);
+        if (it != tasks.end())
         {
-            // Skip PID 0
-            if (!process && counter > 0)
+            return it->second;
+        }
+        error = ESRCH;
+        return nullptr;
+    }
+
+    int Scheduler::tick()
+    {
+        // Tick loop
+        for (auto &[tid, task] : tasks)
+        {
+            current_task = task;
+
+            if (task->is_paused || task->is_dead)
+                continue;
+
+            int result = do_tick(*task);
+
+            task->last_tick = _get_sys_time();
+
+            if (result < 0)
             {
-                new_pid = counter;
-                break;
+                return -1;
             }
-            ++counter;
         }
-        if (new_pid == -1)
+
+        current_task = nullptr;
+
+        // Remove loop
+        for (auto it = tasks.begin(); it != tasks.end();)
         {
-            // No free PID found, allocate a new one
-            new_pid = processes.size();
-            processes.push_back(nullptr);
+            if (it->second->is_dead && it->first != it->second->get_pid())
+            {
+                // Remove dead non-leader tasks
+                dealloc(it->second);
+                it = tasks.erase(it);
+            }
+            else if (it->second->is_dead && it->second->process->obj.tasks.size() == 1)
+            {
+                // Remove dead leader tasks, but only if they are the last task in the process
+                dealloc(it->second);
+                it = tasks.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
         }
 
-        process->pid = new_pid;
-
-        auto it = processes.begin();
-        std::advance(it, new_pid);
-        *it = process;
-
-        // Assume that `process` has its members correctly set
-
-        // OK
         return 0;
     }
 
-    int Scheduler::make_process_elf(const char *path, const char *const *argv, const char *const *envp)
+    static const char *empty_strings[] = {nullptr};
+
+    int Scheduler::spawn(const char *path, const char *const *argv, const char *const *envp, int dirfd)
     {
         if (!path)
         {
-            error = EINVAL;
+            error = EBADF;
             return -1;
         }
 
-        Process *process = alloc<Process>();
+        if (!argv) argv = empty_strings;
+        if (!envp) envp = empty_strings;
 
-        process->cwd = "/";
-        process->uid = 0;
-        process->gid = 0;
-        process->euid = 0;
-        process->egid = 0;
-        process->ppid = 0;
-        process->pgid = 0;
-        process->sid = 0;
-        process->exit_status = 0;
+        Task *task = alloc<Task>();
 
-        if (process->load_elf(path, argv, envp) < 0)
+        task->memory = make_task_member<EmulatorMemory>();
+        task->program_brk = make_task_member<uint32_t>();
+        task->emulator.memory = &task->memory->obj;
+        task->fd_table = make_task_member<FDTable>();
+        task->process = make_task_member<Process>();
+
+        memset(task->emulator.x, 0, sizeof(task->emulator.x));
+
+        task->process->obj.pg = make_task_member<ProcessGroup>();
+        task->process->obj.signal_handlers = make_task_member<SignalHandlers>();
+        task->process->obj.set_default_signal_handlers();
+        task->process->obj.fs_info = make_task_member<FSInfo>();
+
+        task->process->obj.pg->obj.session = make_task_member<Session>();
+        task->process->obj.pg->obj.pgid = next_tid;
+        task->process->obj.pg->obj.session->obj.sid = next_tid;
+        task->process->obj.pid = next_tid;
+        task->process->obj.ppid = 0;
+
+        task->process->obj.uid = 0;
+        task->process->obj.euid = 0;
+        task->process->obj.gid = 0;
+        task->process->obj.egid = 0;
+
+        task->process->obj.tasks.push_back(task);
+        task->process->obj.pg->obj.processes.push_back(&task->process->obj);
+        task->process->obj.pg->obj.session->obj.pgroups.push_back(&task->process->obj.pg->obj);
+
+        uint32_t tid = add_task(task);
+
+        if (tid == 0)
         {
-            dealloc(process);
-            error = EIO;
+            dealloc(task);
             return -1;
         }
 
-        if (add_process(process) < 0)
+        int ret = task->process->obj.exec(path, argv, envp, dirfd);
+
+        if (ret < 0)
         {
-            dealloc(process);
-            error = EIO;
+            dealloc(task);
             return -1;
         }
 
-        // OK
+        return tid;
+    }
+
+    int Scheduler::adopt_children(uint32_t pid)
+    {
+        for (auto &[_, task] : tasks)
+        {
+            if (task->process->obj.ppid == pid)
+            {
+                task->process->obj.ppid = 1; // Adopt by init
+            }
+        }
         return 0;
     }
 
-    size_t Scheduler::tick()
+    Process *Scheduler::get_process(uint32_t pid)
     {
-        size_t ticked_count = 0;
-        for (Process *&process : processes)
+        // First check TID for quick access
+        auto it = tasks.find(pid);
+        if (it != tasks.end())
         {
-            if (!process)
-                continue; // Skip null processes
-            else if (process->threads.empty())
-                continue; // Skip ended processes
-            else
+            if (it->second->process->obj.pid == pid)
             {
-                // Tick each thread in the process
-                process->threads.remove_if([&](Thread &thread)
-                                           {
-                                            for (size_t i = 0; i < HAMSTER_THREAD_TIME_SLICE; ++i)
-                                            {
-                                               if (thread.get_state() == ThreadState::ENDED)
-                                                   return true; // Remove ended threads
-                                               if (thread.is_paused())
-                                               {
-                                                   ++ticked_count;
-                                                   thread.get_current_pause_callback()(thread);
-                                                   return false; // Keep paused threads
-                                               }
-                                               thread.tick();  // Tick the thread
-                                               ++ticked_count; // Count the ticked thread
-                                            }
-                                               return false;   // Keep running threads
-                                           });
-                process->memory_space.swap_out_all();
+                return &it->second->process->obj;
             }
         }
-        return ticked_count; // Return the number of threads that were ticked
-    }
 
-    uint32_t Scheduler::get_exit_status(uint32_t ppid, int pid, int &exit_status, bool reap)
-    {
-        bool found = false;
-        for (auto it = processes.begin(); it != processes.end(); ++it)
+        // If not found, check all tasks
+        for (auto &[_, task] : tasks)
         {
-            Process *process = *it;
-            if (!process)
-                continue; // Skip processes that don't match the parent PID
-
-            if (pid != -1 && process->pid != (uint32_t)pid)
-                continue; // Skip if PID doesn't match
-            if (pid == -1 && process->ppid != ppid)
-                continue; // Skip if PPID doesn't match
-
-            found = true;
-
-            if (!process->threads.empty())
+            if (task->process->obj.pid == pid)
             {
-                continue; // try to find an ended child
+                return &task->process->obj;
             }
-
-            exit_status = process->exit_status; // Get the exit status
-
-            uint32_t pid = process->pid; // Get the PID
-            if (reap)
-            {
-                dealloc(process);            // Deallocate the process
-                *it = nullptr;
-            }
-
-            return pid;
         }
 
-        error = found ? EBUSY : ECHILD;
-        return 0;
+        // Still not found, no process with that PID
+        error = ESRCH;
+        return nullptr;
     }
 
-    int Scheduler::adopt_processes(uint32_t ppid)
+    ProcessGroup *Scheduler::get_process_group(uint32_t pgid)
     {
-        for (auto &process : processes)
+        // First check TID for quick access
+        auto it = tasks.find(pgid);
+        if (it != tasks.end())
         {
-            if (!process || process->ppid != ppid)
-                continue; // Skip processes that don't match the parent PID
-
-            process->ppid = 1; // Adopt by PID 1 (init)
+            if (it->second->process->obj.pg->obj.pgid == pgid)
+            {
+                return &it->second->process->obj.pg->obj;
+            }
         }
 
-        return 0; // Success
+        // If not found, check all tasks
+        for (auto &[_, task] : tasks)
+        {
+            if (task->process->obj.pg->obj.pgid == pgid)
+            {
+                return &task->process->obj.pg->obj;
+            }
+        }
+
+        // Still not found, no process group with that PGID
+        error = ESRCH;
+        return nullptr;
     }
 
-    Process *Scheduler::get_process(uint32_t pid) const
+    Session *Scheduler::get_session(uint32_t sid)
     {
-        if (pid >= processes.size())
-            return nullptr; // Invalid PID
-        auto it = processes.begin();
-        std::advance(it, pid);
-        return *it;
+        // First check TID for quick access
+        auto it = tasks.find(sid);
+        if (it != tasks.end())
+        {
+            if (it->second->process->obj.pg->obj.session->obj.sid == sid)
+            {
+                return &it->second->process->obj.pg->obj.session->obj;
+            }
+        }
+
+        // If not found, check all tasks
+        for (auto &[_, task] : tasks)
+        {
+            if (task->process->obj.pg->obj.session->obj.sid == sid)
+            {
+                return &task->process->obj.pg->obj.session->obj;
+            }
+        }
+
+        // Still not found, no session with that SID
+        error = ESRCH;
+        return nullptr;
+    }
+
+    int Scheduler::do_tick(Task &task, uint16_t tick_count)
+    {
+        if (tick_count == 0)
+            return 0;
+
+        if (task.is_dead)
+            return 0; // Skip dead tasks
+
+        // Handle any pending signals
+        int signal_result = handle_pending_signals(task, task.pending_signals);
+        if (signal_result != 1)
+        {
+            // Signal handled, or error occurred
+            return signal_result == 1 ? 0 : -1;
+        }
+
+        signal_result = handle_pending_signals(task, task.process->obj.shared_pending_signals);
+        if (signal_result != 1)
+        {
+            // Signal handled, or error occurred
+            return signal_result == 1 ? 0 : -1;
+        }
+
+        if (task.blocking_operation == BlockingOperation::IO_READ)
+        {
+            return task.poll_read();
+        }
+        else if (task.blocking_operation == BlockingOperation::IO_WRITE)
+        {
+            return task.poll_write();
+        }
+        else if (task.blocking_operation == BlockingOperation::WAIT)
+        {
+            return task.poll_wait();
+        }
+
+        // Execute the task's instruction
+        auto result = task.emulator.execute();
+        if (result.status == RiscVEmulator::ExecuteResult::Status::Success)
+        {
+            // Successful execution, continue
+            return do_tick(task, tick_count - 1);
+        }
+        else if (result.status == RiscVEmulator::ExecuteResult::Status::ECALL)
+        {
+            // Handle system call
+            int32_t syscall_id = task.emulator.x[17]; // a7 is syscall ID
+            int32_t syscall_result = Hamster::syscall(syscall_id);
+            task.emulator.x[10] = syscall_result; // a0 is syscall return value
+            return 0;
+        }
+        else if (result.status == RiscVEmulator::ExecuteResult::Status::EBREAK)
+        {
+            // TODO: Handle EBREAK
+            return 0;
+        }
+
+        sys_siginfo siginfo = {};
+
+        if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalInstruction)
+        {
+            siginfo.signo = H_SIGILL;
+            siginfo.errno_value = 0;
+            siginfo.code = H_ILL_ILLOPC;
+
+            // - 4, because the PC was incremented
+            siginfo.fields.fault.addr = task.emulator.pc - 4;
+
+            task.send_signal(siginfo);
+            return 0;
+        }
+        else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalLoad)
+        {
+            siginfo.signo = H_SIGSEGV;
+            siginfo.errno_value = 0;
+            siginfo.code = H_SEGV_MAPERR;
+
+            // - 4, because the PC was incremented
+            siginfo.fields.fault.addr = task.emulator.pc - 4;
+
+            task.send_signal(siginfo);
+            return 0;
+        }
+        else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalStore)
+        {
+            siginfo.signo = H_SIGSEGV;
+            siginfo.errno_value = 0;
+            siginfo.code = H_SEGV_ACCERR;
+
+            // - 4, because the PC was incremented
+            siginfo.fields.fault.addr = task.emulator.pc - 4;
+
+            task.send_signal(siginfo);
+            return 0;
+        }
+        else if (result.status == RiscVEmulator::ExecuteResult::Status::Error)
+        {
+            // Error means that there was an internal error in the emulator
+            // so, try again next time
+            return -1;
+        }
+
+        return -1;
     }
 } // namespace Hamster
+

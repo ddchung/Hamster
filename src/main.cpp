@@ -1,13 +1,13 @@
 #include <platform/platform.hpp>
 
-#include <process/process.hpp>
-#include <process/thread.hpp>
 #include <elf/elf_loader.hpp>
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
 #include <memory/allocator.hpp>
 #include <process/scheduler.hpp>
+#include <kscheduler/kscheduler.hpp>
 #include <errno/errno.h>
+#include <cstring>
 
 #ifdef __STDC_HOSTED__
 #include <unistd.h>
@@ -19,6 +19,52 @@ void test_platform();
 void test_memory();
 void test_filesystem();
 
+namespace
+{
+    // Logging formatters
+    void log_operation(const char *operation)
+    {
+        Hamster::_log("[ ... ]\t");
+        Hamster::_log(operation);
+    }
+
+    void log_operation_status(const char *status = "OK")
+    {
+        size_t len = strlen(status);
+        size_t lpad = (5 - len) / 2;
+        size_t rpad = 5 - lpad - len;
+        Hamster::_log("\r[");
+        for (size_t i = 0; i < lpad; ++i)
+            Hamster::_log(" ");
+        Hamster::_log(status);
+        for (size_t i = 0; i < rpad; ++i)
+            Hamster::_log(" ");
+        Hamster::_log("]");
+        Hamster::_log("\r\n");
+    }
+
+    class UserSchedulerTickTask : public Hamster::BaseKTask
+    {
+    public:
+        UserSchedulerTickTask()
+        {
+            flags = Hamster::KSCHED_AUTO_INTERVAL;
+            interval = 0; // Tick as fast as possible
+            id = 1; // Fixed ID
+            next_tick = 0;
+        }
+        ~UserSchedulerTickTask() override = default;
+        void run() override
+        {
+            Hamster::scheduler.tick();
+            if (Hamster::scheduler.num_tasks() == 0)
+            {
+                Hamster::_trace("No tasks left, exiting...\n");
+                flags |= Hamster::KSCHED_REMOVE_NOW | Hamster::KSCHED_REMOVE_ALL;
+            }
+        }
+    };
+}
 
 int main()
 {
@@ -29,53 +75,40 @@ int main()
     }
 
 #ifndef NDEBUG
-    Hamster::_log("Testing Platform...\n");
+    log_operation("Testing platform...");
     test_platform();
-    Hamster::_log("Done\n");
+    log_operation_status();
 
-    Hamster::_log("Testing Memory...\n");
+    log_operation("Testing Memory...");
     test_memory();
-    Hamster::_log("Done\n");
+    log_operation_status();
 
-    Hamster::_log("Testing Filesystem...\n");
+    log_operation("Testing Filesystem...");
     test_filesystem();
-    Hamster::_log("Done\n");
+    log_operation_status();
 
     Hamster::error = 0; // Reset error after tests
 #endif // NDEBUG
 
+    log_operation("Mounting root filesystem...");
+
     if (Hamster::_mount_rootfs() != 0)
     {
-        Hamster::_log("Failed to mount root filesystem\n");
+        log_operation_status("FAIL");
         return -1;
     }
-    
-    Hamster::scheduler.make_process_elf("/usr/bin/init");
+    log_operation_status("OK");
 
-    Hamster::_log("Starting userspace...\n");
-    Hamster::_log("========== [ BEGIN USERSPACE OUTPUT ] ==========\n");
+    Hamster::scheduler.spawn("/usr/bin/init");
+
+    // Add the user scheduler tick task
+    Hamster::kscheduler.add_task(Hamster::alloc<UserSchedulerTickTask>());
 
     // Run the program
     while (true)
     {
-        Hamster::scheduler.tick();
-
-        // Check if there are any processes left
-        bool has_processes = false;
-        for (const auto &process : Hamster::scheduler.get_processes())
-        {
-            if (process && !process->threads.empty())
-            {
-                has_processes = true;
-                break;
-            }
-        }
-
-        if (!has_processes)
-        {
-            Hamster::_log("\n=========== [ END USERSPACE OUTPUT ] ===========\n");
-            Hamster::_log("No more processes left, exiting...\n");
-            break; // Exit the loop if no processes are left
-        }
+        Hamster::kscheduler.tick();
+        if (!Hamster::kscheduler.has_tasks())
+            break;
     }
 }

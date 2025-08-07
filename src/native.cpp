@@ -6,6 +6,8 @@
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
 #include <filesystem/device_manager.hpp>
+#include <driver/base_tty.hpp>
+#include <abi/values.hpp>
 #include <memory/allocator.hpp>
 #include <errno/errno.h>
 #include <cstdio>
@@ -21,6 +23,7 @@
 #include <cstdarg>
 #include <queue>
 #include <string>
+#include <time.h>
 
 using namespace Hamster;
 
@@ -90,7 +93,7 @@ namespace
 
             buf->dev = st.st_dev;
             buf->ino = st.st_ino;
-            buf->mode = st.st_mode;
+            buf->mode = st.st_mode & 07777;
             buf->nlink = st.st_nlink;
             buf->uid = st.st_uid;
             buf->gid = st.st_gid;
@@ -98,6 +101,28 @@ namespace
             buf->atime = st.st_atime;
             buf->mtime = st.st_mtime;
             buf->ctime = st.st_ctime;
+
+            if (S_ISREG(st.st_mode))
+            {
+                buf->mode |= STAT_IFREG;
+            }
+            else if (S_ISDIR(st.st_mode))
+            {
+                buf->mode |= STAT_IFDIR;
+            }
+            // Skip Character and Block devices
+            else if (S_ISFIFO(st.st_mode))
+            {
+                buf->mode |= STAT_IFIFO;
+            }
+            else if (S_ISLNK(st.st_mode))
+            {
+                buf->mode |= STAT_IFLNK;
+            }
+            else if (S_ISSOCK(st.st_mode))
+            {
+                buf->mode |= STAT_IFSOCK;
+            }
 
             return 0; // Success
         }
@@ -331,7 +356,7 @@ namespace
 
         DeviceID get_device_id() override
         {
-            sys_stat st;
+            sys_stat st = {};
             if (stat(&st) < 0)
             {
                 return {0, 0}; // Return invalid device ID on error
@@ -433,7 +458,6 @@ namespace
             }
 
             int dup_fd = dup(fd);
-
             DIR *dir = fdopendir(dup_fd);
             if (!dir)
             {
@@ -441,8 +465,17 @@ namespace
                 return nullptr;
             }
 
+            rewinddir(dir); // Reset the directory stream
+
             std::queue<char *> entries;
             struct dirent *entry;
+
+            // Go to position in directory
+            for (int64_t i = 0; i < pos && (entry = readdir(dir)) != nullptr; ++i)
+            {
+                // Just read entries until we reach the desired position
+            }
+
             while ((entry = readdir(dir)) != nullptr)
             {
                 if (count == 0)
@@ -453,6 +486,7 @@ namespace
                 strcpy(name_copy, name);
                 entries.push(name_copy);
 
+                ++pos;
                 --count;
             }
 
@@ -473,19 +507,38 @@ namespace
 
         int64_t seek(int64_t offset, int whence) override
         {
-            if (fd < 0)
+            switch (whence)
             {
-                errno = EBADF;
-                return -1;
+            case H_SEEK_SET:
+                if (offset < 0)
+                {
+                    errno = EINVAL;
+                    return -1; // Invalid offset
+                }
+                pos = offset;
+                break;
+            case H_SEEK_CUR:
+                if (pos + offset < 0)
+                {
+                    errno = EINVAL;
+                    return -1; // Invalid offset
+                }
+                pos += offset;
+                break;
+            case H_SEEK_END:
+                error = ENOTSUP;
+                return -1; // Not supported for directories
+            default:
+                errno = EINVAL;
+                return -1; // Invalid whence
             }
 
-            off_t ret = lseek(fd, offset, whence);
-            if (ret < 0)
-            {
-                swap_error();
-                return -1;
-            }
-            return ret;
+            return pos;
+        }
+
+        int64_t tell() override
+        {
+            return pos;
         }
 
         BaseFile *get(const char *name, int flags, int mode) override
@@ -496,14 +549,14 @@ namespace
                 return nullptr;
             }
 
-            int new_fd = openat(fd, name, O_RDWR | O_NOFOLLOW);
+            int new_fd = openat(fd, name, O_RDWR | O_NONBLOCK | O_NOFOLLOW);
             if (new_fd < 0)
             {
                 if (errno == ENOENT && (flags & OPEN_CREAT))
                 {
                     return flags & OPEN_DIRECTORY ?
-                        (BaseFile*)mkdir(name, O_RDWR, mode) :
-                        (BaseFile*)mkfile(name, O_RDWR, mode);
+                        (BaseFile*)mkdir(name, O_RDWR | O_NONBLOCK, mode) :
+                        (BaseFile*)mkfile(name, O_RDWR | O_NONBLOCK, mode);
                 }
                 else if (errno == ELOOP)
                 {
@@ -573,7 +626,7 @@ namespace
                 return nullptr;
             }
 
-            int new_fd = openat(fd, name, O_RDWR | O_CREAT | O_EXCL, mode);
+            int new_fd = openat(fd, name, O_RDWR | O_NONBLOCK | O_CREAT | O_EXCL, mode);
 
             if (new_fd < 0)
             {
@@ -712,6 +765,8 @@ namespace
             swap_error();
             return -1;
         }
+    private:
+        off_t pos = 0;
     };
 
     class NativeFilesystem : public BaseFilesystem
@@ -735,60 +790,7 @@ namespace
 
 namespace
 {
-    void tty_atexit(void);
-    int tty_reset(void);
-    void tty_raw(void);
-
-    struct termios orig_termios; /* TERMinal I/O Structure */
-    int ttyfd = STDIN_FILENO;    /* STDIN_FILENO is 0 by default */
-
-    /* exit handler for tty reset */
-    void tty_atexit(void) /* NOTE: If the program terminates due to a signal   */
-    {                     /* this code will not run.  This is for exit()'s     */
-        tty_reset();      /* only.  For resetting the terminal after a signal, */
-    } /* a signal handler which calls tty_reset is needed. */
-
-    /* reset tty - useful also for restoring the terminal when this process
-       wishes to temporarily relinquish the tty
-    */
-    int tty_reset(void)
-    {
-        /* flush and reset */
-        if (tcsetattr(ttyfd, TCSAFLUSH, &orig_termios) < 0)
-            return -1;
-        return 0;
-    }
-
-    /* put terminal in raw mode - see termio(7I) for modes */
-    void tty_raw(void)
-    {
-        struct termios raw;
-
-        raw = orig_termios; /* copy original and then modify below */
-
-        // /* input modes - clear indicated ones giving: no break, no CR to NL,
-        //    no parity check, no strip char, no start/stop output (sic) control */
-        // raw.c_iflag |= ICRNL;
-
-        // /* control modes - set 8 bit chars */
-        // raw.c_cflag |= (CS8);
-
-        // /* local modes - clear giving: echoing off, canonical off (no erase with
-        //    backspace, ^U,...),  no extended functions, no signal chars (^Z,^C) */
-        // raw.c_lflag &= ~(ISIG);
-
-        // /* control chars - set return condition: min number of bytes and timer */
-        raw.c_cc[VMIN] = 0;
-        raw.c_cc[VTIME] = 0;
-
-        /* put terminal in raw mode after flushing */
-        if (tcsetattr(ttyfd, TCSAFLUSH, &raw) < 0)
-        printf("Warning: Can't set TTY to raw mode, skipping.\n");
-    }
-
     FILE *trace_file = nullptr;
-    
-    std::string trace_write_buf;
 
     void trace_atexit_handler()
     {
@@ -801,72 +803,71 @@ namespace
 
     // Console device
 
-    class ConsoleCharDeviceHandle : public Hamster::BaseCharacterDeviceHandle
+    class ConsoleTTYBackend
     {
     public:
-        ssize_t write(const uint8_t *buf, size_t size) override
+        ConsoleTTYBackend()
         {
-            ssize_t bytes_written = ::write(STDOUT_FILENO, buf, size);
-            if (bytes_written < 0)
+            if (tcgetattr(STDIN_FILENO, &old_termios) == 0)
             {
-                Hamster::error = errno;
-                errno = 0;
+                struct termios new_termios = old_termios;
+                new_termios.c_lflag &= ~(ICANON | ECHO | ISIG); // Disable canonical mode, echo, and signals
+                new_termios.c_iflag &= ~(IXON | ICRNL); // Disable flow control and CR to NL translation
+                new_termios.c_oflag &= ~(OPOST); // Disable output processing
+                new_termios.c_cflag |= (CS8 | CREAD); // 8-bit characters and enable receiver
+                new_termios.c_cc[VMIN] = 0;
+                new_termios.c_cc[VTIME] = 0; 
+                tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
+            }
+            fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK); // Set non-blocking mode
+            fcntl(STDOUT_FILENO, F_SETFL, O_NONBLOCK); // Set non-blocking mode
+        }
+        ~ConsoleTTYBackend()
+        {
+            tcsetattr(STDIN_FILENO, TCSANOW, &old_termios);
+        }
+
+        ssize_t read(void *buf, size_t size)
+        {
+            ssize_t ret = ::read(STDIN_FILENO, buf, size);
+            if (ret < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return ret;
+        }
+
+        ssize_t write(const void *buf, size_t size)
+        {
+            ssize_t ret = ::write(STDOUT_FILENO, buf, size);
+            if (ret < 0)
+            {
+                swap_error();
+                return -1;
+            }
+            return ret;
+        }
+        int get_win_sz(sys_winsize *ws)
+        {
+            struct winsize w;
+            if (ioctl(STDIN_FILENO, TIOCGWINSZ, &w) < 0)
+            {
+                swap_error();
                 return -1;
             }
 
-            // trace if tracing is enabled
-            if (trace_file)
-            {
-                trace_write_buf.append(reinterpret_cast<const char *>(buf), bytes_written);
-            }
-
-            return bytes_written;
-        }
-
-        ssize_t read(uint8_t *buf, size_t size) override
-        {
-            ssize_t bytes_read = ::read(STDIN_FILENO, buf, size);
-            if (bytes_read < 0)
-            {
-                Hamster::error = errno;
-                errno = 0;
-                return -1;
-            }
-            return bytes_read;
-        }
-
-        int ioctl(int req, Hamster::IoctlArg args) override
-        {
-            if (args.p)
-                return ::ioctl(STDIN_FILENO, req, args.p);
-            else
-                return ::ioctl(STDIN_FILENO, req, args.i);
-        }
-
-        int get_flags() override
-        {
-            return flags;
-        }
-
-        int set_flags(int new_flags) override
-        {
-            flags = new_flags;
+            ws->row = w.ws_row;
+            ws->col = w.ws_col;
+            ws->xpixel = w.ws_xpixel;
+            ws->ypixel = w.ws_ypixel;
             return 0; // Success
         }
-
-        int flags = 0;
+    private:
+        struct ::termios old_termios;
     };
 
-    class ConsoleCharDevice : public Hamster::BaseSpecialDriver
-    {
-    public:
-        Hamster::BaseSpecialDriverHandle *create_handle(int flags) override
-        {
-            auto *handle = Hamster::alloc<ConsoleCharDeviceHandle>();
-            handle->set_flags(flags);
-            return handle;
-        }
-    };
+    using ConsoleCharDevice = BaseTTYDriver<ConsoleTTYBackend>;
 }
 
 int Hamster::_init_platform()
@@ -890,25 +891,6 @@ int Hamster::_init_platform()
         trace_file = nullptr;
     }
 
-    if (isatty(ttyfd))
-    {
-        /* store current tty settings in orig_termios */
-        if (tcgetattr(ttyfd, &orig_termios) < 0)
-        {
-            printf("Warning: Can't get tty settings, not setting to raw mode\n");
-            return 0;
-        }
-
-        /* register the tty reset with the exit handler */
-        if (atexit(tty_atexit) != 0)
-        {
-            printf("Error: Cannot register tty reset with atexit, exiting now.\n");
-            tty_atexit();
-            exit(1);
-        }
-
-        tty_raw();  /* put tty in raw mode */
-    }
     return 0;
 }
 
@@ -922,20 +904,6 @@ void Hamster::_trace(const char *fmt, ...)
     va_start(args, fmt);
     vfprintf(trace_file, fmt, args);
     va_end(args);
-}
-
-void Hamster::_flush_trace()
-{
-    while (true)
-    {
-        size_t pos = trace_write_buf.find('\n');
-        if (pos == std::string::npos)
-            break; // No more complete lines
-
-        std::string line = trace_write_buf.substr(0, pos + 1);
-        _trace("[OUTPUT] %s", line.c_str());
-        trace_write_buf.erase(0, pos + 1);
-    }
 }
 
 int Hamster::_mount_rootfs()
@@ -953,6 +921,7 @@ int Hamster::_mount_rootfs()
     auto console_device = Hamster::alloc<ConsoleCharDevice>();
     Hamster::device_manager.register_device({5, 1}, console_device);
     Hamster::vfs.mknod("/dev/console", {5, 1}, 0666);
+    Hamster::vfs.symlink("/dev/tty", "/dev/console");
 
     return 0;
 }
@@ -981,6 +950,23 @@ int Hamster::_log(char c)
     int out = printf("%c", c);
     fflush(stdout);
     return out;
+}
+
+uint64_t Hamster::_get_sys_time()
+{
+    struct timespec ts;
+
+    // Fall back to CLOCK_REALTIME if CLOCK_MONOTONIC is not available
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0 &&
+        clock_gettime(CLOCK_REALTIME, &ts) < 0)
+    {
+        swap_error();
+        return 0; // Error, return 0
+    }
+
+    // Convert to milliseconds
+    uint64_t time_ms = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    return time_ms;
 }
 
 #endif

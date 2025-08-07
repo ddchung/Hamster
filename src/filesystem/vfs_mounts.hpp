@@ -29,6 +29,9 @@ public:
     Mounts &operator=(Mounts &&other);
     ~Mounts();
     BaseDirectory *resolve_mount(BaseFile *file);
+    BaseFile *resolve_symlink(BaseSymlink *link, int flags);
+    // Open a file or directory, resolving symlinks if necessary
+    // If flags contains OPEN_NOFOLLOW, and the last component is a symlink, it will return the symlink itself
     BaseFile *lopen(const char *path, int flags, int mode, BaseDirectory *dir = nullptr);
     int mount(const char *path, BaseFilesystem *fs);
     int mount_root(BaseFilesystem *fs);

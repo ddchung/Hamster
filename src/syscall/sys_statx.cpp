@@ -1,132 +1,82 @@
-// Hamster statx system call implementation
+// Hamster statx system call
 
 #include <syscall/syscall.hpp>
-#include <abi/structs.hpp>
-#include <abi/syscall_id.hpp>
 #include <filesystem/vfs.hpp>
-#include <process/process.hpp>
+#include <process/scheduler.hpp>
 #include <memory/allocator.hpp>
+#include <abi/structs.hpp>
 #include <errno/errno.h>
-#include <cstring>
-
 
 namespace Hamster
 {
-    int sys_statx(Thread &thread)
+    int32_t sys_statx(int32_t dirfd, uint32_t pathname_loc, int32_t flags, uint32_t mask, uint32_t statxbuf_loc)
     {
-        // Note: For now, we don't support full statx support, we will just convert a regular stat to statx
+        Task *task = scheduler.get_current_task();
+        assert(task != nullptr);
 
-        // int statx(int dirfd, const char *pathname, int flags, unsigned int mask, struct statx *statxbuf);
-        int32_t thread_dfd = get_arg(thread, 0);
-        uint32_t path = get_arg(thread, 1);
-        int32_t flags = get_arg(thread, 2);
-        // uint32_t mask = get_arg(thread, 3); // not used for now
-        uint32_t statxbuf_addr = get_arg(thread, 4);
-
-        bool is_ref_root = false;
-        // Get the path from the thread's memory space
-
-        Process *process = thread.get_process();
-
-        char *path_str = process->memory_space.get_string(path);
-
-        if (!path_str)
+        // Check if we support the things in `mask`
+        if (mask & ~H_STATX_BASIC_STATS)
         {
-            return transfer_error(thread);
+            error = ENOSYS; // Not implemented
+            return cvt_error();
         }
 
-        _trace("statx: dirfd=%d, path=\"%s\", flags=0x%x, statxbuf_addr=0x%x, ret: ", thread_dfd, path_str, flags, statxbuf_addr);
+        // Get the path from the task's memory
+        char *path_str = task->memory->obj.memory.get_string(pathname_loc);
 
-        if (path_str[0] == '\0' && !(flags & 0x1000)) // AT_EMPTY_PATH
+        sys_stat statbuf = {};
+        int ret = 0;
+
+        if (!path_str || path_str[0] == '\0')
         {
-            error = ENOENT;
+            // Empty path
             dealloc(path_str);
-            return transfer_error(thread);
-        }
-
-        if (path_str[0] == '/')
-        {
-            // Absolute path, use the root directory
-            is_ref_root = true;
-        }
-        else if (thread_dfd == -100)
-        {
-            // AT_FDCWD, use the current working directory
-            is_ref_root = true;
-
-            // +1 for '/' and +1 for '\0'
-            char *new_buffer = alloc<char>(process->cwd.length() + 1 + strlen(path_str) + 1);
-
-            strcpy(new_buffer, process->cwd.c_str());
-            strcat(new_buffer, "/");
-            strcat(new_buffer, path_str);
-
-            _trace("new path=\"%s\" ret: ", new_buffer);
-
-            dealloc(path_str);
-            path_str = new_buffer;
-        }
-        else if (thread_dfd < 0)
-        {
-            // Invalid directory file descriptor
-            dealloc(path_str);
-            error = EBADF;
-            return transfer_error(thread);
-        }
-
-        int res = 0;
-        sys_stat statbuf;
-
-        int (VFS::*stat_fn)(const char*, sys_stat*);
-        int (VFS::*statat_fn)(int, const char*, sys_stat*);
-
-        if (flags & 0x100)
-        {
-            // AT_SYMLINK_NOFOLLOW
-            stat_fn = &VFS::lstat;
-            statat_fn = &VFS::lstatat;
+            if (flags & H_AT_EMPTY_PATH)
+            {
+                int vfs_fd = task->get_vfs_fd(dirfd);
+                if (vfs_fd < 0)
+                    return cvt_error();
+                ret = vfs.stat(vfs_fd, &statbuf);
+            }
+            else
+            {
+                error = path_str ? ENOENT : EINVAL;
+                return cvt_error();
+            }
         }
         else
         {
-            // Follow symlinks
-            stat_fn = &VFS::stat;
-            statat_fn = &VFS::statat;
-        }
-
-        if (is_ref_root)
-        {
-            res = (vfs.*stat_fn)(path_str, &statbuf);
-        }
-        else
-        {
-            // Open the file relative to the directory file descriptor
-            int dfd = deref_fd(thread, thread_dfd);
-            if (dfd < 0)
+            // Normal path
+            if (!path_str)
+            {
+                error = EFAULT; // Bad address
+                return cvt_error();
+            }
+            int vfs_relfd = task->get_relative_fd(path_str, dirfd);
+            if (vfs_relfd < 0)
             {
                 dealloc(path_str);
-                error = EBADF;
-                return transfer_error(thread);
+                return cvt_error();
             }
-
-            res = (vfs.*statat_fn)(dfd, path_str, &statbuf);
+            
+            if (flags & H_AT_SYMLINK_NOFOLLOW)
+                ret = vfs.lstatat(vfs_relfd, path_str, &statbuf);
+            else
+                ret = vfs.statat(vfs_relfd, path_str, &statbuf);
+            dealloc(path_str);
+            vfs.close(vfs_relfd);
         }
 
-        dealloc(path_str);
-
-        if (res < 0)
+        if (ret < 0)
         {
-            return transfer_error(thread);
+            return cvt_error();
         }
 
-        // Convert sys_stat to statx
-
-        //(note: use struct to refer to the sys_statx struct, not this function)
+        // Fill the statxbuf with the basic stats
         struct sys_statx statxbuf = {};
-
-        statxbuf.mask = 0x7FFU; // Set to STATX_BASIC_STATS only, since we don't support all fields
-        
-        statxbuf.rdev_major = statbuf.rdev >> 32;
-        statxbuf.rdev_minor = statbuf.rdev & 0xFFFFFFFF;
+        statxbuf.mask = H_STATX_BASIC_STATS;
+        statxbuf.rdev_major = statbuf.rdev >> 20;
+        statxbuf.rdev_minor = statbuf.rdev & 0xFFFFF;
         statxbuf.ino = statbuf.ino;
         statxbuf.mode = statbuf.mode;
         statxbuf.nlink = statbuf.nlink;
@@ -144,15 +94,14 @@ namespace Hamster
         statxbuf.ctime.sec = statbuf.ctime;
         statxbuf.ctime.nsec = statbuf.ctime_nsec;
 
-        // Copy to userspace
-
-        if (process->memory_space.memcpy(statxbuf_addr, &statxbuf, sizeof(statxbuf)) != 0)
+        // Copy to user memory
+        if (task->memory->obj.memory.memcpy(statxbuf_loc, &statxbuf, sizeof(statxbuf)) < 0)
         {
-            error = EFAULT;
-            return transfer_error(thread);
+            error = EFAULT; // Bad address
+            return cvt_error();
         }
 
-        return set_return(thread, 0);
+        return 0;
     }
 } // namespace Hamster
 

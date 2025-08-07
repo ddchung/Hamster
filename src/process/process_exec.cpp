@@ -1,16 +1,13 @@
-// Hamster process
+// Hamster process ELF loading and script execution
 
-#include <process/process.hpp>
-#include <filesystem/vfs.hpp>
+#include <process/task.hpp>
+#include <process/scheduler.hpp>
 #include <elf/elf_loader.hpp>
-#include <memory/stl_sequential.hpp>
-#include <memory/stl_map.hpp>
-#include <memory/allocator.hpp>
+#include <memory/memory_space.hpp>
+#include <abi/values.hpp>
 #include <errno/errno.h>
-#include <fcntl.h>
+#include <cstring>
 #include <elf.h>
-#include <string.h>
-#include <cassert>
 
 namespace Hamster
 {
@@ -68,36 +65,55 @@ namespace Hamster
         }
     } // namespace
 
-    int Process::load_elf(const char *path, const char *const *argv, const char *const *envp, int dirfd)
+    int Process::exec_elf(const char *path, const char *const *argv, const char *const *envp, int dirfd)
     {
-        static const char *empty[] = {0};
-        if (!argv)
-            argv = empty;
-        if (!envp)
-            envp = empty;
         if (!path)
         {
             error = EINVAL;
             return -1;
         }
 
-        int fd;
-        if (dirfd >= 0)
-            fd = vfs.openat(dirfd, path, OPEN_RDONLY);
-        else
-            fd = vfs.open(path, OPEN_RDONLY);
-        
-        if (fd < 0)
+        // Open file
+
+        // Note: its fine if this fails, file would be replaced anyway
+        File file{vfs.dup(dirfd)};
+
+        if (file.openat_replace(path, OPEN_RDONLY) < 0)
             return -1;
+        
+        Task *leader = nullptr;
+
+        // Kill all threads, except the thread group leader
+        for (Task *task : tasks)
+        {
+            if (task->tid != pid)
+            {
+                task->exit(make_wait_terminated(H_SIGKILL));
+            }
+            else
+            {
+                leader = task;
+            }
+        }
+        tasks.clear();
+        tasks.push_back(leader);
+
+        assert(leader != nullptr);
+
+        leader->is_dead = false;
+        leader->is_paused = false;
+
+        MemorySpace &memory_space = leader->memory->obj.memory;
+
         uint64_t entry_point = 0;
         uint64_t ph_num = 0;
         uint64_t brk = 0;
-        if (Hamster::load_elf(fd, memory_space, entry_point, ph_num, brk) < 0)
+        if (Hamster::load_elf(file, memory_space, entry_point, ph_num, brk) < 0)
         {
             return -1;
         }
 
-        this->brk = brk;
+        leader->program_brk->obj = brk;
 
         // Load stack
         uint64_t sp = HAMSTER_STACK_TOP;
@@ -105,6 +121,7 @@ namespace Hamster
         // some zeros
         push_stack(memory_space, sp, 0);
         push_stack(memory_space, sp, 0);
+
 
         const char *exec_fn[]{path, nullptr};
 
@@ -117,13 +134,6 @@ namespace Hamster
         push_strings(memory_space, sp, envp, &envp_locs);
 
         Deque<uint64_t> argv_locs;
-
-        const char *last = strrchr(path, '/');
-        if (!last)
-            last = path;
-        else
-            ++last;
-
         push_strings(memory_space, sp, argv, &argv_locs);
 
         // Pad to 16B boundary
@@ -188,115 +198,102 @@ namespace Hamster
 
         push_stack(memory_space, sp, argc);
 
-        for (auto &thread : threads)
-            thread.set_state(ThreadState::ENDED);
-
-        Thread &t = threads.emplace_back(this, 0);
-        t.set_pc(entry_point);
-        t.get_regs()[2] = sp;
-        t.get_regs()[1] = 0; // Set return address to 0 (no return)
-
-        // uncomment to open console if no fds are set
-        // Note that this is not POSIX compliant, so if you're running an init system,
-        // let it open the console for userland.
-        
-        // if (fds.empty())
-        // {
-        //     int console_fd = vfs.open("/dev/console", O_RDWR);
-        //     fd_refcount[console_fd] = 3; 
-        //     fds.push_back({console_fd, 0}); // stdin
-        //     fds.push_back({console_fd, 0}); // stdout
-        //     fds.push_back({console_fd, 0}); // stderr
-        // }
-
-        uint32_t tp = 0xFFFF0000;
-        uint32_t dtv = 0xFFFE0000;
-        uint32_t tls = 0xFFFC0000;
-
-        t.get_regs()[3] = tp; // set tp
-        uint32_t i = 1;
-
-        memory_space.memcpy(tp, &dtv, 4); // *(uint32_t*)tp = dtv
-        memory_space.memcpy(dtv, &i, 4);       // dtv[0] = 1
-        memory_space.memcpy(dtv + 4, &tls, 4);               // dtv[1] = tls_base
-        memory_space.memset(tls, 0, HAMSTER_PAGE_SIZE);      // init TLS memory
+        leader->emulator.pc = entry_point;
+        leader->emulator.x[2] = sp;
+        leader->emulator.x[1] = 0; // Set return address to 0 (no return)
         return 0;
     }
 
-    Process::Process(const Process &other)
-        : memory_space(other.memory_space), reserved_mem(other.reserved_mem), threads(other.threads),
-          fds(other.fds), cwd(other.cwd), pid(other.pid), ppid(other.ppid), pgid(other.pgid), sid(other.sid),
-          uid(other.uid), gid(other.gid), euid(other.euid), egid(other.egid), exit_status(other.exit_status)
+    int Process::exec(const char *path, const char *const *argv, const char *const *envp, int dirfd)
     {
-        // Set all the thread's process to this
-        for (Thread &thread : threads)
+        // Either run a script or an executable
+
+        // Note: its fine if this fails, file would be replaced anyway
+        File file{vfs.dup(dirfd)};
+
+        if (file.openat_replace(path, OPEN_RDONLY) < 0)
+            return -1;
+
+        if (file.seek(0, H_SEEK_SET) < 0)
         {
-            thread.set_process(this);
+            return -1;
         }
 
-        // Increment file descriptor reference counts
-        for (const auto &[fd, _] : fds)
+        // Read the first few bytes to determine if it's a script or an ELF file
+        char magic[4];
+        if (file.read(magic, sizeof(magic)) != sizeof(magic))
         {
-            if (fd < 0)
-                continue; // Skip invalid file descriptors
+            return -1;
+        }
+
+        if (memcmp(magic, "#!", 2) == 0)
+        {
+            String interpreter;
+
+            interpreter.reserve(32);
+
+            if (file.seek(1, H_SEEK_SET) < 0)
+                return -1;
             
-            fd_refcount[fd]++;
-        }
-    }
+            char c;
 
-    Process &Process::operator=(const Process &other)
-    {
-        if (this == &other)
-            return *this;
+            // Skip leading whitespace
+            while (file.read(&c, 1) == 1 && (c == ' ' || c == '\t'))
+                ;
 
-        memory_space = other.memory_space;
-        reserved_mem = other.reserved_mem;
-        threads = other.threads;
-        fds = other.fds;
-        cwd = other.cwd;
-        pid = other.pid;
-        ppid = other.ppid;
-        pgid = other.pgid;
-        sid = other.sid;
-        uid = other.uid;
-        gid = other.gid;
-        euid = other.euid;
-        egid = other.egid;
-        exit_status = other.exit_status;
-
-        // Set all the thread's process to this
-        for (Thread &thread : threads)
-        {
-            thread.set_process(this);
-        }
-
-        // Increment file descriptor reference counts
-        for (const auto &[fd, _] : fds)
-        {
-            if (fd < 0)
-                continue; // Skip invalid file descriptors
-            
-            fd_refcount[fd]++;
-        }
-
-        return *this;
-    }
-
-    Process::~Process()
-    {
-        for (auto [fd, _] : fds)
-        {
-            if (fd < 0)
-                continue; // Skip invalid file descriptors
-            
-            auto it = fd_refcount.find(fd);
-            assert(it != fd_refcount.end());
-            if (--it->second == 0)
+            while (file.read(&c, 1) == 1)
             {
-                vfs.close(fd);
-                fd_refcount.erase(it);
+                if (isspace(c))
+                    break;
+                interpreter.push_back(c);
             }
+
+            String arg;
+
+            arg.reserve(4);
+
+            // Skip more whitespace
+            while ((c == ' ' || c == '\t') && file.read(&c, 1) == 1)
+                ;
+            if (!isspace(c))
+                while (file.read(&c, 1) == 1)
+                {
+                    if (isspace(c))
+                        break;
+                    arg.push_back(c);
+                }
+
+            bool has_arg = !arg.empty();
+            if (interpreter.empty())
+            {
+                error = ENOEXEC;
+                return -1;
+            }
+
+            // Generate argv for the interpreter
+
+            Vector<const char *> interp_argv;
+            interp_argv.push_back(interpreter.c_str());
+            if (has_arg)
+            {
+                interp_argv.push_back(arg.c_str());
+            }
+            interp_argv.push_back(path);
+            interp_argv.push_back(nullptr);
+
+            return exec_elf(interpreter.c_str(), interp_argv.data(), envp);
         }
-        fds.clear();
+        else if (memcmp(magic, ELFMAG, SELFMAG) == 0)
+        {
+            // It's an ELF file, so we can use the exec_elf function
+            return exec_elf(path, argv, envp, dirfd);
+        }
+        else
+        {
+            // Not a script or ELF file
+            error = ENOEXEC;
+            return -1;
+        }
     }
 } // namespace Hamster
+

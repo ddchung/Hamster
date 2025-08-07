@@ -92,6 +92,46 @@ namespace Hamster
         return dir;
     }
 
+    BaseFile *Mounts::resolve_symlink(BaseSymlink *link, int flags)
+    {
+        if (!link)
+        {
+            error = EBADF;
+            return nullptr;
+        }
+        char *target = link->get_target();
+        int link_id = link->get_id();
+        dealloc(link);
+        if (!target)
+            return nullptr;
+        BaseFile *file = lopen(target, (flags & ~OPEN_DIRECTORY) | OPEN_NOFOLLOW, 0);
+        dealloc(target);
+
+        if (!file)
+            return nullptr;
+        
+        int file_id = file->get_id();
+
+        if (file_id != -1 && link_id != -1 && file_id == link_id)
+        {
+            // Self-targeting symlink
+            error = ELOOP;
+            dealloc(file);
+            return nullptr;
+        }
+
+        if (file->type() == FileType::Symlink)
+            return resolve_symlink((BaseSymlink *)file, flags);
+
+        if (file->type() != FileType::Directory && (flags & OPEN_DIRECTORY))
+        {
+            error = ENOTDIR;
+            dealloc(file);
+            return nullptr;
+        }
+        return file;
+    }
+
     BaseFile *Mounts::lopen(const char *path, int flags, int mode, BaseDirectory *dir)
     {
         if (!path)
@@ -122,6 +162,12 @@ namespace Hamster
             dealloc(dir);
             if (!file)
                 return nullptr;
+            if (file->type() == FileType::Symlink && !(flags & OPEN_NOFOLLOW))
+            {
+                file = resolve_symlink((BaseSymlink *)file, flags);
+                if (!file)
+                    return nullptr;
+            }
             if (file->type() != FileType::Directory && (flags & OPEN_DIRECTORY))
             {
                 dealloc(file);
@@ -140,26 +186,13 @@ namespace Hamster
             switch (next_file->type())
             {
             case FileType::Symlink:
-            {
-                BaseSymlink *link = (BaseSymlink *)next_file;
-                char *target = link->get_target();
-                dealloc(link);
-                if (!target)
+                next_file = resolve_symlink((BaseSymlink *)next_file, (flags & ~OPEN_CREAT & ~OPEN_EXCL) | OPEN_DIRECTORY);
+                if (!next_file)
                 {
-                    error = ENOENT;
                     return nullptr;
                 }
-                BaseDirectory *ndir = (BaseDirectory *)lopen(target, (flags & ~OPEN_CREAT & ~OPEN_EXCL) | OPEN_DIRECTORY, mode);
-                dealloc(target);
-                if (!ndir)
-                {
-                    error = ENOENT;
-                    return nullptr;
-                }
-                ndir = resolve_mount(ndir);
-                BaseFile *file = lopen(next, flags, mode, ndir);
-                return file;
-            }
+                // fallthrough to directory handling
+            [[fallthrough]];
             case FileType::Directory:
             {
                 BaseDirectory *next_dir = (BaseDirectory *)next_file;

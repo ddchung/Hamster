@@ -114,37 +114,6 @@ namespace Hamster
         if (!file)
             return -1;
 
-        if (file->type() == FileType::Symlink)
-        {
-            if (flags & OPEN_NOFOLLOW)
-            {
-                dealloc(file);
-                error = ELOOP;
-                return -1;
-            }
-            BaseSymlink *link = (BaseSymlink *)file;
-            char *target = link->get_target();
-            int id = link->get_id();
-            dealloc(link);
-
-            if (!target)
-            {
-                error = ENOENT;
-                return -1;
-            }
-
-            file = data->mounts.lopen(target, flags, mode);
-            dealloc(target);
-            if (!file)
-                return -1;
-            if (file->get_id() == id)
-            {
-                dealloc(file);
-                error = ELOOP; // Loop detected
-                return -1;
-            }
-        }
-
         int fd = data->fd_manager.add_fd(file);
         if (fd < 0)
         {
@@ -302,7 +271,7 @@ namespace Hamster
         }
 
         String dir_name{path, (size_t)(last - path)};
-        dir = (BaseDirectory*)data->mounts.lopen(dir_name.c_str(), OPEN_WRONLY, 0, dir);
+        dir = (BaseDirectory*)data->mounts.lopen(dir_name.c_str(), OPEN_WRONLY | OPEN_DIRECTORY, 0, dir);
 
         if (!dir)
             return -1;
@@ -397,35 +366,21 @@ namespace Hamster
             error = EINVAL;
             return -1;
         }
-
-        const char *last = strrchr(path, '/');
-        BaseFile *file = nullptr;
-        if (last)
+        
+        BaseFile *dir_file = data->fd_manager.get_fd(dfd);
+        if (!dir_file)
+            return -1;
+        if (dir_file->type() != FileType::Directory)
         {
-            String dir_name{path, (size_t)(last - path)};
-
-            int parent_fd = openat(dfd, dir_name.c_str(), OPEN_RDONLY | OPEN_DIRECTORY);
-            if (parent_fd < 0)
-                return -1;
-            
-            BaseDirectory *parent_dir = (BaseDirectory *)data->fd_manager.get_fd(parent_fd);
-            
-            assert(parent_dir);
-
-            file = parent_dir->get(last + 1, OPEN_RDONLY, 0);
-            close(parent_fd);
+            error = ENOTDIR;
+            return -1;
         }
-        else
-        {
-            BaseDirectory *parent_dir = (BaseDirectory *)data->fd_manager.get_fd(dfd);
-            if (!parent_dir)
-            {
-                error = EBADF;
-                return -1;
-            }
 
-            file = parent_dir->get(path, OPEN_RDONLY, 0);
-        }
+        BaseDirectory *cloned_dir = (BaseDirectory *)dir_file->clone();
+        if (!cloned_dir)
+            return -1;
+        
+        BaseFile *file = data->mounts.lopen(path, OPEN_RDONLY | OPEN_NOFOLLOW, 0, cloned_dir);
 
         if (!file)
         {
@@ -575,32 +530,6 @@ namespace Hamster
             return -1;
         }
 
-        if (target_file->type() == FileType::Symlink)
-        {
-            BaseSymlink *link = (BaseSymlink *)target_file;
-            char *target = link->get_target();
-            dealloc(link);
-
-            if (!target)
-            {
-                dealloc(parent_dir);
-                error = ENOENT;
-                return -1;
-            }
-
-            // Note: do not specify dir in this one, as symlinks are absolute and should
-            // be relative to the root directory
-            target_file = data->mounts.lopen(target, OPEN_RDONLY, 0);
-            dealloc(target);
-
-            if (!target_file)
-            {
-                dealloc(parent_dir);
-                error = ENOENT;
-                return -1;
-            }
-        }
-
         int res;
 
         if (target_file->type() != FileType::Directory)
@@ -695,6 +624,98 @@ namespace Hamster
         return ret;
     }
 
+    int VFS::lchownat(int dfd, const char *path, int uid, int gid)
+    {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file || file->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return -1;
+        }
+
+        BaseDirectory *dir = (BaseDirectory *)file->clone();
+        if (!dir)
+            return -1;
+
+        file = data->mounts.lopen(path, OPEN_NOFOLLOW | OPEN_RDWR, 0, dir);
+        if (!file)
+            return -1;
+
+        int ret = file->chown(uid, gid);
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::lchown(const char *path, int uid, int gid)
+    {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        int rootfd = open("/", OPEN_RDWR | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return -1;
+
+        int res = lchownat(rootfd, path, uid, gid);
+        close(rootfd);
+
+        return res;
+    }
+
+    int VFS::chownat(int dfd, const char *path, int uid, int gid)
+    {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file || file->type() != FileType::Directory)
+        {
+            error = EBADF;
+            return -1;
+        }
+
+        BaseDirectory *dir = (BaseDirectory *)file->clone();
+        if (!dir)
+            return -1;
+
+        file = data->mounts.lopen(path, OPEN_RDWR, 0, dir);
+        if (!file)
+            return -1;
+
+        int ret = file->chown(uid, gid);
+        dealloc(file);
+        return ret;
+    }
+
+    int VFS::chown(const char *path, int uid, int gid)
+    {
+        if (!path)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        int rootfd = open("/", OPEN_RDWR | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return -1;
+
+        int res = chownat(rootfd, path, uid, gid);
+        close(rootfd);
+
+        return res;
+    }
+
     ssize_t VFS::read(int fd, void *buf, size_t size)
     {
         BaseFile *file = data->fd_manager.get_fd(fd);
@@ -782,6 +803,8 @@ namespace Hamster
         {
         case FileType::Regular:
             return ((BaseRegularFile *)file)->tell();
+        case FileType::Directory:
+            return ((BaseDirectory *)file)->tell();
         case FileType::Special:
         {
             auto handle = get_special_handle((BaseSpecialFile *)file);
@@ -856,7 +879,7 @@ namespace Hamster
         if (!dir)
             return nullptr;
 
-        file = data->mounts.lopen(path, OPEN_RDONLY, 0, dir);
+        file = data->mounts.lopen(path, OPEN_RDONLY | OPEN_NOFOLLOW, 0, dir);
         if (!file)
             return nullptr;
 
@@ -901,7 +924,7 @@ namespace Hamster
         if (!dir)
             return -1;
 
-        file = data->mounts.lopen(path, OPEN_WRONLY, 0, dir);
+        file = data->mounts.lopen(path, OPEN_WRONLY | OPEN_NOFOLLOW, 0, dir);
         if (!file)
             return -1;
 
@@ -981,45 +1004,6 @@ namespace Hamster
         BaseFile *new_file = data->mounts.lopen(path, flags, mode, (BaseDirectory *)cloned_file);
         if (!new_file)
             return -1;
-
-        if (new_file->type() == FileType::Symlink)
-        {
-            if (flags & OPEN_NOFOLLOW)
-            {
-                dealloc(new_file);
-                error = ELOOP;
-                return -1;
-            }
-            BaseSymlink *link = (BaseSymlink *)new_file;
-            char *target = link->get_target();
-            int id = link->get_id();
-            dealloc(link);
-
-            if (!target)
-            {
-                error = ENOENT;
-                return -1;
-            }
-
-            //re-clone the file
-            cloned_file = file->clone();
-            if (!cloned_file)
-            {
-                dealloc(target);
-                return -1;
-            }
-
-            new_file = data->mounts.lopen(target, flags, mode, (BaseDirectory*)cloned_file);
-            dealloc(target);
-            if (!new_file)
-                return -1;
-            if (new_file->get_id() == id)
-            {
-                dealloc(new_file);
-                error = ELOOP; // Loop detected
-                return -1;
-            }
-        }
 
         int fd = data->fd_manager.add_fd(new_file);
         if (fd < 0)
@@ -1299,14 +1283,7 @@ namespace Hamster
         }
         
         BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
-        BaseSpecialDriverHandle *handle = sp_file->get_handle();
-        if (!handle)
-        {
-            // Try to open the handle
-            if (open_special_handle(sp_file) < 0)
-                return -1;
-            handle = sp_file->get_handle();
-        }
+        auto handle = get_special_handle(sp_file);
         if (!handle)
             return -1;
         return handle->ioctl(req, arg);
@@ -1343,5 +1320,74 @@ namespace Hamster
             return -1;
 
         return file->set_flags(flags);
+    }
+
+    int VFS::is_tty(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return 0;
+
+        if (file->type() != FileType::Special)
+        {
+            error = ENOTTY;
+            return 0;
+        }
+
+        BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
+        auto handle = get_special_handle(sp_file);
+        if (!handle)
+            return -1;
+        
+        if (handle->special_type() != SpecialFileType::CharacterDevice)
+        {
+            dealloc(handle);
+            error = ENOTTY;
+            return 0;
+        }
+        return ((BaseCharacterDeviceHandle *)handle)->is_tty();
+    }
+
+    DeviceID VFS::get_device_id(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return {0, 0};
+        if (file->type() != FileType::Special)
+        {
+            error = ENOTTY;
+            return {0, 0};
+        }
+
+        BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
+        return sp_file->get_device_id();
+    }
+
+    int VFS::is_directory(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        return file->type() == FileType::Directory ? 1 : 0;
+    }
+
+    int VFS::poll(int fd, int op)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+        
+        if (file->type() != FileType::Special)
+        {
+            error = ENOTTY;
+            return -1;
+        }
+
+        auto handle = get_special_handle((BaseSpecialFile *)file);
+        if (!handle)
+            return -1;
+
+        return handle->poll(op);
     }
 } // namespace Hamster

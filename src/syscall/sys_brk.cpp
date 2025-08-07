@@ -1,20 +1,24 @@
-// Hamster brk syscall
+// Hamster brk system call
 
 #include <syscall/syscall.hpp>
-#include <process/process.hpp>
+#include <process/scheduler.hpp>
+#include <abi/structs.hpp>
+#include <errno/errno.h>
 
 namespace Hamster
 {
-    int sys_brk(Thread &thread)
+    int32_t sys_brk(uint32_t new_brk)
     {
-        uint32_t new_brk = get_arg(thread, 0);
-        
-        Process *proc = thread.get_process();
+        _trace("sys_brk(%x)\n", new_brk);
+
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
+
+        auto &brk = current_task->program_brk->obj;
 
         if (new_brk)
-            proc->brk = new_brk;
-
-        return set_return(thread, proc->brk);
+            brk = new_brk;
+        return brk;
     }
 } // namespace Hamster
 

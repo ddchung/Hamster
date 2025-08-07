@@ -1,118 +1,88 @@
-// Hamster openat syscall
+// Hamster openat system call
 
 #include <syscall/syscall.hpp>
+#include <process/scheduler.hpp>
 #include <filesystem/vfs.hpp>
-#include <memory/allocator.hpp>
-#include <cstring>
+#include <errno/errno.h>
+#include <cassert>
 
 namespace Hamster
 {
-    int sys_openat(Thread &thread)
+    int32_t sys_openat(int32_t thread_dfd, uint32_t pathname_loc, int32_t flags, uint32_t mode)
     {
-        int32_t thread_dfd = get_arg(thread, 0);
-        uint32_t path = get_arg(thread, 1);
-        int32_t flags = get_arg(thread, 2);
-        int32_t mode = get_arg(thread, 3);
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr && "No current task");
 
-        if (flags & OPEN_CREAT && flags & OPEN_DIRECTORY)
+        char *pathname = current_task->memory->obj.memory.get_string(pathname_loc);
+        if (!pathname)
         {
-            // Compatibility with Linux: If both flags are set, create a file, not a directory
-            // Note that on Hamster, having both flags creates a directory
-            flags &= ~OPEN_DIRECTORY;
+            error = EFAULT;
+            return cvt_error();
+        }
+        
+        int vfs_at_fd = current_task->get_relative_fd(pathname, thread_dfd);
+
+        if (vfs_at_fd < 0)
+        {
+            dealloc(pathname);
+            return cvt_error();
         }
 
-        bool is_ref_root = false;
+        int new_fd = vfs.openat(vfs_at_fd, pathname, flags, mode);
+        vfs.close(vfs_at_fd);
+        dealloc(pathname);
 
-        // Get the path from the thread's memory space
-
-        Process *process = thread.get_process();
-
-        char *path_str = process->memory_space.get_string(path);
-
-        if (!path_str)
+        if (new_fd < 0)
         {
-            return transfer_error(thread);
+            return cvt_error();
         }
 
-        _trace("openat: dfd=%d, path=\"%s\", flags=0x%x, mode=0%o, ret: ", thread_dfd, path_str, flags, mode);
-
-        if (path_str[0] == '/')
+        // Make it the controlling TTY if it is a terminal, and we don't have one
+        if ((flags & OPEN_NOCTTY) == 0)
         {
-            // Absolute path, use the root directory
-            is_ref_root = true;
-        }
-        else if (thread_dfd == -100)
-        {
-            // AT_FDCWD, use the current working directory
-            is_ref_root = true;
+            auto &session = current_task->process->obj.pg->obj.session->obj;
+            if (session.controlling_tty == DeviceID{0, 0})
+            {
+                if (vfs.is_tty(new_fd) == 1)
+                {
+                    DeviceID dev_id = vfs.get_device_id(new_fd);
+                    if (dev_id.major != 0 || dev_id.minor != 0)
+                    {
+                        session.controlling_tty = dev_id;
+                        IoctlArg arg;
+                        arg.i = 0;
+                        vfs.ioctl(new_fd, H_TIOCSCTTY, arg);
 
-            // +1 for '/' and +1 for '\0'
-            char *new_buffer = alloc<char>(process->cwd.length() + 1 + strlen(path_str) + 1);
-
-            strcpy(new_buffer, process->cwd.c_str());
-            strcat(new_buffer, "/");
-            strcat(new_buffer, path_str);
-
-            dealloc(path_str);
-            path_str = new_buffer;
-        }
-        else if (thread_dfd < 0)
-        {
-            // Invalid directory file descriptor
-            dealloc(path_str);
-            return set_return(thread, -EBADF);
+                        arg.p = &current_task->process->obj.pg->obj.pgid;
+                        vfs.ioctl(new_fd, H_TIOCSPGRP, arg);
+                    }
+                }
+            }
         }
 
-        int fd;
+        // Set its reference count to 1, since we just opened it
+        fd_refcount[new_fd] = 1;
 
-        if (is_ref_root)
+        int new_thread_fd = current_task->get_unused_fd_index();
+        if (new_thread_fd < 0)
         {
-            // Open the file relative to the root directory
-            fd = vfs.open(path_str, flags, mode);
+            error = EMFILE;
+            vfs.close(new_fd);
+            return cvt_error();
         }
+
+        auto &fd = current_task->fd_table->obj.fds[new_thread_fd];
+        fd.type = UserFDType::VFS;
+        fd.vfs_fd = new_fd;
+        fd.dir_offset = 0;
+
+        // Set appropriate CLOEXEC flag
+        if (flags & OPEN_CLOEXEC)
+            fd.flags |= H_FD_CLOEXEC;
         else
-        {
-            // Open the file relative to the directory file descriptor
-            int dfd = deref_fd(thread, thread_dfd);
-            if (dfd < 0)
-            {
-                dealloc(path_str);
-                return set_return(thread, -EBADF);
-            }
+            fd.flags &= ~H_FD_CLOEXEC; // Clear CLOEXEC if not set
 
-            fd = vfs.openat(dfd, path_str, flags, mode);
-        }
-
-        dealloc(path_str);
-
-        if (fd < 0)
-        {
-            return transfer_error(thread);
-        }
-
-        // Set the reference count to 1, because we just opened it
-
-        fd_refcount[fd] = 1;
-
-        // Add to the process's file descriptor table
-
-        for (size_t i = 0; i < process->fds.size(); ++i)
-        {
-            if (process->fds[i].fd < 0)
-            {
-                // Reuse a closed file descriptor slot
-                process->fds[i].fd = fd;
-                process->fds[i].fd_flags = 0; // No flags set
-                return set_return(thread, i);
-            }
-        }
-
-        // If we reach here, we need to allocate a new file descriptor
-        ProcessFd new_fd;
-        new_fd.fd = fd;
-        new_fd.fd_flags = 0; // No flags set
-        process->fds.push_back(new_fd);
-        return set_return(thread, process->fds.size() - 1);
+        return new_thread_fd;
     }
 } // namespace Hamster
 

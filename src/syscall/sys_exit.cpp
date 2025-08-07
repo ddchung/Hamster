@@ -1,36 +1,32 @@
 // Hamster exit syscall
 
 #include <syscall/syscall.hpp>
-#include <abi/syscall_id.hpp>
 #include <process/scheduler.hpp>
-#include <cassert>
+#include <abi/values.hpp>
 
 namespace Hamster
 {
-    int sys_exit(Thread &thread)
+    int32_t sys_exit(int32_t status)
     {
-        // Get the exit status from the a0 register
-        int status = get_arg(thread, 0);
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
 
-        Process *process = thread.get_process();
-
-        assert(process);
-
-        // Make init adopt all child processes
-        scheduler.adopt_processes(process->pid);
-
-        for (auto &t : process->threads)
-        {
-            t.set_state(ThreadState::ENDED);
-        }
-
-        // Set the exit status for the process
-
-        // Encode into the correct format, used by wait
-        process->exit_status = (status & 0xFF) << 8;
-
-        // No return to thread, as it is ended
+        current_task->exit(make_wait_exited(status));
 
         return 0;
     }
-}
+
+    int32_t sys_exit_group(int32_t status)
+    {
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
+
+        for (Task *t : current_task->process->obj.tasks)
+        {
+            t->exit(make_wait_exited(status));
+        }
+
+        return 0;
+    }
+} // namespace Hamster
+

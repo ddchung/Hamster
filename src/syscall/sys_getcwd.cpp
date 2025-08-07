@@ -1,40 +1,47 @@
 // Hamster getcwd system call
 
 #include <syscall/syscall.hpp>
-#include <abi/syscall_id.hpp>
-#include <process/process.hpp>
-#include <memory/allocator.hpp>
+#include <process/scheduler.hpp>
 #include <errno/errno.h>
+#include <cstring>
+#include <cstddef>
 
 namespace Hamster
 {
-    int sys_getcwd(Thread &thread)
+    int32_t sys_getcwd(uint32_t buf_loc, uint32_t size)
     {
-        uint32_t buf_addr = get_arg(thread, 0);
-        uint32_t size = get_arg(thread, 1);
-        if (buf_addr == 0 || size == 0)
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
+
+        if (buf_loc == 0)
         {
-            error = EINVAL;
-            return transfer_error(thread);
+            error = EFAULT; // Bad address
+            return cvt_error();
         }
 
-        Process *proc = thread.get_process();
+        // Get the current working directory
+        auto &cwd = current_task->process->obj.fs_info->obj.cwd_path;
+        auto &root = current_task->process->obj.fs_info->obj.root_path;
 
-        if (proc->cwd.size() + 1 > size)
+        // Subtract the root path from the CWD to get what the CWD is relative to the root
+        const char *cwd_str = cwd.c_str() + root.length();
+
+        // Check if the buffer is large enough
+        size_t cwd_length = strlen(cwd_str);
+        if (size < cwd_length + 1)
         {
-            error = ERANGE;
-            return transfer_error(thread);
+            error = ERANGE; // Buffer too small
+            return cvt_error();
         }
 
-        // Copy the current working directory to the provided buffer
-
-        if (proc->memory_space.memcpy(buf_addr, proc->cwd.c_str(), proc->cwd.size() + 1) < 0)
+        // Copy the CWD to the buffer
+        if (current_task->memory->obj.memory.memcpy(buf_loc, cwd_str, cwd_length + 1) < 0)
         {
-            error = EFAULT;
-            return transfer_error(thread);
+            error = EFAULT; // Bad address
+            return cvt_error();
         }
 
-        return set_return(thread, buf_addr);
+        return buf_loc;
     }
 } // namespace Hamster
 

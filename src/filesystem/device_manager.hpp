@@ -47,6 +47,14 @@ namespace Hamster
          * @note Be sure to free the handle
          */
         BaseSpecialDriverHandle *create_handle(const DeviceID &id, int flags);
+
+        /**
+         * @brief Get a driver by its device ID
+         * @param id The device ID of the driver
+         * @return A pointer to the driver, or nullptr if not found
+         */
+        BaseSpecialDriver *get_driver(const DeviceID &id);
+
     private:
         UnorderedMap<DeviceID, BaseSpecialDriver *> drivers;
     };

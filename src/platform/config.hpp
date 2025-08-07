@@ -19,3 +19,7 @@ static_assert((HAMSTER_PAGE_SIZE & (HAMSTER_PAGE_SIZE - 1)) == 0, "Page size mus
 
 // The length of each thread's time slice, in # of instructions
 #define HAMSTER_THREAD_TIME_SLICE 1024
+
+// The maximum overrun time in the kernel scheduler, before the task is considered
+// overdue and is removed from the scheduler, in milliseconds
+#define HAMSTER_KSCHED_OVERDUE_TIME 1000

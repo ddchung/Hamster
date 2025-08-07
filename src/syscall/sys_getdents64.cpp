@@ -1,74 +1,62 @@
-// Hamster getdents64 system call
+// Hamster getdents64 syscall implementation
 
 #include <syscall/syscall.hpp>
-#include <abi/syscall_id.hpp>
-#include <abi/structs.hpp>
-#include <process/process.hpp>
 #include <filesystem/vfs.hpp>
-#include <memory/allocator.hpp>
-#include <cassert>
+#include <abi/structs.hpp>
 #include <errno/errno.h>
+#include <memory/allocator.hpp>
 #include <cstring>
 
 namespace Hamster
 {
-    // utility for printing an array of strings
-    void print_string_array(const char * const *array)
+    int sys_getdents64(int32_t fd, uint32_t dirent_loc, uint32_t count)
     {
-        if (!array)
-            return;
+        Task *task = scheduler.get_current_task();
+        assert(task != nullptr);
 
-        for (const char * const *entry = array; *entry != nullptr; ++entry)
-        {
-            printf("%s\n", *entry);
-        }
-    }
-
-    int sys_getdents64(Thread &thread)
-    {
-        int fd = deref_fd(thread, get_arg(thread, 0));
-        uint32_t dirp_addr = get_arg(thread, 1);
-        uint32_t count = get_arg(thread, 2);
-
-        _trace("getdents64: fd=%d, dirp_addr=0x%x, count=%u, ret: ", get_arg(thread, 0), dirp_addr, count);
-
-        if (fd < 0)
+        int vfs_fd = task->get_vfs_fd(fd);
+        if (vfs_fd < 0)
         {
             error = EBADF;
-            return transfer_error(thread);
+            return cvt_error();
         }
 
-        if (!dirp_addr)
+        if (!dirent_loc)
         {
-            error = EFAULT;
-            return transfer_error(thread);
+            error = EFAULT; // Bad address
+            return cvt_error();
         }
-
-        // counter for return value (number of bytes put in the buffer)
-        uint32_t bytes_read = 0;
-
-        char * const *list = vfs.list(fd, count);
-
+        vfs.seek(vfs_fd, 0, H_SEEK_SET);
+        char *const *list = vfs.list(vfs_fd);
         if (!list)
         {
-            return transfer_error(thread);
+            return cvt_error();
         }
 
         bool ok = true;
+        uint32_t bytes_read = 0;
+        int64_t to_skip = task->fd_table->obj.fds[fd].dir_offset;
+        int64_t off = to_skip;
 
         for (const char * const *entry = list; *entry != nullptr; ++entry)
         {
             const char *name = *entry;
             size_t name_len = strlen(name);
 
+            if (to_skip > 0)
+            {
+                to_skip -= sizeof(sys_dirent) + name_len;
+                continue;
+            }
+
             if (bytes_read + sizeof(sys_dirent) + name_len > count)
             {
-                // Not enough space in the buffer
+                // End of buffer
                 break;
             }
 
             sys_stat st;
-            if (vfs.lstatat(fd, name, &st) < 0)
+            if (vfs.lstatat(vfs_fd, name, &st) < 0)
             {
                 // If stat fails, we can skip this entry
                 continue;
@@ -83,14 +71,14 @@ namespace Hamster
             assert(dirent != nullptr);
 
             dirent->ino = st.ino;
-            dirent->offset = bytes_read;
+            dirent->offset = off + bytes_read;
             dirent->reclen = sizeof(sys_dirent) + name_len;
             dirent->type = st.mode & STAT_IFMT; // Use the file type from mode
             
             strcpy(dirent->name, name); // Copy the name into the dirent
 
             // Write the dirent to the user space buffer
-            if (thread.get_process()->memory_space.memcpy(dirp_addr + bytes_read, dirent, sizeof(sys_dirent) + name_len) < 0)
+            if (task->memory->obj.memory.memcpy(dirent_loc + bytes_read, dirent, sizeof(sys_dirent) + name_len) < 0)
             {
                 _free(dirent);
                 error = EFAULT;
@@ -103,7 +91,6 @@ namespace Hamster
         }
 
         // Free the list of entries
-        // do this in a seperate loop because the first one may break early
         for (const char * const *entry = list; *entry != nullptr; ++entry)
         {
             dealloc(*entry);
@@ -112,11 +99,12 @@ namespace Hamster
 
         if (!ok)
         {
-            return transfer_error(thread);
+            return cvt_error();
         }
 
-        // Set the return value to the number of bytes read
-        return set_return(thread, bytes_read);
+        // Update the directory offset in the UserFD
+        task->fd_table->obj.fds[fd].dir_offset += bytes_read;
+        return bytes_read; // Return the number of bytes read
     }
 } // namespace Hamster
 

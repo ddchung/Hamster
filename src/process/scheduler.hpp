@@ -2,84 +2,109 @@
 
 #pragma once
 
-#include <process/thread.hpp>
-#include <process/process.hpp>
-#include <memory/stl_sequential.hpp>
+#include <process/task.hpp>
+#include <memory/stl_map.hpp>
 
 namespace Hamster
 {
     class Scheduler
     {
     public:
-        Scheduler();
-        ~Scheduler();
-
-        Scheduler(const Scheduler &) = delete;
-        Scheduler &operator=(const Scheduler &) = delete;
-
-        Scheduler(Scheduler &&);
-        Scheduler &operator=(Scheduler &&);
+        /**
+         * @brief Add a task to the scheduler.
+         * @param task The task to add.
+         * @return The task ID on success, 0 on failure, and set `error`
+         */
+        uint32_t add_task(Task *task);
 
         /**
-         * @brief Add a new process
-         * @param process The process to add
-         * @return 0 on success, or on error return -1 and set `error`
-         * @note This will take ownership of `process`, and will deallocate it later
-         * @note This will also set `process->pid` to a unique value
+         * @brief Get a task by its ID.
+         * @param tid The task ID.
+         * @return Pointer to the task on success, nullptr on failure, and set `error`
+         * @note The returned pointer does not own the task
          */
-        int add_process(Process *process);
+        Task *get_task(uint32_t tid);
 
         /**
-         * @brief Make a new process from an ELF file
-         * @param path The path to the ELF file
-         * @param argv The arguments to the program. Note that by convention, the first argument is the program name
-         * @param envp The environment variables
-         * @return The process ID of the new process on success, or on error return -1 and set `error`
-         * @note The CWD will be "/", and the UID and GID will be 0
+         * @brief Tick all runnable tasks
+         * This is called every system tick to allow tasks to run.
+         * @return -1 on error, 0 otherwise
          */
-        int make_process_elf(const char *path, const char * const *argv = nullptr, const char * const *envp = nullptr);
+        int tick();
 
         /**
-         * @brief Tick the scheduler
-         * @return The number of threads that were ticked
-         * @note This will run one tick for every non-paused thread in the scheduler
+         * @brief Make a new process from an executable
+         * @param path The path to the executable
+         * @param argv The arguments to pass to the new process, nullptr for empty args
+         * @param envp The environment variables to pass to the new process, nullptr for empty env
+         * @param dirfd The directory file descriptor to open the executable in, or -1 for root
+         * This sets the uid, gid, and ppid to 0 on the new process
+         * @return 0 on success, -1 on error
          */
-        size_t tick();
+        int spawn(const char *path, const char *const *argv = nullptr, const char *const *envp = nullptr,
+                  int dirfd = -1);
 
         /**
-         * @brief Get a process by ID
-         * @param pid The process ID to get
-         * @return The process with the given ID, or nullptr if not found
-         * @note This is a weak pointer, DO NOT deallocate it
+         * @brief For all processes that have PPID = `pid`, set their ppid to 1 (init)
+         * @param pid The PID match
+         * @note This is used to make init adopt child processes
          */
-        Process *get_process(uint32_t pid) const;
+        int adopt_children(uint32_t pid);
 
         /**
-         * @brief Get the exit status of a process, and remove it from the scheduler
-         * @param ppid The parent process ID of the process to get the exit status of
-         * @param pid The specific PID of the process to get the exit status of, or -1 to get any child
-         * @param exit_status The exit status of the process
-         * @param reap Whether to remove the zombie after successful call or not
-         * @return The PID of the process on success, or 0 on error
-         * @note This will also remove the process from the scheduler, but only if it has exited
-         * @note If the process is still running, it will return 0 and set `error` to `EBUSY`
+         * @brief Get a process by PID
+         * @param pid The PID of the process
+         * @return A non-owning pointer to the process, or nullptr on error
+         * @note This will first check TID `pid` for quick access, but if not found, then
+         *     * it will check all threads. If still not found, return nullptr
          */
-        uint32_t get_exit_status(uint32_t ppid, int pid, int &exit_status, bool reap = true);
+        Process *get_process(uint32_t pid);
 
         /**
-         * @brief Make all processes with a certain PPID adopted by PID 1 (init)
-         * @param ppid The parent process ID to adopt processes from
-         * @return 0 on success, or -1 on error
-         * @note This will set the PPID of all processes with the given PPID to 1 (init)
-         * @note This is used when a process exits, and its children need to be adopted
+         * @brief Get a process group by PGID
+         * @param pgid The PGID of the process group
+         * @return A non-owning pointer to the process group, or nullptr on error
+         * @note This will first check TID `pgid` for quick access, but
+         *     * if not found, then it will linearly check all tasks.
+         *     * If still not found, return nullptr
          */
-        int adopt_processes(uint32_t ppid);
+        ProcessGroup *get_process_group(uint32_t pgid);
 
-        // Warning: don't free the processes!
-        const List<Process *> &get_processes() const { return processes; }
+        /**
+         * @brief Get a session by SID
+         * @param sid The SID of the session
+         * @return A non-owning pointer to the session, or nullptr on error
+         * @note This will first check TID `sid` for quick access, but
+         *     * if not found, then it will linearly check all tasks.
+         *     * If still not found, return nullptr
+         */
+        Session *get_session(uint32_t sid);
+
+        /**
+         * @brief Get the currently running task
+         * @return A non-owning pointer to the currently running task, or nullptr if no task is running
+         * @note This will return the currently running task
+         * @note This will only work from a system call or anything called from a system call
+         */
+        Task *get_current_task()
+        { return current_task; }
+
+        size_t num_tasks() const
+        { return tasks.size(); }
+
+        Map<uint32_t, Task *> &get_tasks()
+        { return tasks; }
+
     private:
-        // Indexed by PID
-        List<Process *> processes;
+        
+        int do_tick(Task &, uint16_t tick_count = HAMSTER_THREAD_TIME_SLICE);
+
+        // TID to task
+        Map<uint32_t, Task *> tasks;
+
+        uint32_t next_tid = 1;
+
+        Task *current_task = nullptr;
     };
 
     extern Scheduler scheduler;

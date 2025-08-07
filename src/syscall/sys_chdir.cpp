@@ -1,38 +1,50 @@
-// Hamster chdir system call implementation
+// Hamster chdir system call
 
 #include <syscall/syscall.hpp>
-#include <memory/allocator.hpp>
-#include <process/process.hpp>
+#include <process/scheduler.hpp>
 #include <errno/errno.h>
+#include <filesystem>
+#include <cassert>
 
 namespace Hamster
 {
-    int sys_chdir(Thread &thread)
+    int32_t sys_chdir(uint32_t path_loc)
     {
-        // int chdir(const char *path);
-        uint32_t path = get_arg(thread, 0);
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr);
 
-        // Get the path from the thread's memory space
-        Process *process = thread.get_process();
-        char *path_str = process->memory_space.get_string(path);
-
-        if (!path_str)
+        // Get path
+        const char *path = current_task->memory->obj.memory.get_string(path_loc);
+        if (!path)
         {
-            return transfer_error(thread);
+            error = EFAULT; // Bad address
+            return cvt_error();
         }
 
-        if (path_str[0] == '\0')
-        {
-            error = ENOENT;
-            dealloc(path_str);
-            return transfer_error(thread);
-        }
+        // Normalize the CWD
+        String path_str = path;
+        dealloc(path);
+        path_str = std::filesystem::path(path_str).lexically_normal().generic_string();
 
         // Set the current working directory
-        process->cwd = path_str;
 
-        dealloc(path_str);
-        return set_return(thread, 0); // Success
+        auto &cwd = current_task->process->obj.fs_info->obj.cwd_path;
+        auto &root = current_task->process->obj.fs_info->obj.root_path;
+
+        if (path_str[0] == '/')
+        {
+            // Absolute path
+            cwd = root + path_str;
+        }
+        else
+        {
+            // Relative path
+
+            // Note: The VFS correctly handles multiple slashes
+            cwd = cwd + "/" + path_str;
+        }
+
+        return 0;
     }
 } // namespace Hamster
 

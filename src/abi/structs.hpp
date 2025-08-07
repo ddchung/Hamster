@@ -162,4 +162,119 @@ namespace Hamster
         // We use this to replace a flexible array member
         char name[1];
     };
+
+    struct sys_fd_set
+    {
+        // 1024 / (8 * sizeof(uint32_t)) = 32
+        uint32_t fds_bits[32];
+    };
+
+    struct sys_timespec
+    {
+        int64_t sec;
+        int64_t nsec;
+    };
+
+    struct sys_statfs
+    {
+        uint32_t type;
+        uint32_t bsize;
+        uint64_t blocks;
+        uint64_t bfree;
+        uint64_t bavail;
+        uint64_t files;
+        uint64_t ffree;
+        uint64_t fsid;
+        uint32_t namelen;
+        uint32_t frsize;
+        uint32_t flags;
+        uint32_t spare[4];
+    };
+
+    struct sys_termios
+    {
+        uint32_t iflag;
+        uint32_t oflag;
+        uint32_t cflag;
+        uint32_t lflag;
+        uint8_t line;
+        uint8_t cc[19];
+    };
+
+    struct sys_winsize
+    {
+        uint16_t row;
+        uint16_t col;
+        uint16_t xpixel;
+        uint16_t ypixel;
+    };
+
+    struct sys_sigset
+    {
+        uint32_t sig[2];
+    };
+
+    struct sys_sigaction
+    {
+        uint32_t handler;
+        uint32_t flags;
+        uint32_t restorer;
+        sys_sigset mask;
+    };
+
+    struct sys_user_regs_struct
+    {
+        uint32_t pc;
+        uint32_t regs[31];
+    };
+
+    union sys_fp_state
+    {
+        struct
+        {
+            uint32_t f[32];
+            uint32_t fcsr;
+        } f;
+
+        struct
+        {
+            uint64_t f[32];
+            uint32_t fcsr;
+        } d;
+
+        struct
+        {
+            uint64_t f[64] __attribute__((aligned(16)));
+            uint32_t fcsr;
+            uint32_t __reserved[3];
+        } q;
+    };
+
+    struct sys_sigcontext
+    {
+        sys_user_regs_struct regs;
+        sys_fp_state fpstate;
+    };
+
+    struct sys_ucontext
+    {
+        uint32_t flags;
+        uint32_t link;
+        struct {
+            uint32_t __unused[3];
+        } __unused_stack;
+        sys_sigset sigmask;
+        uint8_t __sigmask_reserved[1024 / 8 - sizeof(sys_sigset)];
+        sys_sigcontext context;
+    };
+
+    struct sys_utsname
+    {
+        char sysname[65];
+        char nodename[65];
+        char release[65];
+        char version[65];
+        char machine[65];
+        char domainname[65];
+    };
 } // namespace Hamster

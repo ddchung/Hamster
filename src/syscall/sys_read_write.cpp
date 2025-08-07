@@ -1,114 +1,192 @@
-// Hamster read and write syscalls
+// Hamster read and write system calls
 
 #include <syscall/syscall.hpp>
+#include <process/scheduler.hpp>
 #include <filesystem/vfs.hpp>
-#include <memory/allocator.hpp>
-#include <utility>
+#include <errno/errno.h>
+#include <cassert>
 
 namespace Hamster
 {
-    static char IO_BUFFER[128];
-
-    int sys_read(Thread &thread)
+    namespace
     {
-        int32_t thread_fd = get_arg(thread, 0);
-        uint32_t addr = get_arg(thread, 1);
-        uint32_t size = get_arg(thread, 2);
+        // Buffer for read/write operations
+        char IO_BUFFER[512];
+    } // namespace
 
-        if (addr == 0)
+    int Task::poll_read()
+    {
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr && "No current task");
+        assert(current_task->blocking_operation == BlockingOperation::IO_READ && "Not a blocking read operation");
+        
+        // Call the system call
+
+        // Load the blocking file descriptor
+        current_task->emulator.x[10] = current_task->io_block_fd;
+
+        int32_t result = syscall(sys_read);
+
+        if (result < 0 && result == -EAGAIN)
         {
-            return set_return(thread, -EINVAL);
+            // Still blocking, do nothing and check again next time
+            return 0;
         }
 
-        if (size == 0)
+        _trace("sys_read: completed read on Thread FD %d, bytes read %d\n",
+               current_task->io_block_fd, result);
+        
+        // Completed successfully
+        // Copy to a0 register (return value)
+
+        current_task->emulator.x[10] = result;
+        current_task->blocking_operation = BlockingOperation::NONE;
+        current_task->io_block_fd = -1; // Reset the blocking FD
+        return 0;
+    }
+
+    int Task::poll_write()
+    {
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr && "No current task");
+        assert(current_task->blocking_operation == BlockingOperation::IO_WRITE && "Not a blocking write operation");
+
+        // Call the system call
+
+        // Load the blocking file descriptor
+        current_task->emulator.x[10] = current_task->io_block_fd;
+
+        int32_t result = syscall(sys_write);
+        if (result < 0 && result == -EAGAIN)
         {
-            return set_return(thread, 0);
+            // Still blocking, do nothing and check again next time
+            return 0;
         }
 
-        int fd = deref_fd(thread, thread_fd);
-        if (fd < 0)
-        {
-            return set_return(thread, -EBADF);
-        }
+        _trace("sys_write: completed write on Thread FD %d, bytes written %d\n",
+               current_task->io_block_fd, result);
 
-        ssize_t to_read = size;
-        while (to_read > 0)
+        // Completed successfully
+
+        // Copy to a0 register (return value)
+        current_task->emulator.x[10] = result;
+        current_task->blocking_operation = BlockingOperation::NONE;
+        current_task->io_block_fd = -1; // Reset the blocking FD
+        return 0;
+    }
+
+    int32_t sys_read(int32_t fd, uint32_t buf_loc, uint32_t count)
+    {
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr && "No current task");
+
+        int vfs_fd = current_task->get_vfs_fd(fd);
+        if (vfs_fd < 0)
+            return cvt_error();
+
+        // Copy as many times as needed
+
+        size_t total_read = 0;
+
+        while (count > 0)
         {
-            ssize_t bytes_read = vfs.read(fd, IO_BUFFER, std::min<size_t>(sizeof(IO_BUFFER), to_read));
+            size_t to_read = std::min(count, (uint32_t)sizeof(IO_BUFFER));
+            ssize_t bytes_read = vfs.read(vfs_fd, IO_BUFFER, to_read);
             if (bytes_read < 0)
             {
-                return transfer_error(thread);
+                if (total_read > 0)
+                {
+                    // Return the total bytes read so far
+                    return total_read;
+                }
+
+                if (error == EAGAIN)
+                {
+                    // Blocking read
+                    if ((vfs.get_flags(vfs_fd) & OPEN_NONBLOCK) == 0)
+                    {
+                        if (current_task->blocking_operation == BlockingOperation::NONE)
+                            _trace("sys_read: blocking read on Thread FD %d, count %u\n", fd, count);
+
+                        current_task->blocking_operation = BlockingOperation::IO_READ;
+                        current_task->io_block_fd = fd;
+                    }
+
+                    return -EAGAIN;
+                }
+                return cvt_error(); // Return error if no bytes read
             }
-            else if (bytes_read == 0)
+
+            if (bytes_read == 0)
+                break;
+            
+            // Copy to user memory
+            if (current_task->memory->obj.memory.memcpy(buf_loc + total_read, IO_BUFFER, bytes_read) < 0)
             {
-                break; // EOF
+                error = EFAULT;
+                return cvt_error();
             }
-            if (thread.get_process()->memory_space.memcpy(addr, IO_BUFFER, bytes_read) < 0)
-            {
-                return set_return(thread, -EFAULT);
-            }
-            addr += bytes_read;
-            to_read -= bytes_read;
+            total_read += bytes_read;
+            count -= bytes_read;
         }
-        return set_return(thread, size - to_read);
+
+        return total_read;
     }
 
-    int sys_write(Thread &thread)
+    int32_t sys_write(int32_t fd, uint32_t buf_loc, uint32_t count)
     {
-        int32_t thread_fd = get_arg(thread, 0);
-        uint32_t addr = get_arg(thread, 1);
-        uint32_t size = get_arg(thread, 2);
+        Task *current_task = scheduler.get_current_task();
+        assert(current_task != nullptr && "No current task");
 
-        if (addr == 0)
-        {
-            return set_return(thread, -EINVAL);
-        }
+        int vfs_fd = current_task->get_vfs_fd(fd);
+        if (vfs_fd < 0)
+            return cvt_error();
 
-        if (size == 0)
-        {
-            return set_return(thread, 0);
-        }
+        // Copy as many times as needed
 
-        int fd = deref_fd(thread, thread_fd);
-        if (fd < 0)
-        {
-            return set_return(thread, -EBADF);
-        }
+        size_t total_written = 0;
 
-        ssize_t to_write = size;
-        while (to_write > 0)
+        while (count > 0)
         {
-            ssize_t bytes_to_write = std::min<size_t>(sizeof(IO_BUFFER), to_write);
-            if (thread.get_process()->memory_space.memcpy(IO_BUFFER, addr, bytes_to_write) < 0)
+            size_t to_write = std::min(count, (uint32_t)sizeof(IO_BUFFER));
+            if (current_task->memory->obj.memory.memcpy(IO_BUFFER, buf_loc + total_written, to_write) < 0)
             {
-                return set_return(thread, -EFAULT);
+                error = EFAULT;
+                return cvt_error();
             }
-            ssize_t bytes_written = vfs.write(fd, IO_BUFFER, bytes_to_write);
+
+            ssize_t bytes_written = vfs.write(vfs_fd, IO_BUFFER, to_write);
             if (bytes_written < 0)
             {
-                return transfer_error(thread);
+                if (total_written > 0)
+                {
+                    // Return the total bytes written so far
+                    return total_written;
+                }
+
+                if (error == EAGAIN)
+                {
+                    // Blocking write
+                    if (current_task->blocking_operation == BlockingOperation::NONE &&
+                        (vfs.get_flags(vfs_fd) & OPEN_NONBLOCK) == 0)
+                    {
+                        _trace("sys_write: blocking write on Thread FD %d, count %u\n", fd, count);
+
+                        current_task->blocking_operation = BlockingOperation::IO_WRITE;
+                        current_task->io_block_fd = fd;
+                    }
+
+                    return -EAGAIN;
+                }
+                return cvt_error(); // Return error if no bytes written
             }
 
-            while (bytes_written < bytes_to_write)
-            {
-                // If we didn't write all bytes, we need to write again
-                ssize_t additional_bytes = vfs.write(fd, IO_BUFFER + bytes_written, bytes_to_write - bytes_written);
-                if (additional_bytes < 0)
-                {
-                    return transfer_error(thread);
-                }
-                bytes_written += additional_bytes;
-
-                if (bytes_written == 0)
-                {
-                    // No progress made, avoid infinite loop
-                    return set_return(thread, -EIO);
-                }
-            }
-
-            addr += bytes_written;
-            to_write -= bytes_written;
+            total_written += bytes_written;
+            count -= bytes_written;
         }
-        return set_return(thread, size - to_write);
+
+        return total_written;
     }
-}
+} // namespace Hamster
+
+

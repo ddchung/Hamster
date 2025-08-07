@@ -1,20 +1,9 @@
-// RISC-V RV32G thread
+// Hamster risc-v emulator
 
-#include <process/thread.hpp>
-#include <process/process.hpp>
-#include <memory/stl_map.hpp>
-#include <syscall/syscall.hpp>
-#include <platform/config.hpp>
-#include <cassert>
-#include <cstddef>
-#include <cstring>
-#include <utility>
-#include <signal.h>
+#include <riscv/riscv_emulator.hpp>
 #include <math.h>
+#include <cstring>
 #include <cfenv>
-
-// for debugging
-#include <cstdio>
 
 namespace Hamster
 {
@@ -349,176 +338,139 @@ namespace Hamster
         }
     } // namespace
 
-    Thread::Thread(Process *process, size_t id)
-        : state(ThreadState::RUNNING), process(process), id(id),
-          x{0}, f{0.0}, fcsr(0), pc(0),
-          pending_signal(0), signal_mask(0xFFFFFFFF)
+    int RiscVEmulator::read32(uint32_t addr, uint32_t &out)
     {
-    }
+        if (addr < 128)
+            return -1; // Trap NULL
 
-    Thread::Thread(Thread &&other)
-        : Thread(other.process, other.id)
-    {
-        Thread tmp{other.process, other.id};
-        tmp = std::move(other);
-        other = std::move(*this);
-        *this = std::move(tmp);
-    }
-
-    Thread &Thread::operator=(Thread &&other)
-    {
-        if (this == &other)
-            return *this;
-        std::swap(state, other.state);
-        std::swap(process, other.process);
-        std::swap(id, other.id);
-        std::swap(pause_callbacks, other.pause_callbacks);
-        std::memcpy(x, other.x, sizeof(x));
-        std::memcpy(f, other.f, sizeof(f));
-        std::swap(fcsr, other.fcsr);
-        std::swap(pc, other.pc);
-        std::swap(pending_signal, other.pending_signal);
-        std::swap(signal_mask, other.signal_mask);
-        return *this;
-    }
-
-    void Thread::tick()
-    {
-        assert(state == ThreadState::RUNNING);
-
-        if (pending_signal && (1 << (pending_signal - 1)) & signal_mask)
+        if (!memory->memory.is_allocated(addr) ||
+            !memory->memory.is_allocated(addr + sizeof(out) - 1))
         {
-            handle_signal();
-            return;
+            // Read from unallocated memory
+            return -1;
         }
+        return memory->memory.memcpy(&out, addr, sizeof(out));
+    }
 
-        // Fetch the instruction
+    int RiscVEmulator::read16(uint32_t addr, uint16_t &out)
+    {
+        if (addr < 128)
+            return -1; // Trap NULL
+
+        if (!memory->memory.is_allocated(addr) ||
+            !memory->memory.is_allocated(addr + sizeof(out) - 1))
+        {
+            // Read from unallocated memory
+            return -1;
+        }
+        return memory->memory.memcpy(&out, addr, sizeof(out));
+    }
+
+    int RiscVEmulator::read8(uint32_t addr, uint8_t &out)
+    {
+        if (addr < 128)
+            return -1; // Trap NULL
+
+        if (!memory->memory.is_allocated(addr) ||
+            !memory->memory.is_allocated(addr + sizeof(out) - 1))
+        {
+            // Read from unallocated memory
+            return -1;
+        }
+        return memory->memory.memcpy(&out, addr, sizeof(out));
+    }
+
+    int RiscVEmulator::write32(uint32_t addr, uint32_t value)
+    {
+        if (addr < 128)
+            return -1; // Trap NULL
+
+        // Note that writing to unallocating memory will allocate it
+        return memory->memory.memcpy(addr, &value, sizeof(value));
+    }
+
+    int RiscVEmulator::write16(uint32_t addr, uint16_t value)
+    {
+        if (addr < 128)
+            return -1; // Trap NULL
+
+        return memory->memory.memcpy(addr, &value, sizeof(value));
+    }
+
+    int RiscVEmulator::write8(uint32_t addr, uint8_t value)
+    {
+        if (addr < 128)
+            return -1; // Trap NULL
+
+        return memory->memory.memcpy(addr, &value, sizeof(value));
+    }
+
+    int RiscVEmulator::readf32(uint32_t addr, float &out)
+    {
+        if (addr < 128)
+            return -1; // Trap NULL
+
+        if (!memory->memory.is_allocated(addr) ||
+            !memory->memory.is_allocated(addr + sizeof(out) - 1))
+        {
+            // Read from unallocated memory
+            return -1;
+        }
+        return memory->memory.memcpy(&out, addr, sizeof(out));
+    }
+
+    int RiscVEmulator::readf64(uint32_t addr, double &out)
+    {
+        if (addr < 128)
+            return -1; // Trap NULL
+
+        if (!memory->memory.is_allocated(addr) ||
+            !memory->memory.is_allocated(addr + sizeof(out) - 1))
+        {
+            // Read from unallocated memory
+            return -1;
+        }
+        return memory->memory.memcpy(&out, addr, sizeof(out));
+    }
+
+    int RiscVEmulator::writef32(uint32_t addr, float value)
+    {
+        if (addr < 128)
+            return -1; // Trap NULL
+
+        // Note that writing to unallocating memory will allocate it
+        return memory->memory.memcpy(addr, &value, sizeof(value));
+    }
+
+    int RiscVEmulator::writef64(uint32_t addr, double value)
+    {
+        if (addr < 128)
+            return -1; // Trap NULL
+
+        // Note that writing to unallocating memory will allocate it
+        return memory->memory.memcpy(addr, &value, sizeof(value));
+    }
+    
+    RiscVEmulator::ExecuteResult RiscVEmulator::execute()
+    {
         uint32_t inst;
+        ExecuteResult result;
+
+        if (!memory)
+        {
+            result.status = ExecuteResult::Status::Error;
+            return result;
+        }
+
         if (read32(pc, inst) != 0)
-            return;
-
-        
-        ++tick_count;
-        
-        pc += 4;
-
-        execute(inst);
-    }
-
-    void Thread::pause(void (*callback)(Thread&))
-    {
-        pause_callbacks.push_back(callback);
-    }
-
-    void Thread::resume()
-    {
-        if (pause_callbacks.empty())
-            return;
-        pause_callbacks.pop_back();
-    }
-
-    void (* Thread::get_current_pause_callback())(Thread&) const
-    {
-        if (pause_callbacks.empty())
-            return nullptr;
-        return pause_callbacks.back();
-    }
-
-    void Thread::signal(int signal)
-    {
-        pending_signal = signal;
-    }
-
-    int Thread::read32(uint32_t addr, uint32_t &out)
-    {
-        if (!process->memory_space.is_allocated(addr) ||
-            !process->memory_space.is_allocated(addr + sizeof(out) - 1))
         {
-            // Read from unallocated memory
-            signal(SIGSEGV);
-            return -1;
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = pc;
+            return result;
         }
-        return process->memory_space.memcpy(&out, addr, sizeof(out));
-    }
 
-    int Thread::read16(uint32_t addr, uint16_t &out)
-    {
-        if (!process->memory_space.is_allocated(addr) ||
-            !process->memory_space.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            signal(SIGSEGV);
-            return -1;
-        }
-        return process->memory_space.memcpy(&out, addr, sizeof(out));
-    }
+        uint32_t old_pc = pc;
 
-    int Thread::read8(uint32_t addr, uint8_t &out)
-    {
-        if (!process->memory_space.is_allocated(addr) ||
-            !process->memory_space.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            signal(SIGSEGV);
-            return -1;
-        }
-        return process->memory_space.memcpy(&out, addr, sizeof(out));
-    }
-
-    int Thread::write32(uint32_t addr, uint32_t value)
-    {
-        // Note that writing to unallocating memory will allocate it
-        return process->memory_space.memcpy(addr, &value, sizeof(value));
-    }
-
-    int Thread::write16(uint32_t addr, uint16_t value)
-    {
-        return process->memory_space.memcpy(addr, &value, sizeof(value));
-    }
-
-    int Thread::write8(uint32_t addr, uint8_t value)
-    {
-        return process->memory_space.memcpy(addr, &value, sizeof(value));
-    }
-
-    int Thread::readf32(uint32_t addr, float &out)
-    {
-        if (!process->memory_space.is_allocated(addr) ||
-            !process->memory_space.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            signal(SIGSEGV);
-            return -1;
-        }
-        return process->memory_space.memcpy(&out, addr, sizeof(out));
-    }
-
-    int Thread::readf64(uint32_t addr, double &out)
-    {
-        if (!process->memory_space.is_allocated(addr) ||
-            !process->memory_space.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            signal(SIGSEGV);
-            return -1;
-        }
-        return process->memory_space.memcpy(&out, addr, sizeof(out));
-    }
-
-    int Thread::writef32(uint32_t addr, float value)
-    {
-        // Note that writing to unallocating memory will allocate it
-        return process->memory_space.memcpy(addr, &value, sizeof(value));
-    }
-
-    int Thread::writef64(uint32_t addr, double value)
-    {
-        // Note that writing to unallocating memory will allocate it
-        return process->memory_space.memcpy(addr, &value, sizeof(value));
-    }
-
-    int Thread::execute(uint32_t inst)
-    {
         x[0] = 0;
         switch (extract_opcode(inst))
         {
@@ -575,8 +527,9 @@ namespace Hamster
                     break;
                 default:
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
             else
                 switch (extract_funct3(inst))
@@ -630,8 +583,9 @@ namespace Hamster
                     break;
                 default:
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
             break;
         }
@@ -683,8 +637,9 @@ namespace Hamster
                 break;
             default:
                 // Unknown funct3
-                signal(SIGILL);
-                return -1;
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
             }
             break;
         }
@@ -697,7 +652,11 @@ namespace Hamster
             {
                 uint8_t value;
                 if (read8(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                    return result;
+                }
                 x[extract_rd(inst)] = sign_extend(value, 8);
             }
             break;
@@ -705,7 +664,11 @@ namespace Hamster
             {
                 uint16_t value;
                 if (read16(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                    return result;
+                }
                 x[extract_rd(inst)] = sign_extend(value, 16);
             }
             break;
@@ -713,7 +676,11 @@ namespace Hamster
             {
                 uint32_t value;
                 if (read32(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                    return result;
+                }
                 x[extract_rd(inst)] = value;
             }
             break;
@@ -721,7 +688,11 @@ namespace Hamster
             {
                 uint8_t value;
                 if (read8(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                    return result;
+                }
                 x[extract_rd(inst)] = value;
             }
             break;
@@ -729,14 +700,19 @@ namespace Hamster
             {
                 uint16_t value;
                 if (read16(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                    return result;
+                }
                 x[extract_rd(inst)] = value;
             }
             break;
             default:
                 // Unknown funct3
-                signal(SIGILL);
-                return -1;
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
             }
             break;
         }
@@ -749,27 +725,43 @@ namespace Hamster
             {
                 uint8_t value = x[extract_rs2(inst)] & 0xFF;
                 if (write8(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
+                    result.illegal_store.value = value;
+                    return result;
+                }
             }
             break;
             case FUNCT3_SH:
             {
                 uint16_t value = x[extract_rs2(inst)] & 0xFFFF;
                 if (write16(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
+                    result.illegal_store.value = value;
+                    return result;
+                }
             }
             break;
             case FUNCT3_SW:
             {
                 uint32_t value = x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
+                    result.illegal_store.value = value;
+                    return result;
+                }
             }
             break;
             default:
                 // Unknown funct3
-                signal(SIGILL);
-                return -1;
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
             }
             break;
         }
@@ -780,47 +772,132 @@ namespace Hamster
                 // Base branch instructions
             case FUNCT3_BEQ:
                 if (x[extract_rs1(inst)] == x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst) - 4;
+                {
+                    auto new_pc = pc + extract_imm_b(inst);
+                    // Ensure that it is readable
+                    uint32_t dummy;
+                    if (read32(new_pc, dummy) != 0)
+                    {
+                        result.status = ExecuteResult::Status::IllegalLoad;
+                        result.illegal_load.address = new_pc;
+                        return result;
+                    }
+                    pc = new_pc;
+                }
                 break;
             case FUNCT3_BNE:
                 if (x[extract_rs1(inst)] != x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst) - 4;
+                {
+                    auto new_pc = pc + extract_imm_b(inst);
+                    // Ensure that it is readable
+                    uint32_t dummy;
+                    if (read32(new_pc, dummy) != 0)
+                    {
+                        result.status = ExecuteResult::Status::IllegalLoad;
+                        result.illegal_load.address = new_pc;
+                        return result;
+                    }
+                    pc = new_pc;
+                }
                 break;
             case FUNCT3_BLT:
                 if ((int32_t)x[extract_rs1(inst)] < (int32_t)x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst) - 4;
+                {
+                    auto new_pc = pc + extract_imm_b(inst);
+                    // Ensure that it is readable
+                    uint32_t dummy;
+                    if (read32(new_pc, dummy) != 0)
+                    {
+                        result.status = ExecuteResult::Status::IllegalLoad;
+                        result.illegal_load.address = new_pc;
+                        return result;
+                    }
+                    pc = new_pc;
+                }
                 break;
             case FUNCT3_BGE:
                 if ((int32_t)x[extract_rs1(inst)] >= (int32_t)x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst) - 4;
+                {
+                    auto new_pc = pc + extract_imm_b(inst);
+                    // Ensure that it is readable
+                    uint32_t dummy;
+                    if (read32(new_pc, dummy) != 0)
+                    {
+                        result.status = ExecuteResult::Status::IllegalLoad;
+                        result.illegal_load.address = new_pc;
+                        return result;
+                    }
+                    pc = new_pc;
+                }
                 break;
             case FUNCT3_BLTU:
                 if (x[extract_rs1(inst)] < x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst) - 4;
+                {
+                    auto new_pc = pc + extract_imm_b(inst);
+                    // Ensure that it is readable
+                    uint32_t dummy;
+                    if (read32(new_pc, dummy) != 0)
+                    {
+                        result.status = ExecuteResult::Status::IllegalLoad;
+                        result.illegal_load.address = new_pc;
+                        return result;
+                    }
+                    pc = new_pc;
+                }
                 break;
             case FUNCT3_BGEU:
                 if (x[extract_rs1(inst)] >= x[extract_rs2(inst)])
-                    pc += extract_imm_b(inst) - 4;
+                {
+                    auto new_pc = pc + extract_imm_b(inst);
+                    // Ensure that it is readable
+                    uint32_t dummy;
+                    if (read32(new_pc, dummy) != 0)
+                    {
+                        result.status = ExecuteResult::Status::IllegalLoad;
+                        result.illegal_load.address = new_pc;
+                        return result;
+                    }
+                    pc = new_pc;
+                }
                 break;
             default:
                 // Unknown funct3
-                signal(SIGILL);
-                return -1;
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
             }
             break;
         }
         case OP_JAL:
         {
             // JAL
-            x[extract_rd(inst)] = pc; // + 4 - 4
-            pc += extract_imm_j(inst) - 4;
+            auto new_pc = pc + extract_imm_j(inst);
+            // Ensure that it is readable
+            uint32_t dummy;
+            if (read32(new_pc, dummy) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = new_pc;
+                return result;
+            }
+            x[extract_rd(inst)] = pc + 4;
+            pc = new_pc;
             break;
         }
         case OP_JALR:
         {
             // JALR
-            x[extract_rd(inst)] = pc;
-            pc = (x[extract_rs1(inst)] + extract_imm_i(inst)) & ~0x1;
+            auto new_pc = (x[extract_rs1(inst)] + extract_imm_i(inst)) & ~0x1;
+            // Ensure that it is readable
+            uint32_t dummy;
+            if (read32(new_pc, dummy) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = new_pc;
+                return result;
+            }
+            x[extract_rd(inst)] = pc + 4;
+            pc = new_pc;
             break;
         }
         case OP_LUI:
@@ -832,7 +909,7 @@ namespace Hamster
         case OP_AUIPC:
         {
             // AUIPC
-            x[extract_rd(inst)] = pc + extract_imm_u(inst) - 4;
+            x[extract_rd(inst)] = pc + extract_imm_u(inst);
             break;
         }
         case OP_SYSTEM:
@@ -842,11 +919,19 @@ namespace Hamster
             {
             case FUNCT3_ECALL_EBREAK:
                 if ((extract_imm_i(inst) & 0x1) == 0)
+                {
                     // ECALL
-                    return do_syscall(*this);
+                    pc += 4;
+                    result.status = ExecuteResult::Status::ECALL;
+                    return result;
+                }
                 else
+                {
                     // EBREAK
-                    signal(SIGTRAP);
+                    pc += 4;
+                    result.status = ExecuteResult::Status::EBREAK;
+                    return result;
+                }
                 break;
             case FUNCT3_CSRRW:
                 // CSR Read and Write
@@ -870,8 +955,9 @@ namespace Hamster
                         break;
                     default:
                         // Unknown CSR
-                        signal(SIGILL);
-                        return -1;
+                        result.status = ExecuteResult::Status::IllegalInstruction;
+                        result.illegal_instruction.instruction = inst;
+                        return result;
                     }
                 }
                 break;
@@ -895,8 +981,9 @@ namespace Hamster
                         break;
                     default:
                         // Unknown CSR
-                        signal(SIGILL);
-                        return -1;
+                        result.status = ExecuteResult::Status::IllegalInstruction;
+                        result.illegal_instruction.instruction = inst;
+                        return result;
                     }
                 }
                 break;
@@ -920,8 +1007,9 @@ namespace Hamster
                         break;
                     default:
                         // Unknown CSR
-                        signal(SIGILL);
-                        return -1;
+                        result.status = ExecuteResult::Status::IllegalInstruction;
+                        result.illegal_instruction.instruction = inst;
+                        return result;
                     }
                 }
                 break;
@@ -947,8 +1035,9 @@ namespace Hamster
                         break;
                     default:
                         // Unknown CSR
-                        signal(SIGILL);
-                        return -1;
+                        result.status = ExecuteResult::Status::IllegalInstruction;
+                        result.illegal_instruction.instruction = inst;
+                        return result;
                     }
                 }
                 break;
@@ -972,8 +1061,9 @@ namespace Hamster
                         break;
                     default:
                         // Unknown CSR
-                        signal(SIGILL);
-                        return -1;
+                        result.status = ExecuteResult::Status::IllegalInstruction;
+                        result.illegal_instruction.instruction = inst;
+                        return result;
                     }
                 }
                 break;
@@ -997,15 +1087,17 @@ namespace Hamster
                         break;
                     default:
                         // Unknown CSR
-                        signal(SIGILL);
-                        return -1;
+                        result.status = ExecuteResult::Status::IllegalInstruction;
+                        result.illegal_instruction.instruction = inst;
+                        return result;
                     }
                 }
                 break;
             default:
                 // Unknown funct3
-                signal(SIGILL);
-                return -1;
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
             }
             break;
         }
@@ -1024,8 +1116,9 @@ namespace Hamster
             else
             {
                 // Unknown funct3
-                signal(SIGILL);
-                return -1;
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
             }
             break;
         }
@@ -1034,8 +1127,9 @@ namespace Hamster
             if (extract_funct3(inst) != 0x2)
             {
                 // Unknown funct3
-                signal(SIGILL);
-                return -1;
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
             }
             switch (extract_funct5(inst))
             {
@@ -1044,16 +1138,20 @@ namespace Hamster
                 // Load Reserved
                 uint32_t val;
                 if (read32(x[extract_rs1(inst)], val) != 0)
-                    return -1;
-                process->reserved_mem[x[extract_rs1(inst)]] = id;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)];
+                    return result;
+                }
+                memory->reserved_mem[x[extract_rs1(inst)]] = reserved_mem_id;
                 x[extract_rd(inst)] = val;
                 break;
             }
             case FUNCT5_SC:
             {
                 // Store Conditional
-                auto it = process->reserved_mem.find(x[extract_rs1(inst)]);
-                if (it == process->reserved_mem.end() || it->second != id)
+                auto it = memory->reserved_mem.find(x[extract_rs1(inst)]);
+                if (it == memory->reserved_mem.end() || it->second != reserved_mem_id)
                 {
                     // Not reserved
                     x[extract_rd(inst)] = 1;
@@ -1061,8 +1159,13 @@ namespace Hamster
                 }
                 uint32_t val = x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], val) != 0)
-                    return -1;
-                process->reserved_mem.erase(it);
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)];
+                    result.illegal_store.value = val;
+                    return result;
+                }
+                memory->reserved_mem.erase(it);
                 x[extract_rd(inst)] = 0;
                 break;
             }
@@ -1071,10 +1174,19 @@ namespace Hamster
                 // Atomic Swap
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)];
+                    return result;
+                }
                 uint32_t new_val = x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)];
+                    result.illegal_store.value = new_val;
+                    return result;
+                }
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1083,10 +1195,19 @@ namespace Hamster
                 // Atomic Add
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)];
+                    return result;
+                }
                 uint32_t new_val = old_val + x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)];
+                    result.illegal_store.value = new_val;
+                    return result;
+                }
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1095,10 +1216,19 @@ namespace Hamster
                 // Atomic AND
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)];
+                    return result;
+                }
                 uint32_t new_val = old_val & x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)];
+                    result.illegal_store.value = new_val;
+                    return result;
+                }
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1107,10 +1237,19 @@ namespace Hamster
                 // Atomic OR
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)];
+                    return result;
+                }
                 uint32_t new_val = old_val | x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)];
+                    result.illegal_store.value = new_val;
+                    return result;
+                }
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1119,10 +1258,19 @@ namespace Hamster
                 // Atomic XOR
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)];
+                    return result;
+                }
                 uint32_t new_val = old_val ^ x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)];
+                    result.illegal_store.value = new_val;
+                    return result;
+                }
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1131,10 +1279,19 @@ namespace Hamster
                 // Atomic Max
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)];
+                    return result;
+                }
                 uint32_t new_val = std::max((int32_t)old_val, (int32_t)x[extract_rs2(inst)]);
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)];
+                    result.illegal_store.value = new_val;
+                    return result;
+                }
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1143,10 +1300,19 @@ namespace Hamster
                 // Atomic Min
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)];
+                    return result;
+                }
                 uint32_t new_val = std::min((int32_t)old_val, (int32_t)x[extract_rs2(inst)]);
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)];
+                    result.illegal_store.value = new_val;
+                    return result;
+                }
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1155,10 +1321,19 @@ namespace Hamster
                 // Atomic Max Unsigned
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)];
+                    return result;
+                }
                 uint32_t new_val = std::max(old_val, x[extract_rs2(inst)]);
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)];
+                    result.illegal_store.value = new_val;
+                    return result;
+                }
                 x[extract_rd(inst)] = old_val;
                 break;
             }
@@ -1167,17 +1342,27 @@ namespace Hamster
                 // Atomic Min Unsigned
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)];
+                    return result;
+                }
                 uint32_t new_val = std::min(old_val, x[extract_rs2(inst)]);
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)];
+                    result.illegal_store.value = new_val;
+                    return result;
+                }
                 x[extract_rd(inst)] = old_val;
                 break;
             }
             default:
                 // Unknown funct5
-                signal(SIGILL);
-                return -1;
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
             }
             break;
         }
@@ -1189,7 +1374,11 @@ namespace Hamster
                 // FLD
                 double value;
                 if (readf64(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                    return result;
+                }
                 f[extract_rd(inst)] = value;
             }
             else
@@ -1197,7 +1386,11 @@ namespace Hamster
                 // FLW
                 float value;
                 if (readf32(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                    return result;
+                }
                 write_float_to_double(value, f[extract_rd(inst)]);
             }
             break;
@@ -1209,14 +1402,24 @@ namespace Hamster
             {
                 // FSD
                 if (writef64(x[extract_rs1(inst)] + extract_imm_s(inst), f[extract_rs2(inst)]) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
+                    result.illegal_store.value = f[extract_rs2(inst)];
+                    return result;
+                }
             }
             else
             {
                 // FSW
                 float value = read_float_from_double(f[extract_rs2(inst)]);
                 if (writef32(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
-                    return -1;
+                {
+                    result.status = ExecuteResult::Status::IllegalStore;
+                    result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
+                    result.illegal_store.value = value;
+                    return result;
+                }
             }
             break;
         }
@@ -1364,8 +1567,9 @@ namespace Hamster
                     break;
                 default:
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
                 break;
             case 0b0010100:
@@ -1382,8 +1586,9 @@ namespace Hamster
                 else
                 {
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
                 break;
             case 0b1100000:
@@ -1396,9 +1601,9 @@ namespace Hamster
                     a = read_float_from_double(f[extract_rs1(inst)]);
                     if (a > INT32_MAX || a < INT32_MIN)
                     {
-                        // Overflow
-                        signal(SIGFPE);
-                        return -1;
+                        // NV
+                        fcsr |= 1 << 4;
+                        break;
                     }
                     x[extract_rd(inst)] = (int32_t)a;
                     break;
@@ -1407,16 +1612,17 @@ namespace Hamster
                     a = read_float_from_double(f[extract_rs1(inst)]);
                     if (a > UINT32_MAX || a < 0)
                     {
-                        // Overflow
-                        signal(SIGFPE);
-                        return -1;
+                        // NV
+                        fcsr |= 1 << 4;
+                        break;
                     }
                     x[extract_rd(inst)] = (uint32_t)a;
                     break;
                 default:
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
                 break;
             case 0b1110000:
@@ -1436,8 +1642,9 @@ namespace Hamster
                     break;
                 default:
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
                 break;
             case 0b1010000:
@@ -1461,8 +1668,9 @@ namespace Hamster
                     break;
                 default:
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
                 break;
             case 0b1101000:
@@ -1482,8 +1690,9 @@ namespace Hamster
                     break;
                 default:
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
                 break;
             case 0b1111000:
@@ -1547,8 +1756,9 @@ namespace Hamster
                     break;
                 default:
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
                 break;
             case 0b0010101:
@@ -1565,8 +1775,9 @@ namespace Hamster
                 else
                 {
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
                 break;
             case 0b0100000:
@@ -1602,8 +1813,9 @@ namespace Hamster
                     break;
                 default:
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
                 break;
             case 0b1110001:
@@ -1622,9 +1834,9 @@ namespace Hamster
                     // FCVT.W.D
                     if (ad > INT32_MAX || ad < INT32_MIN)
                     {
-                        // Overflow
-                        signal(SIGFPE);
-                        return -1;
+                        // NV
+                        fcsr |= 1 <<  4;
+                        break;
                     }
                     x[extract_rd(inst)] = (int32_t)std::nearbyint(ad);
                     break;
@@ -1632,16 +1844,17 @@ namespace Hamster
                     // FCVT.WU.D
                     if (ad > UINT32_MAX || ad < 0)
                     {
-                        // Overflow
-                        signal(SIGFPE);
-                        return -1;
+                        // NV
+                        fcsr |= 1 << 4;
+                        break;
                     }
                     x[extract_rd(inst)] = (uint32_t)std::nearbyint(ad);
                     break;
                 default:
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
                 break;
             case 0b1101001:
@@ -1661,25 +1874,26 @@ namespace Hamster
                     break;
                 default:
                     // Unknown funct3
-                    signal(SIGILL);
-                    return -1;
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
                 }
             }
             break;
         }
         default:
             // Unknown opcode
-            signal(SIGILL);
-            return -1;
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = inst;
+            return result;
         }
 
-        return 0;
-    }
+        // Increment PC if an instruction didn't change it
+        if (old_pc == pc)
+            pc += 4;
 
-    void Thread::handle_signal()
-    {
-        // TODO: Implement signal handling
-        // For now, just stop
-        state = ThreadState::ENDED;
+        result.status = ExecuteResult::Status::Success;
+        return result;
     }
 } // namespace Hamster
+

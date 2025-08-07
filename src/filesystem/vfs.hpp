@@ -191,6 +191,46 @@ namespace Hamster
         int chown(int fd, int uid, int gid);
 
         /**
+         * @brief Change the file ownership of a file at a given path, without following symlinks
+         * @param path The path to the file to change ownership of
+         * @param uid The new user ID of the file
+         * @param gid The new group ID of the file
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This does not follow symlinks, it changes the ownership of the symlink itself
+         */
+        int lchown(const char *path, int uid, int gid);
+
+        /**
+         * @brief Change the file ownership of a file at a given path relative to a directory, without following symlinks
+         * @param dir The file descriptor of the directory to change ownership in
+         * @param path The path to the file to change ownership of, starting from the directory
+         * @param uid The new user ID of the file
+         * @param gid The new group ID of the file
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This does not follow symlinks, it changes the ownership of the symlink itself
+         */
+        int lchownat(int dir, const char *path, int uid, int gid);
+
+        /**
+         * @brief Change the file ownership of a file at a given path
+         * @param path The path to the file to change ownership of
+         * @param uid The new user ID of the file
+         * @param gid The new group ID of the file
+         * @return 0 on success, or on error return -1 and set `error
+         */
+        int chown(const char *path, int uid, int gid);
+
+        /**
+         * @brief Change the file ownership of a file at a given path relative to a directory
+         * @param dir The file descriptor of the directory to change ownership in
+         * @param path The path to the file to change ownership of, starting from the directory
+         * @param uid The new user ID of the file
+         * @param gid The new group ID of the file
+         * @return 0 on success, or on error return -1 and set `error`
+         */
+        int chownat(int dir, const char *path, int uid, int gid);
+
+        /**
          * @brief Read from a file
          * @param fd The file descriptor to read from
          * @param buf The buffer to read into
@@ -465,6 +505,37 @@ namespace Hamster
          * @note This may change O_RDONLY, O_WRONLY, or O_RDWR, depending on filesystem support
          */
         int set_flags(int fd, int flags);
+
+        /**
+         * @brief Check if a special file is a TTY
+         * @param fd The file descriptor of the special file
+         * @return 1 if it is, 0 if it's not, and on error return -1 and set `error`
+         * @note On a non-special file, this will return -1 and set `error` to ENOTTY
+         */
+        int is_tty(int fd);
+
+        /**
+         * @brief Get the device ID of a special file
+         * @param fd The file descriptor of the special file
+         * @return The device ID of the special file, or on error return DeviceID{0, 0} and set `error`
+         * @note This is only valid for special files, not regular files or directories
+         */
+        DeviceID get_device_id(int fd);
+
+        /**
+         * @brief Check if a file is a directory
+         * @param fd The file descriptor of the file to check
+         * @return 1 if it is a directory, 0 if it is not, -1 on error and set `error`
+         */
+        int is_directory(int fd);
+
+        /**
+         * @brief Check if a file is ready for reading or writing
+         * @param fd The file descriptor of the file to check
+         * @param op The operation to check for, a bitmask of `0x1` for read and `0x2` for write
+         * @return 1 if ready, 0 if not ready, -1 on error and set `error`
+         */
+        int poll(int fd, int op);
 
     private:
         VFSData *data;

@@ -200,7 +200,7 @@ namespace Hamster
                 else if (node->type() == FileType::Special)
                 {
                     auto *special_node = static_cast<RamFsSpecialNode *>(node);
-                    buf->rdev = special_node->device_id.major << 20 | special_node->device_id.minor & 0xFFFFF;
+                    buf->rdev = special_node->device_id.major << 20 | (special_node->device_id.minor & 0xFFFFF);
                 }
                 else
                 {
@@ -743,6 +743,11 @@ namespace Hamster
                     return -1;
                 }
 
+                return this->offset;
+            }
+
+            int64_t tell() override
+            {
                 return this->offset;
             }
 
