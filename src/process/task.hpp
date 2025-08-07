@@ -330,14 +330,6 @@ namespace Hamster
         uint32_t gid, egid, sgid;
     };
 
-    enum class BlockingOperation : uint8_t
-    {
-        NONE,
-        IO_READ,
-        IO_WRITE,
-        WAIT,
-    };
-
     class Task
     {
     public:
@@ -372,24 +364,6 @@ namespace Hamster
          * @note Forwards to one of: poll_read, poll_write, or poll_wait
          */
         int poll_block();
-
-        /**
-         * @brief Poll a blocking read operation
-         * @return -1 on an error, 0 otherwise
-         */
-        int poll_read();
-
-        /**
-         * @brief Poll a blocking write operation
-         * @return -1 on an error, 0 otherwise
-         */
-        int poll_write();
-
-        /**
-         * @brief Poll a blocking wait operation
-         * @return -1 on an error, 0 otherwise
-         */
-        int poll_wait();
 
         /**
          * @brief Do the exit routine for the task
@@ -539,6 +513,7 @@ namespace Hamster
         PendingSignalQueue pending_signals;
         RiscVEmulator emulator;
 
+        
         // Last time the task was scheduled
         // Value is the systick (see platform/platform.hpp)
         uint64_t last_tick = 0;
@@ -548,17 +523,22 @@ namespace Hamster
         // This is the opposite of the `sigprocmask` behavior, so be careful
         uint64_t sig_mask = 0xFFFFFFFFFFFFFFFF;
         
+        // Blocking operation
+        // If not nullptr, this is called and the tick is skipped
+        // Must set itself to nullptr when done
+        void (*blocking_operation)(Task &);
+
+        // Blocking operation saved data
+        uint32_t blocking_operation_saved[2];
+
         uint32_t tid = 0;
         uint32_t ptid = 0;
-        
-        int io_block_fd = -1;
 
         // (code << 8) | (status & 0xFF)
         uint16_t exit_code = 0;
         
         // Sent to the parent process on exit, if we are the leader of the task group
         uint8_t exit_signal = 0;
-        BlockingOperation blocking_operation = BlockingOperation::NONE;
         bool is_paused : 1 = false;
         bool is_dead : 1 = false;
     };

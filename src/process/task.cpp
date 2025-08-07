@@ -279,8 +279,8 @@ namespace Hamster
         std::swap(tid, other.tid);
         std::swap(ptid, other.ptid);
         std::swap(sig_mask, other.sig_mask);
-        std::swap(io_block_fd, other.io_block_fd);
         std::swap(blocking_operation, other.blocking_operation);
+        std::swap(blocking_operation_saved, other.blocking_operation_saved);
         std::swap(exit_code, other.exit_code);
         std::swap(exit_signal, other.exit_signal);
 
@@ -541,17 +541,9 @@ namespace Hamster
 
     int Task::poll_block()
     {
-        switch (blocking_operation)
-        {
-            case BlockingOperation::IO_READ:
-                return poll_read();
-            case BlockingOperation::IO_WRITE:
-                return poll_write();
-            case BlockingOperation::WAIT:
-                return poll_wait();
-            default:
-                return 0; // No blocking operation
-        }
+        if (blocking_operation)
+            blocking_operation(*this);
+        return 0;
     }
 
     int Task::get_vfs_fd(int fd)
@@ -616,8 +608,7 @@ namespace Hamster
         new_task->ptid = tid; // Set the parent thread ID
         new_task->tid = 0;
         new_task->sig_mask = sig_mask; // Copy the signal mask
-        new_task->io_block_fd = -1;
-        new_task->blocking_operation = BlockingOperation::NONE;
+        new_task->blocking_operation = nullptr;
         new_task->exit_code = 0;
         new_task->exit_signal = exit_signal;
         new_task->is_paused = is_paused;

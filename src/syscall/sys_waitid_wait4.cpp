@@ -9,11 +9,10 @@
 
 namespace Hamster
 {
-    int Task::poll_wait()
+    void poll_wait(Task &)
     {
         Task *current_task = scheduler.get_current_task();
         assert(current_task != nullptr && "No current task");
-        assert(current_task->blocking_operation == BlockingOperation::WAIT && "Not a blocking wait operation");
 
         // Call either waitid or wait4 syscall
         int32_t result;
@@ -21,7 +20,7 @@ namespace Hamster
         int32_t syscall_id = current_task->emulator.x[17]; // a7 register contains syscall ID
 
         // Restore argument 0 that is in io_block_fd
-        current_task->emulator.x[10] = current_task->io_block_fd;
+        current_task->emulator.x[10] = current_task->blocking_operation_saved[0];
 
         switch (syscall_id)
         {
@@ -39,16 +38,14 @@ namespace Hamster
         if (result < 0 && result == -EAGAIN)
         {
             // Still blocking, do nothing and check again next time
-            return 0;
+            return;
         }
         _trace("sys_wait: completed wait operation, result %d\n", result);
 
         // Completed successfully
         // Copy to a0 register (return value)
         current_task->emulator.x[10] = result;
-        current_task->blocking_operation = BlockingOperation::NONE;
-        current_task->io_block_fd = -1; // Reset the blocking FD
-        return 0;
+        current_task->blocking_operation = nullptr;
     }
 
     int32_t sys_waitid(int32_t idtype, int32_t id, uint32_t infop_loc,
@@ -181,15 +178,15 @@ namespace Hamster
                 return 0;
             }
             
-            if (current_task->blocking_operation != BlockingOperation::WAIT)
+            if (current_task->blocking_operation)
                 _trace("sys_waitid: blocking on Thread PID %d, idtype %d, id %d, options %d\n",
                        current_task->get_pid(), idtype, id, options);
 
             // Block until a matching process state change occurs
-            current_task->blocking_operation = BlockingOperation::WAIT;
+            current_task->blocking_operation = poll_wait;
 
-            // Save argument 0 in io_block_fd, as it will be overwritten by the return handler
-            current_task->io_block_fd = idtype;
+            // Save argument 0, as it will be overwritten by the return handler
+            current_task->blocking_operation_saved[0] = idtype;
 
 
             return -EAGAIN;

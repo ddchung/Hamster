@@ -315,18 +315,8 @@ namespace Hamster
             return signal_result == 1 ? 0 : -1;
         }
 
-        if (task.blocking_operation == BlockingOperation::IO_READ)
-        {
-            return task.poll_read();
-        }
-        else if (task.blocking_operation == BlockingOperation::IO_WRITE)
-        {
-            return task.poll_write();
-        }
-        else if (task.blocking_operation == BlockingOperation::WAIT)
-        {
-            return task.poll_wait();
-        }
+        if (task.blocking_operation)
+            return task.poll_block();
 
         // Execute the task's instruction
         auto result = task.emulator.execute();
