@@ -147,6 +147,9 @@ namespace Hamster
     int32_t sys_rt_tgsigqueueinfo(int32_t tgid, int32_t tid, int32_t sig,
                               uint32_t info_loc);
     int32_t sys_uname(uint32_t buf_loc);
+    int32_t sys_pselect6_time64(int32_t nfds, uint32_t readfds_loc,
+                                uint32_t writefds_loc, uint32_t exceptfds_loc,
+                                uint32_t timeout_loc, uint32_t sigmask_loc);
     
     /**
      * @brief Call a system call

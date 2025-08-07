@@ -406,6 +406,10 @@ namespace Hamster
             result = syscall(sys_uname);
             arg_count = num_args(sys_uname);
             break;
+        case SyscallID::PSELECT6_TIME64:
+            result = syscall(sys_pselect6_time64);
+            arg_count = num_args(sys_pselect6_time64);
+            break;
         default:
             // Unsupported syscall ID
             result = -ENOSYS;
@@ -572,5 +576,8 @@ namespace Hamster
     __attribute__((weak)) int32_t sys_rt_tgsigqueueinfo(int32_t tgid, int32_t tid, int32_t sig,
                           uint32_t uinfo_loc) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_uname(uint32_t buf_loc) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_pselect6_time64(int32_t nfds, uint32_t readfds_loc,
+                          uint32_t writefds_loc, uint32_t exceptfds_loc,
+                          uint32_t timeout_loc, uint32_t sigmask_loc) { return -ENOSYS; }
 } // namespace Hamster
 

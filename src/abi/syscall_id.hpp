@@ -606,6 +606,12 @@ namespace Hamster
              * @note Userspace sig: `int uname(struct utsname *buf);`
              */
             UNAME = 160,
+
+            /**
+             * @brief Wait for some file descriptors to become ready for a certain operation
+             * @note Userspace sig: `int pselect6_time64(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask);`
+             */
+            PSELECT6_TIME64 = 413,
         };
     } // namespace SyscallID
 } // namespace Hamster
