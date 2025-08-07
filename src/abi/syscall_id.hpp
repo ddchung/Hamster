@@ -280,21 +280,21 @@ namespace Hamster
              * This system call changes the permissions of a file descriptor.
              * @note Userspace sig: `int fchmod(int fd, mode_t mode);`, `mode_t` = `unsigned int`
              */
-            FCHMOD = 52,
+            FCHMOD = 52,//
 
             /**
              * @brief Resize a file, specified by file descriptor
              * This system call resizes a file to a specified size, which can be larger or smaller than the current size.
              * @note Userspace sig: `int ftruncate64(int fd, off_t length);`, `off_t` = `long long`
              */
-            FTRUNCATE64 = 46,
+            FTRUNCATE64 = 46,//
 
             /**
              * @brief Resize a file, specified by path
              * This system call resizes a file at the specified path to a specified size, which can be larger or smaller than the current size.
              * @note Userspace sig: `int truncate64(const char *path, off_t length);`, `off_t` = `long long`
              */
-            TRUNCATE64 = 45,
+            TRUNCATE64 = 45,//
 
             /**
              * @brief Change the file offset of a file descriptor
