@@ -522,6 +522,16 @@ namespace Hamster
          */
         int get_relative_fd(const char *path, int at_fd = -100);
 
+        /**
+         * @brief Process a user path, to make it absolute
+         * @param path The path to process
+         * @return The processed path, or nullptr on failure and set `error`
+         * @note This will append either the CWD or the root path to the beginning of the path,
+         *     * depending on whether the path is absolute or relative, and return a new string
+         * @note This also takes ownership of the path, so it will deallocate it later
+         */
+        char *process_user_path(char *user_path);
+
         TaskMember<EmulatorMemory> *memory;
         TaskMember<uint32_t> *program_brk;
         TaskMember<FDTable> *fd_table;

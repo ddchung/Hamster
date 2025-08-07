@@ -41,6 +41,10 @@ namespace Hamster
         if (!path)
             return cvt_error();
         
+        path = current_task->process_user_path(path);
+        if (!path)
+            return cvt_error();
+        
         int fd = vfs.open(path, OPEN_WRONLY);
         dealloc(path);
 

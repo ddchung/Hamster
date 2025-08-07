@@ -747,6 +747,38 @@ namespace Hamster
         return -1;
     }
 
+    char *Task::process_user_path(char *user_path)
+    {
+        if (!user_path || user_path[0] == '\0')
+        {
+            dealloc(user_path);
+            error = EINVAL; // Invalid path
+            return nullptr;
+        }
+
+        size_t len = strlen(user_path);
+        String *root;
+        if (user_path[0] == '/')
+        {
+            root = &process->obj.fs_info->obj.root_path;
+        }
+        else
+        {
+            root = &process->obj.fs_info->obj.cwd_path;
+        }
+
+        len += 1 + root->length(); // +1 for the '/' separator
+
+        char *new_path = alloc<char>(len + 1); // +1 for null terminator
+
+        strcpy(new_path, root->c_str());
+        strcat(new_path, "/");
+        strcat(new_path, user_path);
+
+        dealloc(user_path); // Free the original path
+        return new_path; // Return the new absolute path
+    }
+
     int Task::send_signal(const sys_siginfo &siginfo)
     {
         if (siginfo.signo < 1 || siginfo.signo >= 64)
