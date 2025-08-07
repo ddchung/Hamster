@@ -188,6 +188,18 @@ void test_filesystem()
             error = ENOTTY;
             return -1;
         }
+
+        int64_t seek(int64_t offset, int whence) override
+        {
+            error = ESPIPE;
+            return -1;
+        }
+
+        int64_t tell() override
+        {
+            error = ESPIPE;
+            return -1;
+        }
     private:
         Deque<int> &deque;
         int flags;

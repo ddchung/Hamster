@@ -57,6 +57,18 @@ namespace Hamster
         int ioctl(int request, IoctlArg arg = {}) override;
         bool is_tty() override { return true; }
 
+        int64_t seek(int64_t offset, int whence) override
+        {
+            error = ESPIPE; // TTYs do not support seeking
+            return -1;
+        }
+        int64_t tell() override
+        {
+            error = ESPIPE;
+            return -1;
+        }
+        int poll(int op) override;
+
     private:
         class BaseTTYDriver<Backend> *driver;
         int flags;
@@ -470,6 +482,47 @@ namespace Hamster
         }
 
         return size;
+    }
+
+    template <typename Backend>
+    int BaseTTYHandle<Backend>::poll(int op)
+    {
+        if (op & 0x1) // Read
+        {
+            if (driver->termios.lflag & H_ICANON)
+            {
+                // Canonical mode: check if we have a complete line
+                bool has_line = false;
+                for (char c : driver->input_buffer)
+                {
+                    if (c == '\n' || c == driver->termios.cc[H_VEOL] || c == driver->termios.cc[H_VEOF])
+                    {
+                        has_line = true;
+                        break;
+                    }
+                }
+                if (!has_line)
+                    return 0; // Not ready for reading
+            }
+            else
+            {
+                // Non-canonical mode, check if we have enough characters
+                if (driver->input_buffer.size() < driver->termios.cc[H_VMIN])
+                {
+                    return 0;
+                }
+            }
+        }
+        if (op & 0x2) // Write
+        {
+            // Check if we can write
+            if (driver->output_stopped && (driver->termios.iflag & H_IXON))
+            {
+                return 0; // Not ready for writing
+            }
+        }
+
+        return 1; // Ready for both
     }
 
     template <typename Backend>

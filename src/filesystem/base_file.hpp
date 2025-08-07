@@ -431,6 +431,28 @@ namespace Hamster
          *       * it depends.
          */
         virtual int ioctl(int request, IoctlArg arg = {}) = 0;
+
+        /**
+         * @brief Seek to a given position in the block device.
+         * @param offset The offset to seek to
+         * @param whence The reference point for the offset
+         * @return The new position in the block device, or on error return -1 and set `error`
+         * @note Equivelant to POSIX `lseek`
+         */
+        virtual int64_t seek(int64_t offset, int whence) = 0;
+
+        /**
+         * @brief Get the current position in the block device.
+         * @return The current position in the block device
+         */
+        virtual int64_t tell() = 0;
+
+        /**
+         * @brief Check whether the special file is ready for reading or writing.
+         * @param op The operation to check for, a bitmask of `0x1` for read and `0x2` for write
+         * @return 1 if ready, 0 if not ready, -1 on error and set `error`
+         */
+        virtual int poll(int op) { return 1; }
     };
 
     class BaseCharacterDeviceHandle : public BaseSpecialDriverHandle
@@ -463,21 +485,6 @@ namespace Hamster
     {
     public:
         virtual SpecialFileType special_type() override { return SpecialFileType::BlockDevice; }
-
-        /**
-         * @brief Seek to a given position in the block device.
-         * @param offset The offset to seek to
-         * @param whence The reference point for the offset
-         * @return The new position in the block device, or on error return -1 and set `error`
-         * @note Equivelant to POSIX `lseek`
-         */
-        virtual int64_t seek(int64_t offset, int whence) = 0;
-
-        /**
-         * @brief Get the current position in the block device.
-         * @return The current position in the block device
-         */
-        virtual int64_t tell() = 0;
 
         /**
          * @brief Get the size of the block device.

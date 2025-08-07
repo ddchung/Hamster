@@ -1371,4 +1371,23 @@ namespace Hamster
 
         return file->type() == FileType::Directory ? 1 : 0;
     }
+
+    int VFS::poll(int fd, int op)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+        
+        if (file->type() != FileType::Special)
+        {
+            error = ENOTTY;
+            return -1;
+        }
+
+        auto handle = get_special_handle((BaseSpecialFile *)file);
+        if (!handle)
+            return -1;
+
+        return handle->poll(op);
+    }
 } // namespace Hamster
