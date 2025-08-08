@@ -106,8 +106,6 @@ namespace Hamster
 
             int result = do_tick(*task);
 
-            task->last_tick = _get_sys_time();
-
             if (result < 0)
             {
                 return -1;
@@ -316,13 +314,17 @@ namespace Hamster
         }
 
         if (task.blocking_operation)
-            return task.poll_block();
+        {
+            task.blocking_operation(task);
+            return 0;
+        }
 
         // Execute the task's instruction
         auto result = task.emulator.execute();
         if (result.status == RiscVEmulator::ExecuteResult::Status::Success)
         {
             // Successful execution, continue
+            task.last_tick = _get_sys_time();
             return do_tick(task, tick_count - 1);
         }
         else if (result.status == RiscVEmulator::ExecuteResult::Status::ECALL)

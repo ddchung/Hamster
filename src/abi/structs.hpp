@@ -277,4 +277,28 @@ namespace Hamster
         char machine[65];
         char domainname[65];
     };
+
+    struct pselect6_time64_sigset
+    {
+        uint32_t sigset_loc;
+        uint32_t sigset_size;
+    };
+
+    inline uint64_t timespec_to_systick(const sys_timespec &ts)
+    {
+        // right now, 1 systick = 1 ms
+        return (ts.sec * 1000) + (ts.nsec / 1000000);
+    }
+    inline sys_timespec systick_to_timespec(uint64_t systick)
+    {
+        return {
+            .sec = static_cast<int64_t>(systick / 1000),
+            .nsec = static_cast<int64_t>((systick % 1000) * 1000000)
+        };
+    }
+    inline void systick_to_timespec(uint64_t systick, sys_timespec &ts)
+    {
+        ts.sec = static_cast<int64_t>(systick / 1000);
+        ts.nsec = static_cast<int64_t>((systick % 1000) * 1000000);
+    }
 } // namespace Hamster
