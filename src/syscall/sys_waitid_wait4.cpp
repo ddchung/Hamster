@@ -9,43 +9,46 @@
 
 namespace Hamster
 {
-    void poll_wait(Task &)
+    namespace
     {
-        Task *current_task = scheduler.get_current_task();
-        assert(current_task != nullptr && "No current task");
-
-        // Call either waitid or wait4 syscall
-        int32_t result;
-
-        int32_t syscall_id = current_task->emulator.x[17]; // a7 register contains syscall ID
-
-        // Restore argument 0 that is in io_block_fd
-        current_task->emulator.x[10] = current_task->blocking_operation_saved[0];
-
-        switch (syscall_id)
+        void poll_wait(Task &)
         {
-        case SyscallID::WAITID:
-            result = syscall(sys_waitid);
-            break;
-        case SyscallID::WAIT4:
-            result = syscall(sys_wait4);
-            break;
-        default:
-            result = -ENOSYS;
-            break;
-        }
+            Task *current_task = scheduler.get_current_task();
+            assert(current_task != nullptr && "No current task");
 
-        if (result < 0 && result == -EAGAIN)
-        {
-            // Still blocking, do nothing and check again next time
-            return;
-        }
-        _trace("sys_wait: completed wait operation, result %d\n", result);
+            // Call either waitid or wait4 syscall
+            int32_t result;
 
-        // Completed successfully
-        // Copy to a0 register (return value)
-        current_task->emulator.x[10] = result;
-        current_task->blocking_operation = nullptr;
+            int32_t syscall_id = current_task->emulator.x[17]; // a7 register contains syscall ID
+
+            // Restore argument 0 that is in io_block_fd
+            current_task->emulator.x[10] = current_task->blocking_operation_saved[0];
+
+            switch (syscall_id)
+            {
+            case SyscallID::WAITID:
+                result = syscall(sys_waitid);
+                break;
+            case SyscallID::WAIT4:
+                result = syscall(sys_wait4);
+                break;
+            default:
+                result = -ENOSYS;
+                break;
+            }
+
+            if (result < 0 && result == -EAGAIN)
+            {
+                // Still blocking, do nothing and check again next time
+                return;
+            }
+            _trace("sys_wait: completed wait operation, result %d\n", result);
+
+            // Completed successfully
+            // Copy to a0 register (return value)
+            current_task->emulator.x[10] = result;
+            current_task->blocking_operation = nullptr;
+        }
     }
 
     int32_t sys_waitid(int32_t idtype, int32_t id, uint32_t infop_loc,
@@ -178,7 +181,7 @@ namespace Hamster
                 return 0;
             }
             
-            if (current_task->blocking_operation)
+            if (!current_task->blocking_operation)
                 _trace("sys_waitid: blocking on Thread PID %d, idtype %d, id %d, options %d\n",
                        current_task->get_pid(), idtype, id, options);
 

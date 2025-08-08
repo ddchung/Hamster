@@ -12,36 +12,36 @@ namespace Hamster
     {
         // Buffer for read/write operations
         char IO_BUFFER[512];
-    } // namespace
 
-    void poll_read(Task &)
-    {
-        Task *current_task = scheduler.get_current_task();
-        assert(current_task != nullptr && "No current task");
-        
-        // Call the system call
-
-        // Load the blocking file descriptor
-        current_task->emulator.x[10] = current_task->blocking_operation_saved[0];
-
-        int32_t result = syscall(sys_read);
-
-        if (result < 0 && result == -EAGAIN)
+        void poll_read(Task &)
         {
-            // Still blocking, do nothing and check again next time
+            Task *current_task = scheduler.get_current_task();
+            assert(current_task != nullptr && "No current task");
+
+            // Call the system call
+
+            // Load the blocking file descriptor
+            current_task->emulator.x[10] = current_task->blocking_operation_saved[0];
+
+            int32_t result = syscall(sys_read);
+
+            if (result < 0 && result == -EAGAIN)
+            {
+                // Still blocking, do nothing and check again next time
+                return;
+            }
+
+            _trace("sys_read: completed read on Thread FD %d, bytes read %d\n",
+                   current_task->blocking_operation_saved[0], result);
+
+            // Completed successfully
+            // Copy to a0 register (return value)
+
+            current_task->emulator.x[10] = result;
+            current_task->blocking_operation = nullptr;
             return;
         }
-
-        _trace("sys_read: completed read on Thread FD %d, bytes read %d\n",
-               current_task->blocking_operation_saved[0], result);
-        
-        // Completed successfully
-        // Copy to a0 register (return value)
-
-        current_task->emulator.x[10] = result;
-        current_task->blocking_operation = nullptr;
-        return;
-    }
+    } // namespace
 
     void poll_write(Task &)
     {
@@ -101,7 +101,7 @@ namespace Hamster
                     // Blocking read
                     if ((vfs.get_flags(vfs_fd) & OPEN_NONBLOCK) == 0)
                     {
-                        if (current_task->blocking_operation)
+                        if (!current_task->blocking_operation)
                             _trace("sys_read: blocking read on Thread FD %d, count %u\n", fd, count);
 
                         current_task->blocking_operation = poll_read;
@@ -115,7 +115,7 @@ namespace Hamster
 
             if (bytes_read == 0)
                 break;
-            
+
             // Copy to user memory
             if (current_task->memory->obj.memory.memcpy(buf_loc + total_read, IO_BUFFER, bytes_read) < 0)
             {
@@ -163,7 +163,7 @@ namespace Hamster
                 if (error == EAGAIN)
                 {
                     // Blocking write
-                    if (current_task->blocking_operation && 
+                    if (!current_task->blocking_operation &&
                         (vfs.get_flags(vfs_fd) & OPEN_NONBLOCK) == 0)
                     {
                         _trace("sys_write: blocking write on Thread FD %d, count %u\n", fd, count);
@@ -184,5 +184,3 @@ namespace Hamster
         return total_written;
     }
 } // namespace Hamster
-
-
