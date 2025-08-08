@@ -342,28 +342,28 @@ namespace Hamster
              * This system call creates a new directory at the specified path relative to a directory file descriptor
              * @note Userspace sig: `int mkdirat(int dirfd, const char *pathname, mode_t mode);`, `mode_t` = `unsigned int`
              */
-            MKDIRAT = 34,
+            MKDIRAT = 34,//
 
             /**
              * @brief Remove a file or directory from a path relative to a directory file descriptor
              * This system call removes a file or directory at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int unlinkat(int dirfd, const char *pathname, int flags);`
              */
-            UNLINKAT = 35,
+            UNLINKAT = 35,//
 
             /**
              * @brief Create a hard link to a file from a path relative to a directory file descriptor
              * This system call creates a hard link to a file at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags);`
              */
-            LINKAT = 37,
+            LINKAT = 37,//
 
             /**
              * @brief Rename a file or directory from a path relative to a directory file descriptor
              * This system call renames a file or directory at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int renameat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath);`
              */
-            RENAMEAT = 38,
+            RENAMEAT = 38,//
 
             /**
              * @brief Rename a file or directory from a path relative to a directory file descriptor with an additional flag
@@ -371,7 +371,7 @@ namespace Hamster
              * allowing for additional flags to control the operation.
              * @note Userspace sig: `int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, unsigned int flags);`
              */
-            RENAMEAT2 = 276,
+            RENAMEAT2 = 276,//
 
             /**
              * @brief Read the directory entries of a directory file descriptor
@@ -605,13 +605,13 @@ namespace Hamster
              * @brief Get info about the system
              * @note Userspace sig: `int uname(struct utsname *buf);`
              */
-            UNAME = 160,
+            UNAME = 160,//
 
             /**
              * @brief Wait for some file descriptors to become ready for a certain operation
              * @note Userspace sig: `int pselect6_time64(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask);`
              */
-            PSELECT6_TIME64 = 413,
+            PSELECT6_TIME64 = 413,//
         };
     } // namespace SyscallID
 } // namespace Hamster
