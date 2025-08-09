@@ -43,6 +43,8 @@ namespace
         Hamster::_log("\r\n");
     }
 
+    uint64_t *sched_tick_count = nullptr;
+
     class UserSchedulerTickTask : public Hamster::BaseKTask
     {
     public:
@@ -52,8 +54,13 @@ namespace
             interval = 0; // Tick as fast as possible
             id = 1; // Fixed ID
             next_tick = 0;
+            sched_tick_count = &tick_count;
         }
-        ~UserSchedulerTickTask() override = default;
+        ~UserSchedulerTickTask() override
+        {
+            sched_tick_count = nullptr;
+        }
+
         void run() override
         {
             Hamster::scheduler.tick();
@@ -63,6 +70,28 @@ namespace
                 flags |= Hamster::KSCHED_REMOVE_NOW | Hamster::KSCHED_REMOVE_ALL;
             }
         }
+    };
+
+    class UserSchedulerPerfMonitorTask : public Hamster::BaseKTask
+    {
+    public:
+        UserSchedulerPerfMonitorTask()
+        {
+            flags = Hamster::KSCHED_AUTO_INTERVAL;
+            interval = 1000; // Every second
+            id = 2; // Fixed ID
+            next_tick = 0;
+        }
+        ~UserSchedulerPerfMonitorTask() override = default;
+
+        void run() override
+        {
+            uint64_t current_tick_count = *sched_tick_count;
+            Hamster::_trace("Scheduler ticks in the last %llums: %llu\n", (unsigned long long)interval, (unsigned long long)(current_tick_count - last_tick_count));
+            last_tick_count = current_tick_count;
+        }
+    private:
+        uint64_t last_tick_count = 0;
     };
 }
 
@@ -103,6 +132,7 @@ int main()
 
     // Add the user scheduler tick task
     Hamster::kscheduler.add_task(Hamster::alloc<UserSchedulerTickTask>());
+    Hamster::kscheduler.add_task(Hamster::alloc<UserSchedulerPerfMonitorTask>());
 
     // Run the program
     while (true)
