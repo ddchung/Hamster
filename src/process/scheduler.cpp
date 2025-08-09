@@ -67,7 +67,6 @@ namespace Hamster
             return 1; // Nothing to handle
         }
     } // namespace
-    
 
     uint32_t Scheduler::add_task(Task *task)
     {
@@ -148,8 +147,10 @@ namespace Hamster
             return -1;
         }
 
-        if (!argv) argv = empty_strings;
-        if (!envp) envp = empty_strings;
+        if (!argv)
+            argv = empty_strings;
+        if (!envp)
+            envp = empty_strings;
 
         Task *task = alloc<Task>();
 
@@ -290,11 +291,8 @@ namespace Hamster
         return nullptr;
     }
 
-    int Scheduler::do_tick(Task &task, uint16_t tick_count)
+    int Scheduler::do_tick(Task &task)
     {
-        if (tick_count == 0)
-            return 0;
-
         if (task.is_dead)
             return 0; // Skip dead tasks
 
@@ -320,73 +318,75 @@ namespace Hamster
         }
 
         // Execute the task's instruction
-        auto result = task.emulator.execute();
-        if (result.status == RiscVEmulator::ExecuteResult::Status::Success)
-        {
-            // Successful execution, continue
-            task.last_tick = _get_sys_time();
-            return do_tick(task, tick_count - 1);
-        }
-        else if (result.status == RiscVEmulator::ExecuteResult::Status::ECALL)
-        {
-            // Handle system call
-            int32_t syscall_id = task.emulator.x[17]; // a7 is syscall ID
-            int32_t syscall_result = Hamster::syscall(syscall_id);
-            task.emulator.x[10] = syscall_result; // a0 is syscall return value
-            return 0;
-        }
-        else if (result.status == RiscVEmulator::ExecuteResult::Status::EBREAK)
-        {
-            // TODO: Handle EBREAK
-            return 0;
-        }
-
         sys_siginfo siginfo = {};
-
-        if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalInstruction)
+        for (uint16_t i = 0; i < HAMSTER_THREAD_TIME_SLICE; ++i)
         {
-            siginfo.signo = H_SIGILL;
-            siginfo.errno_value = 0;
-            siginfo.code = H_ILL_ILLOPC;
+            auto result = task.emulator.execute();
+            if (__builtin_expect(result.status == RiscVEmulator::ExecuteResult::Status::Success, 1))
+            {
+                // Successful execution, continue
+                continue;
+            }
+            else if (result.status == RiscVEmulator::ExecuteResult::Status::ECALL)
+            {
+                // Handle system call
+                int32_t syscall_id = task.emulator.x[17]; // a7 is syscall ID
+                int32_t syscall_result = Hamster::syscall(syscall_id);
+                task.emulator.x[10] = syscall_result; // a0 is syscall return value
+                break;
+            }
+            else if (result.status == RiscVEmulator::ExecuteResult::Status::EBREAK)
+            {
+                // TODO: Handle EBREAK
+                break;
+            }
 
-            // - 4, because the PC was incremented
-            siginfo.fields.fault.addr = task.emulator.pc - 4;
+            if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalInstruction)
+            {
+                siginfo.signo = H_SIGILL;
+                siginfo.errno_value = 0;
+                siginfo.code = H_ILL_ILLOPC;
 
-            task.send_signal(siginfo);
-            return 0;
+                // - 4, because the PC was incremented
+                siginfo.fields.fault.addr = task.emulator.pc - 4;
+
+                task.send_signal(siginfo);
+                break;
+            }
+            else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalLoad)
+            {
+                siginfo.signo = H_SIGSEGV;
+                siginfo.errno_value = 0;
+                siginfo.code = H_SEGV_MAPERR;
+
+                // - 4, because the PC was incremented
+                siginfo.fields.fault.addr = task.emulator.pc - 4;
+
+                task.send_signal(siginfo);
+                break;
+            }
+            else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalStore)
+            {
+                siginfo.signo = H_SIGSEGV;
+                siginfo.errno_value = 0;
+                siginfo.code = H_SEGV_ACCERR;
+
+                // - 4, because the PC was incremented
+                siginfo.fields.fault.addr = task.emulator.pc - 4;
+
+                task.send_signal(siginfo);
+                break;
+            }
+            else if (result.status == RiscVEmulator::ExecuteResult::Status::Error)
+            {
+                // Error means that there was an internal error in the emulator
+                // so, try again next time
+                return -1;
+            }
         }
-        else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalLoad)
-        {
-            siginfo.signo = H_SIGSEGV;
-            siginfo.errno_value = 0;
-            siginfo.code = H_SEGV_MAPERR;
 
-            // - 4, because the PC was incremented
-            siginfo.fields.fault.addr = task.emulator.pc - 4;
+        task.last_tick = _get_sys_time();
 
-            task.send_signal(siginfo);
-            return 0;
-        }
-        else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalStore)
-        {
-            siginfo.signo = H_SIGSEGV;
-            siginfo.errno_value = 0;
-            siginfo.code = H_SEGV_ACCERR;
-
-            // - 4, because the PC was incremented
-            siginfo.fields.fault.addr = task.emulator.pc - 4;
-
-            task.send_signal(siginfo);
-            return 0;
-        }
-        else if (result.status == RiscVEmulator::ExecuteResult::Status::Error)
-        {
-            // Error means that there was an internal error in the emulator
-            // so, try again next time
-            return -1;
-        }
-
-        return -1;
+        return 0;
     }
 } // namespace Hamster
-
