@@ -106,10 +106,10 @@ namespace Hamster
         uint32_t uid;
         uint32_t gid;
         uint64_t rdev;
-        uint64_t __pad1;
+        uint64_t _pad1;
         int64_t size;
         int32_t blksize;
-        int32_t __pad2;
+        int32_t _pad2;
         int64_t blocks;
         int32_t atime;
         uint32_t atime_nsec;
@@ -117,7 +117,7 @@ namespace Hamster
         uint32_t mtime_nsec;
         int32_t ctime;
         uint32_t ctime_nsec;
-        uint32_t __unused4, __unused5;
+        uint32_t _unused4, _unused5;
     };
 
     struct sys_statx
@@ -129,7 +129,7 @@ namespace Hamster
         uint32_t uid;
         uint32_t gid;
         uint16_t mode;
-        uint16_t __spare0[1];
+        uint16_t _spare0[1];
         uint64_t ino;
         uint64_t size;
         uint64_t blocks;
@@ -138,7 +138,7 @@ namespace Hamster
         struct {
             int64_t sec;
             uint32_t nsec;
-            int32_t __reserved;
+            int32_t _reserved;
         } atime, btime, ctime, mtime;
         uint32_t rdev_major;
         uint32_t rdev_minor;
@@ -147,7 +147,7 @@ namespace Hamster
         uint64_t mnt_id;
         uint32_t dio_memalign;
         uint32_t dio_offsetalign;
-        uint64_t __spare3[12];
+        uint64_t _spare3[12];
     };
 
     struct sys_dirent
@@ -246,7 +246,7 @@ namespace Hamster
         {
             uint64_t f[64] __attribute__((aligned(16)));
             uint32_t fcsr;
-            uint32_t __reserved[3];
+            uint32_t _reserved[3];
         } q;
     };
 
@@ -261,10 +261,10 @@ namespace Hamster
         uint32_t flags;
         uint32_t link;
         struct {
-            uint32_t __unused[3];
-        } __unused_stack;
+            uint32_t _unused[3];
+        } _unused_stack;
         sys_sigset sigmask;
-        uint8_t __sigmask_reserved[1024 / 8 - sizeof(sys_sigset)];
+        uint8_t _sigmask_reserved[1024 / 8 - sizeof(sys_sigset)];
         sys_sigcontext context;
     };
 

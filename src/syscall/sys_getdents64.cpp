@@ -9,7 +9,7 @@
 
 namespace Hamster
 {
-    int sys_getdents64(int32_t fd, uint32_t dirent_loc, uint32_t count)
+    int32_t sys_getdents64(int32_t fd, uint32_t dirent_loc, uint32_t count)
     {
         Task *task = scheduler.get_current_task();
         assert(task != nullptr);

@@ -20,8 +20,20 @@ int Hamster::_init_platform()
     if (sd.begin(BUILTIN_SDCARD))
         Serial.println("SD card found");
     else
-        Serial.println("No SD card found");
+    {
+        // Set color to red
+        Serial.print("\e[31m");
+
+        Serial.println("! NO SD CARD FOUND !");
+        Serial.println("aborting...");
+        abort();
+    }
     return 0;
+}
+
+int Hamster::_mount_rootfs()
+{
+    return -1;
 }
 
 void * Hamster::_malloc(size_t size)
@@ -45,6 +57,19 @@ int Hamster::_log(char c)
 {
     Serial.write(c);
     return 0;
+}
+
+uint64_t Hamster::_get_sys_time()
+{
+    return millis();
+}
+
+void Hamster::_trace(const char *fmt, ...)
+{
+    // by default, do nothing
+    // you can override this function to enable tracing
+    // make sure it traces to a different place than _log
+    (void)fmt;
 }
 
 #endif // TEENSY41

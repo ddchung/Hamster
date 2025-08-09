@@ -9,11 +9,6 @@
 #include <errno/errno.h>
 #include <cstring>
 
-#ifdef __STDC_HOSTED__
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#endif
 
 void test_platform();
 void test_memory();

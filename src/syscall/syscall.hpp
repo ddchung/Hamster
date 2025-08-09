@@ -211,7 +211,5 @@ namespace Hamster
             return sys_fn(args[0], args[1], args[2], args[3], args[4]);
         else if constexpr (num_args == 6)
             return sys_fn(args[0], args[1], args[2], args[3], args[4], args[5]);
-        else
-            static_assert(false, "Unsupported number of syscall arguments");
     }
 }
