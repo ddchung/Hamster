@@ -309,7 +309,15 @@ namespace Hamster
             {
             }
 
-            ~RamFsRegularHandle() override = default;
+            ~RamFsRegularHandle() override
+            {
+                // Swap out data
+                auto *reg_node = get_node();
+                if (!reg_node)
+                    return;
+
+                reg_node->data.swap_out_all();
+            }
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
             int get_id() const override { return RamFsNodeHandle::get_id(); }
