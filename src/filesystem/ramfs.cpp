@@ -30,13 +30,14 @@ namespace Hamster
             RamFsNode &operator=(const RamFsNode &) = delete;
 
             RamFsNode(int mode, int uid, int gid)
-                : mode(mode), uid(uid), gid(gid), refcount(1), filesystem(nullptr)
+                : mode(mode), uid(uid), gid(gid), refcount(1), handle_refcount(0), filesystem(nullptr)
             {
             }
 
             int mode;
             int uid, gid;
             uint32_t refcount;
+            uint32_t handle_refcount;
             RamFs *filesystem;
         };
 
@@ -115,7 +116,7 @@ namespace Hamster
                     if (node)
                     {
                         node->refcount--;
-                        if (node->refcount == 0)
+                        if (node->refcount == 0 && node->handle_refcount == 0)
                         {
                             dealloc(node);
                         }
@@ -137,9 +138,23 @@ namespace Hamster
             RamFsNodeHandle(RamFsNode *node, int flags)
                 : node(node), flags(flags)
             {
+                assert(node);
+                is_dir = (node->type() == FileType::Directory);
+                if (!is_dir)
+                    node->handle_refcount++;
             }
 
-            ~RamFsNodeHandle() = default;
+            ~RamFsNodeHandle()
+            {
+                if (!is_dir)
+                {
+                    node->handle_refcount--;
+                    if (node->refcount == 0 && node->handle_refcount == 0)
+                    {
+                        dealloc(node);
+                    }
+                }
+            }
 
             BaseFilesystem *get_filesystem()
             {
@@ -299,6 +314,7 @@ namespace Hamster
         protected:
             RamFsNode *node;
             int flags;
+            bool is_dir : 1;
         };
 
         class RamFsRegularHandle : public BaseRegularFile, public RamFsNodeHandle
@@ -1034,7 +1050,7 @@ namespace Hamster
 
                 dir_node->children.erase(it);
                 node->refcount -= 1;
-                if (node->refcount == 0)
+                if (node->refcount == 0 && node->handle_refcount == 0)
                 {
                     dealloc(node);
                 }
