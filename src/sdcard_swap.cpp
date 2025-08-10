@@ -33,10 +33,12 @@ int Hamster::_swap_out(int index, const uint8_t *data)
     SdFile file;
     if (!file.open(name_buffer, O_RDWR | O_CREAT | O_TRUNC))
     {
+        Hamster::_trace("%s:%d: SD swapping failed to open file %s", __FILE__, __LINE__, name_buffer);
         return -1;
     }
     if (file.write(data, HAMSTER_PAGE_SIZE) != HAMSTER_PAGE_SIZE)
     {
+        Hamster::_trace("%s:%d: SD swapping failed to write file %s", __FILE__, __LINE__, name_buffer);
         file.close();
         return -1;
     }
@@ -53,6 +55,7 @@ int Hamster::_swap_in(int index, uint8_t *data)
     static uint8_t data_buf[HAMSTER_PAGE_SIZE];
     if (!file.open(name_buffer, O_RDONLY))
     {
+        Hamster::_trace("%s:%d: SD swapping failed to open file %s", __FILE__, __LINE__, name_buffer);
         return -1;
     }
 
@@ -60,6 +63,7 @@ int Hamster::_swap_in(int index, uint8_t *data)
     // to avoid modifying data on error
     if (file.read(data_buf, HAMSTER_PAGE_SIZE) != HAMSTER_PAGE_SIZE)
     {
+        Hamster::_trace("%s:%d: SD swapping failed to read file %s", __FILE__, __LINE__, name_buffer);
         file.close();
         return -1;
     }
