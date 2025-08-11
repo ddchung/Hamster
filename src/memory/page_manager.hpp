@@ -10,17 +10,20 @@
 
 namespace Hamster
 {
+    constexpr int PERM_READ = 0b100;
+    constexpr int PERM_WRITE = 0b010;
+    constexpr int PERM_EXEC = 0b001;
+
     struct PageEntry
     {
         int64_t offset;
         uint8_t *data;
         int fd;
-        uint8_t eviction_queue_count : 4;
-        uint8_t swapped : 1; // Note: a lazy-loaded file mapping is considered swapped
-        uint8_t dirty : 1;
-        uint8_t used : 1;
-        uint8_t cow : 1;
-        uint8_t shared : 1; // shared file mapping
+        uint32_t refcount : 4;
+        uint32_t eviction_queue_count : 4;
+        uint32_t swapped : 1; // Note: a lazy-loaded file mapping is considered swapped
+        uint32_t dirty : 1;
+        uint32_t perms : 3;
     };
 
     class PageManager
@@ -38,7 +41,7 @@ namespace Hamster
          * @param entry This pointer will be set to point to the new entry
          * @return The ID of the new page
          */
-        uint32_t allocate_page(PageEntry *&entry);
+        uint32_t allocate_page(PageEntry *&entry, uint8_t perms = PERM_READ | PERM_WRITE);
 
         /**
          * @brief Get a new page that has a private file mapping
@@ -48,7 +51,18 @@ namespace Hamster
          * @return The ID of the new page
          * @note This takes ownership of the file descriptor
          */
-        uint32_t mmap_private(PageEntry *&entry, int fd, int64_t offset);
+        uint32_t mmap_private(PageEntry *&entry, int fd, int64_t offset, uint8_t perms = PERM_READ | PERM_WRITE);
+
+        /**
+         * @brief Copy a page with copy-on-write management
+         * @param id The ID of the page to copy
+         * @return The ID of the new page
+         * @note Usage is the same, but the page manager will automatically
+         *     * keep track of the copy-and-write state. It is possible to
+         *     * have up to 16 references to the same page.
+         * @note If the page has a private file mapping, we will
+         */
+        uint32_t copy(uint32_t id);
 
         /**
          * @brief Check whether a page ID is valid
@@ -101,9 +115,22 @@ namespace Hamster
          * @note This will also evict the least recently used page if necessary
          */
         int swap_in(uint32_t id);
+        
+        /**
+         * @brief Swap out a page
+         * @param id The ID of the page
+         * @return 0 on success, -1 on error
+         */
+        int swap_out(uint32_t id);
+
+        /**
+         * @brief Mark a page as dirty
+         * @param id The ID of the page
+         */
+        void mark_page_dirty(uint32_t id);
 
     private:
-        Vector<PageEntry> page_table;
+        Vector<PageEntry *> page_table;
         Deque<uint32_t> free_pages; // Free page IDs
         Deque<uint32_t> eviction_queue;
 
