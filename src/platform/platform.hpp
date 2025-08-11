@@ -47,6 +47,10 @@ namespace Hamster
     // This behaves like the `CLOCK_MONOTONIC` clock in POSIX
     uint64_t _get_sys_time();
 
+    // Get the remaining free memory
+    // Returns the amount of free memory in bytes
+    size_t _get_free_memory();
+
     // Log
     int _log(const char * msg);
     int _log(char c);
