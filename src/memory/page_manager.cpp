@@ -32,24 +32,25 @@ namespace Hamster
         }
         else
         {
-            id = *free_pages.begin();
+            id = free_pages.front();
             free_pages.pop_front();
         }
 
         // We can't use `out` because we need the reference
         // to bind to the vector entry
         PageEntry *&entry = page_table[id];
-        out = entry;
-
+        
         // Initialize the page entry
         assert(entry == nullptr);
         entry = alloc<PageEntry>();
+        out = entry;
         entry->data = nullptr;
         entry->fd = -1;
         entry->eviction_queue_count = 0;
         entry->swapped = 1;
         entry->dirty = 0;
         entry->perms = perms;
+        entry->refcount = 1;
         return id;
     }
 
@@ -57,12 +58,9 @@ namespace Hamster
     {
         // Check if the file descriptor is valid
         if (vfs.seek(fd, offset, H_SEEK_SET) < 0)
-            return -1;
+            return 0;
 
         uint32_t id = allocate_page(entry, perms);
-        if (id == -1)
-            return -1;
-
         entry->fd = fd;
         entry->offset = offset;
 
@@ -85,9 +83,9 @@ namespace Hamster
         if (--entry->refcount == 0)
         {
             _free(entry->data);
-            dealloc(entry);
             if (entry->fd != -1)
                 vfs.close(entry->fd);
+            dealloc(entry);
         }
         entry = nullptr;
         free_pages.push_back(id);
@@ -99,6 +97,7 @@ namespace Hamster
         if (entry->swapped)
             return -1;
         assert(entry->data != nullptr);
+        assert(addr < HAMSTER_PAGE_SIZE);
 
         // Check readability
         if ((entry->perms & PERM_READ) == 0)
@@ -108,12 +107,11 @@ namespace Hamster
         }
 
         // Read from the page
-        ssize_t bytes_read = 0;
         if (addr + size > HAMSTER_PAGE_SIZE)
             size = HAMSTER_PAGE_SIZE - addr;
 
         memcpy(buf, entry->data + addr, size);
-        return bytes_read;
+        return size;
     }
 
     ssize_t PageManager::try_write(uint32_t id, size_t addr, const void *buf, size_t size)
@@ -122,6 +120,7 @@ namespace Hamster
         if (entry->swapped)
             return -1;
         assert(entry->data != nullptr);
+        assert(addr < HAMSTER_PAGE_SIZE);
 
         if ((entry->perms & PERM_WRITE) == 0)
         {
@@ -130,7 +129,6 @@ namespace Hamster
         }
 
         // Write to the page
-        ssize_t bytes_written = 0;
         if (addr + size > HAMSTER_PAGE_SIZE)
             size = HAMSTER_PAGE_SIZE - addr;
         
@@ -138,7 +136,28 @@ namespace Hamster
             mark_page_dirty(id);
 
         memcpy(entry->data + addr, buf, size);
-        return bytes_written;
+        return size;
+    }
+
+    uint32_t PageManager::copy(uint32_t id)
+    {
+        PageEntry *entry = page_table[id];
+
+        entry->refcount++;
+
+        // Add to free spot
+        if (free_pages.empty())
+        {
+            page_table.push_back(entry);
+            return page_table.size() - 1;
+        }
+        else
+        {
+            uint32_t new_id = free_pages.front();
+            free_pages.pop_front();
+            page_table[new_id] = entry;
+            return new_id;
+        }
     }
 
     int PageManager::swap_in(uint32_t id)
@@ -206,6 +225,12 @@ namespace Hamster
         return 0;
     }
 
+    int PageManager::set_permissions(uint32_t id, uint8_t perms)
+    {
+        page_table[id]->perms = perms;
+        return 0;
+    }
+
     void PageManager::mark_page_dirty(uint32_t id)
     {
         PageEntry *&entry = page_table[id];
@@ -217,7 +242,7 @@ namespace Hamster
             entry->refcount--;
 
             // copy-construct
-            PageEntry *new_entry = alloc<PageEntry>(1, entry);
+            PageEntry *new_entry = alloc<PageEntry>(1, *entry);
 
             // copy data
             new_entry->data = (uint8_t *)_malloc(HAMSTER_PAGE_SIZE);
@@ -246,6 +271,9 @@ namespace Hamster
     {
         while (should_evict())
         {
+            if (eviction_queue.empty())
+                break;
+
             uint32_t victim = eviction_queue.front();
             eviction_queue.pop_front();
 

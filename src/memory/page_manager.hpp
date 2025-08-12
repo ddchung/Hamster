@@ -5,6 +5,7 @@
 #include <memory/stl_sequential.hpp>
 #include <memory/stl_map.hpp>
 #include <memory/stl_set.hpp>
+#include <sys/types.h>
 #include <cstdint>
 #include <cstddef>
 
@@ -107,6 +108,32 @@ namespace Hamster
          * @note This will fail if the page is swapped out
          */
         ssize_t try_write(uint32_t id, size_t addr, const void *buf, size_t size);
+
+        // Same thing as try_{read,write} but automatically swaps in
+
+        ssize_t read(uint32_t id, size_t addr, void *buf, size_t size)
+        {
+            ssize_t ret = try_read(id, addr, buf, size);
+            if (ret < 0)
+                swap_in(id);
+            return try_read(id, addr, buf, size);
+        }
+
+        ssize_t write(uint32_t id, size_t addr, const void *buf, size_t size)
+        {
+            ssize_t ret = try_write(id, addr, buf, size);
+            if (ret < 0)
+                swap_in(id);
+            return try_write(id, addr, buf, size);
+        }
+
+        /**
+         * @brief Set the permissions of a page
+         * @param id The ID of the page
+         * @param perms The new permissions for the page
+         * @return 0 on success, or -1 on error
+         */
+        int set_permissions(uint32_t id, uint8_t perms);
 
         /**
          * @brief Swap in a page
