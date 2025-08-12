@@ -943,7 +943,7 @@ uint64_t Hamster::_get_free_memory()
     // Since we are on a host, we can't get actual free memory
     // but we can do this to always trick the page manager into thinking
     // there's still memory available, which for the most part is mostly true.
-    return HAMSTER_TARGET_FREE_RAM - 1;
+    return HAMSTER_TARGET_FREE_RAM + 1;
 }
 
 int Hamster::_log(const char *msg)
