@@ -155,7 +155,7 @@ namespace Hamster
     {
         size_t len = 0;
 
-        for (uint32_t it = addr;; it = ROUND_UP_PAGE(it + 1))
+        for (uint32_t it = addr;; ++it)
         {
             char c;
             if (do_read(it, &c, 1) != 1)
@@ -166,6 +166,8 @@ namespace Hamster
         }
 
         char *result = alloc<char>(len);
+
+        result[len - 1] = '\0';
 
         if (memcpy(result, addr, len) < 0)
         {
@@ -181,7 +183,7 @@ namespace Hamster
         loc = ROUND_DOWN_PAGE(loc);
         size = ROUND_UP_PAGE(size);
         ssize_t count = 0;
-        for (uint32_t addr = loc; addr <= loc + size; addr += HAMSTER_PAGE_SIZE)
+        for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
             if (page_table.find(addr) != page_table.end())
                 count++;
@@ -200,7 +202,7 @@ namespace Hamster
 
         PageEntry *dummy;
 
-        for (uint32_t addr = loc; addr <= loc + size; addr += HAMSTER_PAGE_SIZE)
+        for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
             if (page_table.find(addr) != page_table.end())
                 continue;
@@ -219,7 +221,7 @@ namespace Hamster
 
         PageEntry *dummy;
 
-        for (uint32_t addr = loc; addr <= loc + size; addr += HAMSTER_PAGE_SIZE)
+        for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
             if (page_table.find(addr) != page_table.end())
                 continue;
@@ -238,7 +240,7 @@ namespace Hamster
         loc = ROUND_DOWN_PAGE(loc);
         size = ROUND_UP_PAGE(size);
 
-        for (uint32_t addr = loc; addr <= loc + size; addr += HAMSTER_PAGE_SIZE)
+        for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
             auto it = page_table.find(addr);
             if (it == page_table.end())
@@ -255,7 +257,7 @@ namespace Hamster
         loc = ROUND_DOWN_PAGE(loc);
         size = ROUND_UP_PAGE(size);
 
-        for (uint32_t addr = loc; addr <= loc + size; addr += HAMSTER_PAGE_SIZE)
+        for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
             auto it = page_table.find(addr);
             if (it == page_table.end())
@@ -270,7 +272,10 @@ namespace Hamster
     ssize_t MemorySpace::do_read(uint32_t addr, void *buf, size_t len)
     {
         assert(buf != nullptr);
-        
+
+        if (len == 0)
+            return 0;
+
         auto it = page_table.find(ROUND_DOWN_PAGE(addr));
         if (it == page_table.end())
         {
@@ -284,6 +289,9 @@ namespace Hamster
     ssize_t MemorySpace::do_write(uint32_t addr, const void *buf, size_t len)
     {
         assert(buf != nullptr);
+
+        if (len == 0)
+            return 0;
 
         auto it = page_table.find(ROUND_DOWN_PAGE(addr));
         if (it == page_table.end())

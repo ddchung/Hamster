@@ -243,10 +243,6 @@ void test_filesystem()
 
     dealloc(vfs);
 
-    vfs = &Hamster::vfs; // Use global VFS instance
-    fs = alloc<RamFs>(1);
-    assert(vfs->mount("/", fs) == 0);
-
     // Remount new ramfs for additional tests
     fs = alloc<RamFs>(1);
     vfs = alloc<VFS>(1);

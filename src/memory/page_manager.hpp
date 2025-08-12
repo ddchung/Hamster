@@ -114,17 +114,23 @@ namespace Hamster
         ssize_t read(uint32_t id, size_t addr, void *buf, size_t size)
         {
             ssize_t ret = try_read(id, addr, buf, size);
-            if (ret < 0)
+            if (__builtin_expect(ret < 0, 0))
+            {
                 swap_in(id);
-            return try_read(id, addr, buf, size);
+                return try_read(id, addr, buf, size);
+            }
+            return ret;
         }
 
         ssize_t write(uint32_t id, size_t addr, const void *buf, size_t size)
         {
             ssize_t ret = try_write(id, addr, buf, size);
-            if (ret < 0)
+            if (__builtin_expect(ret < 0, 0))
+            {
                 swap_in(id);
-            return try_write(id, addr, buf, size);
+                return try_write(id, addr, buf, size);
+            }
+            return ret;
         }
 
         /**

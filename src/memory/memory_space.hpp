@@ -3,6 +3,7 @@
 #pragma once
 
 #include <memory/stl_map.hpp>
+#include <memory/page_manager.hpp> // for PERM_*
 #include <sys/types.h>
 #include <cstdint>
 #include <cstddef>

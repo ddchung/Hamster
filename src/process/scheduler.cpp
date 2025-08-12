@@ -347,8 +347,7 @@ namespace Hamster
                 siginfo.errno_value = 0;
                 siginfo.code = H_ILL_ILLOPC;
 
-                // - 4, because the PC was incremented
-                siginfo.fields.fault.addr = task.emulator.pc - 4;
+                siginfo.fields.fault.addr = task.emulator.pc;
 
                 task.send_signal(siginfo);
                 break;
@@ -359,8 +358,7 @@ namespace Hamster
                 siginfo.errno_value = 0;
                 siginfo.code = H_SEGV_MAPERR;
 
-                // - 4, because the PC was incremented
-                siginfo.fields.fault.addr = task.emulator.pc - 4;
+                siginfo.fields.fault.addr = task.emulator.pc;
 
                 task.send_signal(siginfo);
                 break;
@@ -371,8 +369,7 @@ namespace Hamster
                 siginfo.errno_value = 0;
                 siginfo.code = H_SEGV_ACCERR;
 
-                // - 4, because the PC was incremented
-                siginfo.fields.fault.addr = task.emulator.pc - 4;
+                siginfo.fields.fault.addr = task.emulator.pc;
 
                 task.send_signal(siginfo);
                 break;

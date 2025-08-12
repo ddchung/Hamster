@@ -17,7 +17,28 @@ namespace Hamster
         auto &brk = current_task->program_brk->obj;
 
         if (new_brk)
+        {
+            if (new_brk < brk)
+            {
+                // Unmap some pages
+                if (current_task->get_memory().unmap(new_brk, brk - new_brk) < 0)
+                {
+                    error = EFAULT;
+                    return -1;
+                }
+            }
+            else
+            {
+                // Map more pages
+                if (current_task->get_memory().map_anonymous(brk, new_brk - brk, PERM_READ | PERM_WRITE) < 0)
+                {
+                    error = EFAULT;
+                    return -1;
+                }
+            }
+
             brk = new_brk;
+        }
         return brk;
     }
 } // namespace Hamster
