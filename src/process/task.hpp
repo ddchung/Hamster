@@ -427,7 +427,7 @@ namespace Hamster
         template <typename T>
         int copy_to_user(const T &obj, uint32_t addr, size_t size = sizeof(T))
         {
-            return get_memory().memcpy(addr, &obj, size);
+            return get_memory().memcpy_alloc(addr, &obj, size);
         }
 
         /**

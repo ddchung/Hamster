@@ -87,7 +87,7 @@ namespace Hamster
                 }
 
                 // Copy the program header to the memory space
-                if (mem_space.memcpy(HAMSTER_STACK_TOP + 1 + i * sizeof(phdr), &phdr, sizeof(phdr)) != 0)
+                if (mem_space.memcpy_alloc(HAMSTER_STACK_TOP + 1 + i * sizeof(phdr), &phdr, sizeof(phdr)) != 0)
                 {
                     error = EIO;
                     return -1;
@@ -119,7 +119,7 @@ namespace Hamster
                             return -1;
                         }
 
-                        mem_space.memcpy(phdr.p_vaddr + bytes_read, buf, ret);
+                        mem_space.memcpy_alloc(phdr.p_vaddr + bytes_read, buf, ret);
                         bytes_read += ret;
                         bytes_to_read -= ret;
                     }
@@ -128,7 +128,7 @@ namespace Hamster
                     if (phdr.p_memsz > phdr.p_filesz)
                     {
                         size_t zero_size = phdr.p_memsz - phdr.p_filesz;
-                        mem_space.memset(phdr.p_vaddr + bytes_read, 0, zero_size);
+                        mem_space.memset_alloc(phdr.p_vaddr + bytes_read, 0, zero_size);
                     }
                 }
             }

@@ -66,7 +66,7 @@ namespace Hamster
         if (exceptfds_loc != 0)
         {
             // Mark all of them as not ready
-            if (current_task->get_memory().memset(exceptfds_loc, 0, fdset_size * sizeof(uint32_t)) < 0)
+            if (current_task->get_memory().memset_alloc(exceptfds_loc, 0, fdset_size * sizeof(uint32_t)) < 0)
             {
                 error = EFAULT;
                 return cvt_error();
@@ -89,9 +89,9 @@ namespace Hamster
             {
                 // Timeout reached, mark all as not ready
                 if ((readfds_loc != 0 &&
-                    current_task->get_memory().memset(readfds_loc, 0, fdset_size * sizeof(uint32_t)) < 0)
+                    current_task->get_memory().memset_alloc(readfds_loc, 0, fdset_size * sizeof(uint32_t)) < 0)
                     || (writefds_loc != 0 &&
-                    current_task->get_memory().memset(writefds_loc, 0, fdset_size * sizeof(uint32_t)) < 0))
+                    current_task->get_memory().memset_alloc(writefds_loc, 0, fdset_size * sizeof(uint32_t)) < 0))
                 {
                     error = EFAULT;
                     return cvt_error();

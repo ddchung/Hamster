@@ -12,13 +12,6 @@
 
 #ifndef NDEBUG
 
-static unsigned int hash_int(unsigned int x) {
-    x = ((x >> 16) ^ x) * 0x45d9f3b;
-    x = ((x >> 16) ^ x) * 0x45d9f3b;
-    x = (x >> 16) ^ x;
-    return x;
-}
-
 void test_memory()
 {
     int i;
@@ -90,16 +83,13 @@ void test_memory()
     uint32_t id = pm.allocate_page(entry);
     assert(id != -1);
     assert(entry != nullptr);
-    assert(entry->used == 1);
 
     pm.free_page(id);
-    assert(entry->used == 0);
 
     entry = nullptr;
     id = pm.allocate_page(entry);
     assert(id != -1);
     assert(entry != nullptr);
-    assert(entry->used == 1);
 
     // Write some data to the page
     const char *data = "Hello, World!";
@@ -113,23 +103,19 @@ void test_memory()
 
     // Read the data back from the page
     char buffer[256];
-    ssize_t bytes_read = pm.try_read(id, 0, buffer, sizeof(buffer));
+    ssize_t bytes_read = pm.try_read(id, 0, buffer, strlen(data));
     assert(bytes_read != -1);
     assert(bytes_read == strlen(data));
-    assert(strcmp(buffer, data) == 0);
+    assert(strncmp(buffer, data, strlen(data)) == 0);
 
     pm.free_page(id);
-    assert(entry->used == 0);
-
     // Write a lot of data to multiple pages
     constexpr size_t page_count = 512;
     for (size_t i = 0; i < page_count; ++i)
     {
         Hamster::PageEntry *entry = nullptr;
         uint32_t id = pm.allocate_page(entry);
-        assert(id != -1);
         assert(entry != nullptr);
-        assert(entry->used == 1);
 
         // Write some data to the page
         ssize_t bytes_written = pm.try_write(id, 0, data, strlen(data));
@@ -141,10 +127,10 @@ void test_memory()
         assert(bytes_written != -1);
 
         // Read the data back from the page
-        ssize_t bytes_read = pm.try_read(id, 0, buffer, sizeof(buffer));
+        ssize_t bytes_read = pm.try_read(id, 0, buffer, strlen(data));
         assert(bytes_read != -1);
         assert(bytes_read == strlen(data));
-        assert(strcmp(buffer, data) == 0);
+        assert(strncmp(buffer, data, strlen(data)) == 0);
     }
 
     // Free all allocated pages

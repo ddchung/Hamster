@@ -194,7 +194,7 @@ namespace Hamster
 
         if (ret < 0)
         {
-            dealloc(task);
+            task->exit(make_wait_terminated_coredump(H_SIGKILL));
             return -1;
         }
 

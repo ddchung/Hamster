@@ -27,7 +27,7 @@ namespace Hamster
         {
             uint8_t random_byte = rand() % 256;
 
-            if (current_task->memory->obj.memory.write_byte(i, random_byte) < 0)
+            if (current_task->memory->obj.memory.memset_alloc(i, random_byte, 1) < 0)
             {
                 error = EFAULT;
                 return cvt_error();

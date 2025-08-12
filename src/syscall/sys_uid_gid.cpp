@@ -44,11 +44,11 @@ namespace Hamster
         assert(current_task != nullptr);
 
         if (ruid_loc)
-            current_task->memory->obj.memory.memcpy(ruid_loc, &current_task->process->obj.uid, sizeof(uint32_t));
+            current_task->memory->obj.memory.memcpy_alloc(ruid_loc, &current_task->process->obj.uid, sizeof(uint32_t));
         if (euid_loc)
-            current_task->memory->obj.memory.memcpy(euid_loc, &current_task->process->obj.euid, sizeof(uint32_t));
+            current_task->memory->obj.memory.memcpy_alloc(euid_loc, &current_task->process->obj.euid, sizeof(uint32_t));
         if (suid_loc)
-            current_task->memory->obj.memory.memcpy(suid_loc, &current_task->process->obj.suid, sizeof(uint32_t));
+            current_task->memory->obj.memory.memcpy_alloc(suid_loc, &current_task->process->obj.suid, sizeof(uint32_t));
 
         return 0;
     }
@@ -59,11 +59,11 @@ namespace Hamster
         assert(current_task != nullptr);
 
         if (rgid_loc)
-            current_task->memory->obj.memory.memcpy(rgid_loc, &current_task->process->obj.gid, sizeof(uint32_t));
+            current_task->memory->obj.memory.memcpy_alloc(rgid_loc, &current_task->process->obj.gid, sizeof(uint32_t));
         if (egid_loc)
-            current_task->memory->obj.memory.memcpy(egid_loc, &current_task->process->obj.egid, sizeof(uint32_t));
+            current_task->memory->obj.memory.memcpy_alloc(egid_loc, &current_task->process->obj.egid, sizeof(uint32_t));
         if (sgid_loc)
-            current_task->memory->obj.memory.memcpy(sgid_loc, &current_task->process->obj.sgid, sizeof(uint32_t));
+            current_task->memory->obj.memory.memcpy_alloc(sgid_loc, &current_task->process->obj.sgid, sizeof(uint32_t));
 
         return 0;
     }
@@ -284,7 +284,7 @@ namespace Hamster
         }
 
         // Copy the group IDs to the user space
-        if (current_task->memory->obj.memory.memcpy(list_loc, groups.data(), groups.size() * sizeof(uint32_t)) < 0)
+        if (current_task->memory->obj.memory.memcpy_alloc(list_loc, groups.data(), groups.size() * sizeof(uint32_t)) < 0)
         {
             return -EFAULT;
         }

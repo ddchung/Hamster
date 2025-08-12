@@ -22,7 +22,7 @@ namespace Hamster
             }
 
             sp -= sizeof(uint32_t);
-            if (mem_sp.memcpy(sp, &data, sizeof(uint32_t)) != 0)
+            if (mem_sp.memcpy_alloc(sp, &data, sizeof(uint32_t)) != 0)
             {
                 // Memory copy failed
                 return -1;
@@ -44,7 +44,7 @@ namespace Hamster
                 if (sp < len)
                     return; // OOM
                 sp -= len;
-                if (mem_sp.memcpy(sp, str, len) < 0)
+                if (mem_sp.memcpy_alloc(sp, str, len) < 0)
                     return; // fail
                 if (locs)
                     locs->push_back(sp);
@@ -150,7 +150,7 @@ namespace Hamster
         sp -= random_data_size;
 
         for (size_t i = 0; i < random_data_size; ++i)
-            memory_space.write_byte(sp + i, (uint8_t)(rand() % 256));
+            memory_space.memset_alloc(sp + i, (uint8_t)(rand() % 256), 1);
 
         uint64_t random_data_loc = sp;
 

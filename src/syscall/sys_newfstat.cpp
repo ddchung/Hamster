@@ -29,7 +29,7 @@ namespace Hamster
             return cvt_error();
 
         // Copy the statbuf to userspace
-        if (current_task->memory->obj.memory.memcpy(statbuf_loc, &statbuf, sizeof(statbuf)) < 0)
+        if (current_task->memory->obj.memory.memcpy_alloc(statbuf_loc, &statbuf, sizeof(statbuf)) < 0)
         {
             error = EFAULT; // Bad address
             return -1;

@@ -78,7 +78,7 @@ namespace Hamster
             strcpy(dirent->name, name); // Copy the name into the dirent
 
             // Write the dirent to the user space buffer
-            if (task->memory->obj.memory.memcpy(dirent_loc + bytes_read, dirent, sizeof(sys_dirent) + name_len) < 0)
+            if (task->memory->obj.memory.memcpy_alloc(dirent_loc + bytes_read, dirent, sizeof(sys_dirent) + name_len) < 0)
             {
                 _free(dirent);
                 error = EFAULT;

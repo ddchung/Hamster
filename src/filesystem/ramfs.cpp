@@ -325,15 +325,7 @@ namespace Hamster
             {
             }
 
-            ~RamFsRegularHandle() override
-            {
-                // Swap out data
-                auto *reg_node = get_node();
-                if (!reg_node)
-                    return;
-
-                reg_node->data.swap_out_all();
-            }
+            ~RamFsRegularHandle() override = default;
 
             BaseFilesystem *get_filesystem() override { return RamFsNodeHandle::get_filesystem(); }
             int get_id() const override { return RamFsNodeHandle::get_id(); }
@@ -374,7 +366,7 @@ namespace Hamster
                 
                 for (uint64_t addr = offset; addr < (uint64_t)offset + size; ++addr)
                 {
-                    if (reg_node->data.read_byte(addr, buf[addr - offset]) < 0)
+                    if (reg_node->data.memcpy(buf + (addr - offset), addr, 1) < 0)
                     {
                         error = EIO;
                         return -1;
@@ -401,19 +393,16 @@ namespace Hamster
                     seek(0, H_SEEK_END);
                 
                 // See: the comment on the seek function
-                if (offset > reg_node->size && reg_node->data.memset(reg_node->size, 0, offset - reg_node->size) < 0)
+                if (offset > reg_node->size && reg_node->data.memset_alloc(reg_node->size, 0, offset - reg_node->size) < 0)
                 {
                     error = EIO;
                     return -1;
                 }
                 
-                for (uint64_t addr = offset; addr < (uint64_t)offset + size; ++addr)
+                if (reg_node->data.memcpy_alloc(offset, buf, size) < 0)
                 {
-                    if (reg_node->data.write_byte(addr, buf[addr - offset]) < 0)
-                    {
-                        error = EIO;
-                        return -1;
-                    }
+                    error = EIO;
+                    return -1;
                 }
                 offset += size;
                 reg_node->size = std::max(reg_node->size, offset);
@@ -489,17 +478,15 @@ namespace Hamster
                 if (size > reg_node->size)
                 {
                     // Extend with zeros
-                    reg_node->data.memset(reg_node->size, 0, size - reg_node->size);
+                    reg_node->data.memset_alloc(reg_node->size, 0, size - reg_node->size);
                 }
                 else
                 {
                     // Deallocate all unused pages starting from `size`
-                    for (uint64_t addr = ((size & ~HAMSTER_PAGE_SIZE) + HAMSTER_PAGE_SIZE) & ~HAMSTER_PAGE_SIZE;
-                         addr <= ((uint64_t)reg_node->size & ~HAMSTER_PAGE_SIZE);
-                         addr += HAMSTER_PAGE_SIZE)
+                    if (reg_node->data.unmap(size, reg_node->size - size) < 0)
                     {
-                        if (reg_node->data.deallocate_page(addr))
-                            return -1;
+                        error = EIO;
+                        return -1;
                     }
                 }
 

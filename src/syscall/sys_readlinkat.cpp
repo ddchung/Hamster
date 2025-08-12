@@ -39,7 +39,7 @@ namespace Hamster
         
         // Copy to userspace
         // Note, from readlinkat(2): "readlink() does not append a terminating null byte to buf."
-        int res = current_task->memory->obj.memory.memcpy(buf_loc, target, to_copy);
+        int res = current_task->memory->obj.memory.memcpy_alloc(buf_loc, target, to_copy);
 
         dealloc(target);
         if (res < 0)

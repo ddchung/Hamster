@@ -38,7 +38,7 @@ namespace Hamster
 
             // Trampoline
             sp -= sizeof(H_SIGHAND_TRAMPOLINE);
-            if (memory.memcpy(sp, H_SIGHAND_TRAMPOLINE, sizeof(H_SIGHAND_TRAMPOLINE)) < 0)
+            if (memory.memcpy_alloc(sp, H_SIGHAND_TRAMPOLINE, sizeof(H_SIGHAND_TRAMPOLINE)) < 0)
                 return;
             emulator.x[1] = sp; // return address
 
@@ -46,14 +46,14 @@ namespace Hamster
             emulator.x[10] = siginfo->signo;
 
             sp -= sizeof(sys_siginfo);
-            if (memory.memcpy(sp, siginfo, sizeof(sys_siginfo)) < 0)
+            if (memory.memcpy_alloc(sp, siginfo, sizeof(sys_siginfo)) < 0)
                 return;
 
             // siginfo
             emulator.x[11] = sp;
 
             sp -= sizeof(sys_ucontext);
-            if (memory.memcpy(sp, &ucontext, sizeof(sys_ucontext)) < 0)
+            if (memory.memcpy_alloc(sp, &ucontext, sizeof(sys_ucontext)) < 0)
                 return;
             
             // ucontext

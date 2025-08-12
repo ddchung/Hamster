@@ -61,7 +61,7 @@ namespace Hamster
         }
 
         // Copy the new offset back to userspace
-        if (current_task->memory->obj.memory.memcpy(result_loc, &new_offset, sizeof(new_offset)) < 0)
+        if (current_task->memory->obj.memory.memcpy_alloc(result_loc, &new_offset, sizeof(new_offset)) < 0)
         {
             error = EFAULT; // Bad address
             return -1;

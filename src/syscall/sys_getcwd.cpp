@@ -35,7 +35,7 @@ namespace Hamster
         }
 
         // Copy the CWD to the buffer
-        if (current_task->memory->obj.memory.memcpy(buf_loc, cwd_str, cwd_length + 1) < 0)
+        if (current_task->memory->obj.memory.memcpy_alloc(buf_loc, cwd_str, cwd_length + 1) < 0)
         {
             error = EFAULT; // Bad address
             return cvt_error();

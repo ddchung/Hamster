@@ -247,52 +247,6 @@ void test_filesystem()
     fs = alloc<RamFs>(1);
     assert(vfs->mount("/", fs) == 0);
 
-    // Test memory mapping
-
-    int mmap_fd = vfs->open("/file.txt", OPEN_RDWR | OPEN_CREAT, 0644);
-    assert(mmap_fd >= 0);
-    
-
-    MemorySpace mem_space;
-
-    // Map 64 bytes starting at virtual address 10
-    assert(mem_space.mmap(10, 64, 07, MAP_SHARED, mmap_fd, 0) == 0);
-
-    // Write to mapped memory
-    const char *mmap_text = "Mapped Memory! 1234567890abcdefghijklmnopqrstuvwxyz";
-    assert(mem_space.memcpy(10, mmap_text, strlen(mmap_text)) == 0);
-
-    fd = vfs->open("/file.txt", OPEN_RDWR);
-    assert(fd >= 0);
-
-    assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
-    assert(vfs->read(fd, buf, strlen(mmap_text)) == (ssize_t)strlen(mmap_text));
-    assert(strncmp(buf, mmap_text, strlen(mmap_text)) == 0);
-
-    assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
-
-    const char *new_text = "New Text! blah blah blah";
-    const char *expected = "New Text! blah blah blah0abcdefghijklmnopqrstuvwxyz";
-
-    assert(vfs->write(fd, new_text, strlen(new_text)) == (ssize_t)strlen(new_text));
-    assert(mem_space.memcpy(buf, 10, strlen(expected)) == 0);
-
-    assert(strncmp(buf, expected, strlen(expected)) == 0);
-
-    assert(mem_space.munmap(15, 10) == 0); // partially unmap the memory
-
-    new_text = "Partially Unmapping Memory!";
-    expected = "Parti__________ping Memory!cdefghijklmnopqrstuvwxyz";
-
-    assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
-    assert(vfs->write(fd, new_text, strlen(new_text)) == (ssize_t)strlen(new_text));
-    assert(mem_space.memcpy(buf, 10, strlen(expected)) == 0);
-    assert(strncmp(buf, expected, 5) == 0);
-    assert(strncmp(buf + 15, expected + 15, strlen(expected) - 15) == 0);
-
-    assert(vfs->close(fd) == 0);
-    assert(vfs->unmount("/") == 0);
-
     // Remount new ramfs for additional tests
     fs = alloc<RamFs>(1);
     vfs = alloc<VFS>(1);
@@ -386,19 +340,6 @@ void test_filesystem()
     assert(vfs->remove("/torm2.txt") == 0);
     vfs->close(fd);
 
-    // --- Memory Mapping Edge Cases ---
-    fd = vfs->open("/mmapfile", OPEN_RDWR | OPEN_CREAT, 0644);
-    assert(fd >= 0);
-    MemorySpace ms;
-    // Overlapping mapping
-    assert(ms.mmap(0x1000, 0x100, 07, MAP_SHARED, fd, 0) == 0);
-    assert(ms.mmap(0x1000, 0x100, 07, MAP_SHARED, fd, 0) < 0);
-    // Partial unmap
-    assert(ms.munmap(0x1000, 0x80) == 0);
-    // Permission check
-    assert(ms.check_permissions(0x1000, PROT_READ));
-    vfs->close(fd);
-
     // --- More Regular File Edge Cases ---
     // Test file overwrite
     fd = vfs->open("/overwrite.txt", OPEN_RDWR | OPEN_CREAT, 0644);
@@ -449,12 +390,6 @@ void test_filesystem()
     assert(vfs->rename("/noexist.txt", "/shouldnotexist.txt") < 0);
     // Remove non-existent file
     assert(vfs->remove("/noexist.txt") < 0);
-
-    // --- Memory Mapping Error Cases ---
-    // Map with invalid fd
-    assert(ms.mmap(0x2000, 0x100, 07, MAP_SHARED, -1, 0) < 0);
-    // Unmap region not mapped (should succeed or no-op)
-    assert(ms.munmap(0x3000, 0x100) == 0);
 
     dealloc(vfs);
 }

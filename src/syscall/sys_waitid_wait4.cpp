@@ -227,7 +227,7 @@ namespace Hamster
             info.fields.child.utime = 0; // Not implemented, set to 0
             info.fields.child.stime = 0; // Not implemented, set to 0
 
-            if (current_task->memory->obj.memory.memcpy(infop_loc, &info, sizeof(sys_siginfo)) < 0)
+            if (current_task->memory->obj.memory.memcpy_alloc(infop_loc, &info, sizeof(sys_siginfo)) < 0)
             {
                 error = EFAULT;
                 return cvt_error();
@@ -237,7 +237,7 @@ namespace Hamster
         if (ru_loc != 0)
         {
             // Not implemented, set to 0
-            if (current_task->memory->obj.memory.memset(ru_loc, 0, sizeof(sys_rusage)) < 0)
+            if (current_task->memory->obj.memory.memset_alloc(ru_loc, 0, sizeof(sys_rusage)) < 0)
             {
                 error = EFAULT;
                 return cvt_error();

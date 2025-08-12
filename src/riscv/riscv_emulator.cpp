@@ -342,13 +342,6 @@ namespace Hamster
     {
         if (addr < 128)
             return -1; // Trap NULL
-
-        if (!memory->memory.is_allocated(addr) ||
-            !memory->memory.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            return -1;
-        }
         return memory->memory.memcpy(&out, addr, sizeof(out));
     }
 
@@ -356,13 +349,6 @@ namespace Hamster
     {
         if (addr < 128)
             return -1; // Trap NULL
-
-        if (!memory->memory.is_allocated(addr) ||
-            !memory->memory.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            return -1;
-        }
         return memory->memory.memcpy(&out, addr, sizeof(out));
     }
 
@@ -370,13 +356,6 @@ namespace Hamster
     {
         if (addr < 128)
             return -1; // Trap NULL
-
-        if (!memory->memory.is_allocated(addr) ||
-            !memory->memory.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            return -1;
-        }
         return memory->memory.memcpy(&out, addr, sizeof(out));
     }
 
@@ -385,7 +364,6 @@ namespace Hamster
         if (addr < 128)
             return -1; // Trap NULL
 
-        // Note that writing to unallocating memory will allocate it
         return memory->memory.memcpy(addr, &value, sizeof(value));
     }
 
@@ -394,7 +372,7 @@ namespace Hamster
         if (addr < 128)
             return -1; // Trap NULL
 
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.memcpy_alloc(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::write8(uint32_t addr, uint8_t value)
@@ -402,20 +380,13 @@ namespace Hamster
         if (addr < 128)
             return -1; // Trap NULL
 
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.memcpy_alloc(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::readf32(uint32_t addr, float &out)
     {
         if (addr < 128)
             return -1; // Trap NULL
-
-        if (!memory->memory.is_allocated(addr) ||
-            !memory->memory.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            return -1;
-        }
         return memory->memory.memcpy(&out, addr, sizeof(out));
     }
 
@@ -423,13 +394,6 @@ namespace Hamster
     {
         if (addr < 128)
             return -1; // Trap NULL
-
-        if (!memory->memory.is_allocated(addr) ||
-            !memory->memory.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            return -1;
-        }
         return memory->memory.memcpy(&out, addr, sizeof(out));
     }
 
@@ -439,7 +403,7 @@ namespace Hamster
             return -1; // Trap NULL
 
         // Note that writing to unallocating memory will allocate it
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.memcpy_alloc(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::writef64(uint32_t addr, double value)
@@ -448,7 +412,7 @@ namespace Hamster
             return -1; // Trap NULL
 
         // Note that writing to unallocating memory will allocate it
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.memcpy_alloc(addr, &value, sizeof(value));
     }
     
     RiscVEmulator::ExecuteResult RiscVEmulator::execute()

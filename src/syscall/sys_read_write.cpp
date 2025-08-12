@@ -117,7 +117,7 @@ namespace Hamster
                 break;
 
             // Copy to user memory
-            if (current_task->memory->obj.memory.memcpy(buf_loc + total_read, IO_BUFFER, bytes_read) < 0)
+            if (current_task->memory->obj.memory.memcpy_alloc(buf_loc + total_read, IO_BUFFER, bytes_read) < 0)
             {
                 error = EFAULT;
                 return cvt_error();
