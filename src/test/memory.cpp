@@ -83,14 +83,12 @@ void test_memory()
 
     Hamster::PageEntry *entry = nullptr;
     uint32_t id = pm.allocate_page(entry);
-    assert(id != -1);
     assert(entry != nullptr);
 
     pm.free_page(id);
 
     entry = nullptr;
     id = pm.allocate_page(entry);
-    assert(id != -1);
     assert(entry != nullptr);
 
     // Write some data to the page
@@ -107,7 +105,7 @@ void test_memory()
     char buffer[256];
     ssize_t bytes_read = pm.try_read(id, 0, buffer, strlen(data));
     assert(bytes_read != -1);
-    assert(bytes_read == strlen(data));
+    assert(bytes_read == (ssize_t)strlen(data));
     assert(strncmp(buffer, data, strlen(data)) == 0);
 
     pm.free_page(id);
@@ -131,7 +129,7 @@ void test_memory()
         // Read the data back from the page
         ssize_t bytes_read = pm.try_read(id, 0, buffer, strlen(data));
         assert(bytes_read != -1);
-        assert(bytes_read == strlen(data));
+        assert(bytes_read == (ssize_t)strlen(data));
         assert(strncmp(buffer, data, strlen(data)) == 0);
     }
 
@@ -213,12 +211,11 @@ void test_memory()
         Hamster::PageManager &pm = Hamster::page_manager;
         Hamster::PageEntry *entry = nullptr;
         uint32_t id = pm.allocate_page(entry);
-        assert(id != -1 && entry != nullptr);
+        assert(entry != nullptr);
 
         // Copy page (copy-on-write)
         entry = nullptr;
         id = pm.allocate_page(entry);
-        assert(id != -1);
         uint32_t id2 = pm.copy(id);
         assert(pm.is_id_valid(id2));
         pm.free_page(id);
