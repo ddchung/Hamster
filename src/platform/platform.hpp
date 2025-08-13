@@ -65,4 +65,7 @@ namespace Hamster
     // because of potential usages of uncommon format specifiers (like "%.*s")
     __attribute__((format(printf, 1, 2)))
     void _trace(const char *fmt, ...);
+
+    // Initialize any allocator
+    void _init_allocator();
 }

@@ -11,6 +11,7 @@
 #include <filesystem/device_manager.hpp>
 #include <driver/base_tty.hpp>
 #include <errno/errno.h>
+#include <o1heap.h>
 
 using namespace Hamster;
 
@@ -162,7 +163,15 @@ namespace
             return 0; // Success
         }
     };
+
+    O1HeapInstance *heap;
+    EXTMEM uint8_t extmem_buffer[16 * 1024 * 1024];
 } // namespace
+
+void Hamster::_init_allocator()
+{
+    heap = o1heapInit(extmem_buffer, sizeof(extmem_buffer));
+}
 
 int Hamster::_init_platform()
 {
@@ -213,12 +222,12 @@ int Hamster::_mount_rootfs()
 
 void *Hamster::_malloc(size_t size)
 {
-    return extmem_malloc(size);
+    return o1heapAllocate(heap, size);
 }
 
 int Hamster::_free(void *ptr)
 {
-    extmem_free(ptr);
+    o1heapFree(heap, ptr);
     return 0;
 }
 
@@ -237,6 +246,12 @@ int Hamster::_log(char c)
 uint64_t Hamster::_get_sys_time()
 {
     return millis();
+}
+
+size_t Hamster::_get_free_memory()
+{
+    auto diagnostics = o1heapGetDiagnostics(heap);
+    return diagnostics.capacity - diagnostics.allocated;
 }
 
 void Hamster::_trace(const char *fmt, ...)

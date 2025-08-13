@@ -19,14 +19,18 @@ namespace Hamster
 
     /* These don't have any dependencies, put first */
 
+    __attribute__((weak))
+    void _init_allocator() {}
+
     /**
-     * Allocated Pointers
+     * Allocator
      * requires: none
      * provides: allocator
      */
-#ifndef NDEBUG
-    std::unordered_set<void *> allocated_pointers;
-#endif // NDEBUG
+    static bool _dummy = []() {
+        _init_allocator();
+        return true;
+    }();
 
     /**
      * Error
