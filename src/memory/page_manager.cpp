@@ -143,21 +143,17 @@ namespace Hamster
     {
         PageEntry *entry = page_table[id];
 
-        entry->refcount++;
-
-        // Add to free spot
-        if (free_pages.empty())
+        if (entry->swapped)
+            swap_in(id);
+        
+        PageEntry *new_entry = nullptr;
+        uint32_t new_id = allocate_page(new_entry, entry->perms);
+        if (new_entry)
         {
-            page_table.push_back(entry);
-            return page_table.size() - 1;
+            swap_in(new_id);
+            memcpy(new_entry->data, entry->data, HAMSTER_PAGE_SIZE);
         }
-        else
-        {
-            uint32_t new_id = free_pages.front();
-            free_pages.pop_front();
-            page_table[new_id] = entry;
-            return new_id;
-        }
+        return new_id;
     }
 
     int PageManager::swap_in(uint32_t id)
@@ -215,7 +211,7 @@ namespace Hamster
         
         assert(entry->data != nullptr);
 
-        if (_swap_out(id, entry->data) < 0)
+        if (entry->dirty && _swap_out(id, entry->data) < 0)
             return -1;
         
         entry->swapped = 1;

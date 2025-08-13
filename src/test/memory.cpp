@@ -2,9 +2,11 @@
 
 #include <memory/allocator.hpp>
 #include <memory/page_manager.hpp>
+#include <memory/memory_space.hpp>
 #include <memory/stl_sequential.hpp>
 #include <memory/stl_map.hpp>
 #include <memory/tree.hpp>
+#include <memory/allocator.hpp>
 #include <platform/platform.hpp>
 #include <cassert>
 #include <cstdlib>
@@ -206,6 +208,95 @@ void test_memory()
     stl_map[1] = 2;
     stl_map[3] = 4;
     assert(stl_map[1] == 2 && stl_map[3] == 4);
+    // --- PageManager: double free, copy, permissions, swap, dirty, invalid ops ---
+    {
+        Hamster::PageManager &pm = Hamster::page_manager;
+        Hamster::PageEntry *entry = nullptr;
+        uint32_t id = pm.allocate_page(entry);
+        assert(id != -1 && entry != nullptr);
+
+        // Copy page (copy-on-write)
+        entry = nullptr;
+        id = pm.allocate_page(entry);
+        assert(id != -1);
+        uint32_t id2 = pm.copy(id);
+        assert(pm.is_id_valid(id2));
+        pm.free_page(id);
+        pm.free_page(id2);
+
+        // Permissions
+        entry = nullptr;
+        id = pm.allocate_page(entry);
+        assert(pm.set_permissions(id, Hamster::PERM_READ) == 0);
+        assert(pm.get_page(id)->perms == Hamster::PERM_READ);
+        pm.free_page(id);
+
+        // Swap in/out, mark dirty
+        entry = nullptr;
+        id = pm.allocate_page(entry);
+        assert(pm.swap_in(id) == 0);
+        assert(pm.swap_out(id) == 0);
+        assert(pm.swap_in(id) == 0);
+        pm.mark_page_dirty(id);
+        assert(pm.swap_out(id) == 0);
+        pm.free_page(id);
+    }
+
+    // --- MemorySpace: mapping, unmapping, read/write, protection, edge cases ---
+    {
+        Hamster::MemorySpace ms;
+        constexpr uint32_t page_size = HAMSTER_PAGE_SIZE;
+        constexpr uint32_t region_size = page_size * 2;
+        uint8_t perms = Hamster::PERM_READ | Hamster::PERM_WRITE;
+
+        // Map anonymous region
+        assert(ms.map_anonymous(0, region_size, perms) == 0);
+        // Check mapping
+        assert(ms.is_mapped(0, region_size) == 1);
+        assert(ms.how_many_mapped(0, region_size) == 2);
+
+        // Write to mapped region
+        char testdata[] = "testdata";
+        assert(ms.memcpy(0, testdata, sizeof(testdata)) == 0);
+        char buf[32] = {0};
+        assert(ms.memcpy(buf, 0, sizeof(testdata)) == 0);
+        assert(strcmp(buf, testdata) == 0);
+
+        // memset
+        assert(ms.memset(0, 0xAB, 8) == 0);
+        memset(buf, 0, sizeof(buf));
+        assert(ms.memcpy(buf, 0, 8) == 0);
+        for (int i = 0; i < 8; ++i) assert((unsigned char)buf[i] == 0xAB);
+
+        // mprotect
+        assert(ms.mprotect(0, page_size, Hamster::PERM_READ) == 0);
+        // Unmap
+        assert(ms.unmap(0, page_size) == 0);
+        assert(ms.is_mapped(0, page_size) == 0);
+
+        // Read from unmapped region (should fail)
+        assert(ms.memcpy(buf, 0, 4) != 0);
+
+        // memset_alloc and memcpy_alloc
+        assert(ms.memset_alloc(page_size * 10, 0xCD, 4) == 0);
+        memset(buf, 0, sizeof(buf));
+        assert(ms.memcpy(buf, page_size * 10, 4) == 0);
+        for (int i = 0; i < 4; ++i) assert((unsigned char)buf[i] == 0xCD);
+
+        // read_until_zero
+        char str[] = "abc\0def";
+        assert(ms.memcpy_alloc(page_size * 20, str, sizeof(str)) == 0);
+        char *out = ms.read_until_zero(page_size * 20);
+        assert(out != nullptr && strcmp(out, "abc") == 0);
+        Hamster::dealloc(out);
+
+        // Copy constructor/assignment (copy-on-write)
+        Hamster::MemorySpace ms2 = ms;
+        assert(ms2.is_mapped(page_size * 10, 4) == 1);
+        Hamster::MemorySpace ms3;
+        ms3 = ms2;
+        assert(ms3.is_mapped(page_size * 10, 4) == 1);
+    }
 }
 
 #endif // NDEBUG

@@ -143,7 +143,7 @@ namespace Hamster
     {
         loc = ROUND_DOWN_PAGE(loc);
         size = ROUND_UP_PAGE(size);
-        for (uint32_t addr = loc; addr <= loc + size; addr += HAMSTER_PAGE_SIZE)
+        for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
             if (page_table.find(addr) == page_table.end())
                 return 0;

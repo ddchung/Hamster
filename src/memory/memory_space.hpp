@@ -67,17 +67,8 @@ namespace Hamster
         ssize_t how_many_mapped(uint32_t loc, uint32_t size) const;
 
         /**
-         * @brief Map a new anonymous memory region
-         * @param size The size of the memory region to map, rounded up to the nearest page size
-         * @param perms The permissions for the memory region, composed by bitwise-ORing `PERM_*` flags
-         * @return 0 on success, or -1 and set `error` on failure
-         */
-        int map_anonymous(uint32_t size, uint8_t perms)
-        { return map_anonymous(0, size, perms); }
-
-        /**
          * @brief Map a new anonymous memory region, at the specified region
-         * @param loc The starting address of the memory region to map, or 0 to choose a free one
+         * @param loc The starting address of the memory region to map
          * @param size The size of the memory region to map, rounded up to the nearest page size
          * @param perms The permissions for the memory region, composed by bitwise-ORing `PERM_*` flags
          * @return 0 on success, or -1 and set `error` on failiure
@@ -86,19 +77,8 @@ namespace Hamster
         int map_anonymous(uint32_t loc, uint32_t size, uint8_t perms);
 
         /**
-         * @brief Map a new private file
-         * @param fd The file descriptor of the file to map
-         * @param offset The offset within the file to map. Not rounded
-         * @param size The size of the memory region to map, rounded up to the nearest page size
-         * @param perms The permissions for the memory region, composed by bitwise-ORing `PERM_*` flags
-         * @return 0 on success, or -1 and set `error` on failiure
-         */
-        int map_private_file(int fd, uint32_t offset, uint32_t size, uint8_t perms)
-        { return map_private_file(0, fd, offset, size, perms); }
-
-        /**
          * @brief Map a new private file, at the specified location
-         * @param loc The starting address of the memory region to map, or 0 to choose a free one
+         * @param loc The starting address of the memory region to map
          * @param fd The file descriptor of the file to map
          * @param offset The offset within the file to map. Not rounded
          * @param size The size of the memory region to map, rounded up to the nearest page size
