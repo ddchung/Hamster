@@ -178,7 +178,10 @@ int Hamster::_init_platform()
     Serial.begin(115200);
     while (!Serial)
         ;
-
+    auto trace_millis_start = millis();
+    while (!SerialUSB1 && millis() - trace_millis_start < 1000)
+        ;
+    
     // init sd card, if available
     if (SD.begin(254))
         Serial.println("SD card found");
@@ -256,10 +259,10 @@ size_t Hamster::_get_free_memory()
 
 void Hamster::_trace(const char *fmt, ...)
 {
-    // by default, do nothing
-    // you can override this function to enable tracing
-    // make sure it traces to a different place than _log
-    (void)fmt;
+    va_list args;
+    va_start(args, fmt);
+    SerialUSB1.vprintf(fmt, args);
+    va_end(args);
 }
 
 #endif // TEENSY41
