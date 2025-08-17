@@ -22,7 +22,7 @@ namespace Hamster
         page_table.clear();
     }
 
-    uint32_t PageManager::allocate_page(PageEntry *&out, uint8_t perms)
+    uint32_t PageManager::allocate_page(uint8_t perms)
     {
         uint32_t id;
         if (free_pages.empty())
@@ -36,14 +36,11 @@ namespace Hamster
             free_pages.pop_front();
         }
 
-        // We can't use `out` because we need the reference
-        // to bind to the vector entry
         PageEntry *&entry = page_table[id];
         
         // Initialize the page entry
         assert(entry == nullptr);
         entry = alloc<PageEntry>();
-        out = entry;
         entry->data = nullptr;
         entry->fd = -1;
         entry->eviction_queue_count = 0;
@@ -54,22 +51,18 @@ namespace Hamster
         return id;
     }
 
-    uint32_t PageManager::mmap_private(PageEntry *&entry, int fd, int64_t offset, uint8_t perms)
+    uint32_t PageManager::mmap_private(int fd, int64_t offset, uint8_t perms)
     {
         // Check if the file descriptor is valid
         if (vfs.seek(fd, offset, H_SEEK_SET) < 0)
             return 0;
 
-        uint32_t id = allocate_page(entry, perms);
+        uint32_t id = allocate_page(perms);
+        PageEntry *entry = page_table[id];
         entry->fd = fd;
         entry->offset = offset;
 
         return id;
-    }
-
-    PageEntry *PageManager::get_page(uint32_t id)
-    {
-        return page_table[id];
     }
 
     void PageManager::free_page(uint32_t id)
@@ -133,7 +126,12 @@ namespace Hamster
             size = HAMSTER_PAGE_SIZE - addr;
         
         if (size > 0)
+        {
             mark_page_dirty(id);
+            
+            // re-fetch the entry, as `make_page_dirty` may split COW pages
+            entry = page_table[id];
+        }
 
         memcpy(entry->data + addr, buf, size);
         return size;
@@ -142,17 +140,23 @@ namespace Hamster
     uint32_t PageManager::copy(uint32_t id)
     {
         PageEntry *entry = page_table[id];
+        entry->refcount++;
 
-        if (entry->swapped)
-            swap_in(id);
+        // Find a new id
         
-        PageEntry *new_entry = nullptr;
-        uint32_t new_id = allocate_page(new_entry, entry->perms);
-        if (new_entry)
+        uint32_t new_id;
+        if (free_pages.empty())
         {
-            swap_in(new_id);
-            memcpy(new_entry->data, entry->data, HAMSTER_PAGE_SIZE);
+            new_id = page_table.size();
+            page_table.push_back(nullptr);
         }
+        else
+        {
+            new_id = free_pages.front();
+            free_pages.pop_front();
+        }
+
+        page_table[new_id] = entry;
         return new_id;
     }
 
@@ -215,6 +219,7 @@ namespace Hamster
             return -1;
         
         entry->swapped = 1;
+        entry->dirty = 0;
         _free(entry->data);
         entry->data = nullptr;
 
@@ -251,6 +256,11 @@ namespace Hamster
         }
 
         entry->dirty = 1;
+    }
+
+    uint8_t PageManager::get_permissions(uint32_t id) const
+    {
+        return page_table[id]->perms;
     }
 
     bool PageManager::is_id_valid(uint32_t id) const

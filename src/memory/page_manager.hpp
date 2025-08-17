@@ -15,20 +15,19 @@ namespace Hamster
     constexpr int PERM_WRITE = 0b010;
     constexpr int PERM_EXEC = 0b001;
 
-    struct PageEntry
-    {
-        int64_t offset;
-        uint8_t *data;
-        int fd;
-        uint32_t refcount : 4;
-        uint32_t eviction_queue_count : 4;
-        uint32_t swapped : 1; // Note: a lazy-loaded file mapping is considered swapped
-        uint32_t dirty : 1;
-        uint32_t perms : 3;
-    };
-
     class PageManager
     {
+        struct PageEntry
+        {
+            int64_t offset;
+            uint8_t *data;
+            int fd;
+            uint32_t refcount : 4;
+            uint32_t eviction_queue_count : 4;
+            uint32_t swapped : 1; // Note: a lazy-loaded file mapping is considered swapped
+            uint32_t dirty : 1;
+            uint32_t perms : 3;
+        };
     public:
         PageManager() = default;
         ~PageManager();
@@ -39,20 +38,20 @@ namespace Hamster
 
         /**
          * @brief Get a new page
-         * @param entry This pointer will be set to point to the new entry
+         * @param perms The permissions of the page. Defaults to RW
          * @return The ID of the new page
          */
-        uint32_t allocate_page(PageEntry *&entry, uint8_t perms = PERM_READ | PERM_WRITE);
+        uint32_t allocate_page(uint8_t perms = PERM_READ | PERM_WRITE);
 
         /**
          * @brief Get a new page that has a private file mapping
-         * @param entry This pointer will be set to point to the new entry
          * @param fd The file descriptor of the file to map
          * @param offset The offset within the file to map
+         * @param perms The permissions of the page. Defaults to RW
          * @return The ID of the new page
          * @note This takes ownership of the file descriptor
          */
-        uint32_t mmap_private(PageEntry *&entry, int fd, int64_t offset, uint8_t perms = PERM_READ | PERM_WRITE);
+        uint32_t mmap_private(int fd, int64_t offset, uint8_t perms = PERM_READ | PERM_WRITE);
 
         /**
          * @brief Copy a page with copy-on-write management
@@ -71,13 +70,6 @@ namespace Hamster
          * @return true if the page ID is valid, false otherwise
          */
         bool is_id_valid(uint32_t id) const;
-
-        /**
-         * @brief Get a page by ID
-         * @param id The ID of the page
-         * @return A pointer to the page entry, or nullptr if not found
-         */
-        PageEntry *get_page(uint32_t id);
 
         /**
          * @brief Free a page by ID
@@ -161,6 +153,12 @@ namespace Hamster
          * @param id The ID of the page
          */
         void mark_page_dirty(uint32_t id);
+
+        /**
+         * @brief Get the permissions of a page
+         * @return The permissions of a page, bitmask of PERM_READ, PERM_WRITE, PERM_EXEC
+         */
+        uint8_t get_permissions(uint32_t id) const;
 
     private:
         Vector<PageEntry *> page_table;

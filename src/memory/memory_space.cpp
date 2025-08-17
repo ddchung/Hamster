@@ -200,13 +200,11 @@ namespace Hamster
         loc = ROUND_DOWN_PAGE(loc);
         next_mmap = std::max<uint32_t>(next_mmap, loc + size);
 
-        PageEntry *dummy;
-
         for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
             if (page_table.find(addr) != page_table.end())
                 continue;
-            page_table[addr] = page_manager.allocate_page(dummy, perms);
+            page_table[addr] = page_manager.allocate_page(perms);
         }
         return 0;
     }
@@ -219,8 +217,6 @@ namespace Hamster
         loc = ROUND_DOWN_PAGE(loc);
         next_mmap = std::max<uint32_t>(next_mmap, loc + size);
 
-        PageEntry *dummy;
-
         for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
             if (page_table.find(addr) != page_table.end())
@@ -228,7 +224,7 @@ namespace Hamster
             int cloned = vfs.dup(fd);
             if (cloned < 0)
                 return -1;
-            page_table[addr] = page_manager.mmap_private(dummy, cloned, offset + (addr - loc), perms);
+            page_table[addr] = page_manager.mmap_private(cloned, offset + (addr - loc), perms);
         }
 
         vfs.close(fd);
