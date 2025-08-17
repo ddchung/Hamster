@@ -32,7 +32,7 @@ namespace
         SdFile entry;
         while (entry.openNext(&dir, O_RDONLY))
         {
-            char entry_name[13];
+            static char entry_name[13];
             entry.getName(entry_name, sizeof(entry_name));
 
             // Skip "." and ".."
@@ -63,44 +63,62 @@ namespace
             }
             else
             {
-                // Regular file (SdFat doesn't support symlinks)
+                // Symlinks are supported by naming a regular file with the prefix `hsln_`
 
-                int file_fd = vfs.openat(vfs_dir_fd, entry_name, OPEN_CREAT | OPEN_RDWR | OPEN_EXCL, 0755);
-                if (file_fd >= 0)
+                if (strncmp(entry_name, "hsln_", 5) == 0)
                 {
-                    // Copy contents from SdFat file to VFS file
+                    // Read the file data
 
-                    if (vfs.seek(file_fd, 0, H_SEEK_SET) < 0)
-                    {
-                        vfs.close(file_fd);
-                        entry.close();
-                        continue;
-                    }
-
-                    static char buffer[4096];
-                    int32_t bytes_read;
-
-                    // Read from SdFat file
+                    static char buf[64];
+                    buf[0] = '\0';
                     entry.seekSet(0);
-                    while ((bytes_read = entry.read(buffer, sizeof(buffer))) > 0)
+                    int len = entry.read(buf, sizeof(buf) - 1);
+                    if (len > 0)
                     {
-                        int32_t bytes_written = vfs.write(file_fd, (uint8_t *)buffer, bytes_read);
-                        if (bytes_written < 0)
-                            break;
-                        // Write remainder if partial write
-                        int32_t total_written = bytes_written;
-                        while (total_written < bytes_read)
-                        {
-                            int32_t w = vfs.write(file_fd, (uint8_t *)buffer + total_written, bytes_read - total_written);
-                            if (w < 0)
-                                break;
-                            total_written += w;
-                        }
-                        if (total_written < bytes_read)
-                            break;
+                        buf[len] = '\0';
+                        _trace("Making symlink '%s' -> '%s'\n", entry_name + 5, buf);
+                        vfs.symlinkat(vfs_dir_fd, entry_name + 5, (const char *)buf);
                     }
+                }
+                else
+                {
+                    int file_fd = vfs.openat(vfs_dir_fd, entry_name, OPEN_CREAT | OPEN_RDWR | OPEN_EXCL, 0755);
+                    if (file_fd >= 0)
+                    {
+                        // Copy contents from SdFat file to VFS file
 
-                    vfs.close(file_fd);
+                        if (vfs.seek(file_fd, 0, H_SEEK_SET) < 0)
+                        {
+                            vfs.close(file_fd);
+                            entry.close();
+                            continue;
+                        }
+
+                        static char buffer[4096];
+                        int32_t bytes_read;
+
+                        // Read from SdFat file
+                        entry.seekSet(0);
+                        while ((bytes_read = entry.read(buffer, sizeof(buffer))) > 0)
+                        {
+                            int32_t bytes_written = vfs.write(file_fd, (uint8_t *)buffer, bytes_read);
+                            if (bytes_written < 0)
+                                break;
+                            // Write remainder if partial write
+                            int32_t total_written = bytes_written;
+                            while (total_written < bytes_read)
+                            {
+                                int32_t w = vfs.write(file_fd, (uint8_t *)buffer + total_written, bytes_read - total_written);
+                                if (w < 0)
+                                    break;
+                                total_written += w;
+                            }
+                            if (total_written < bytes_read)
+                                break;
+                        }
+
+                        vfs.close(file_fd);
+                    }
                 }
             }
 
@@ -156,21 +174,24 @@ namespace
         int get_win_sz(sys_winsize *ws)
         {
             // Teensy does not support terminal size, return default
-            ws->row = 24; // Default rows
-            ws->col = 80; // Default columns
+            ws->row = 24;   // Default rows
+            ws->col = 80;   // Default columns
             ws->xpixel = 0; // Not applicable
             ws->ypixel = 0; // Not applicable
-            return 0; // Success
+            return 0;       // Success
         }
     };
 
-    O1HeapInstance *heap;
+    O1HeapInstance *ext_heap;
+    O1HeapInstance *ram2_heap;
     EXTMEM uint8_t extmem_buffer[16 * 1024 * 1024];
+    DMAMEM uint8_t ram2_buffer[450 * 1024];
 } // namespace
 
 void Hamster::_init_allocator()
 {
-    heap = o1heapInit(extmem_buffer, sizeof(extmem_buffer));
+    ext_heap = o1heapInit(extmem_buffer, sizeof(extmem_buffer));
+    ram2_heap = o1heapInit(ram2_buffer, sizeof(ram2_buffer));
 }
 
 int Hamster::_init_platform()
@@ -181,7 +202,7 @@ int Hamster::_init_platform()
     auto trace_millis_start = millis();
     while (!SerialUSB1 && millis() - trace_millis_start < 1000)
         ;
-    
+
     // init sd card, if available
     if (SD.begin(254))
         Serial.println("SD card found");
@@ -225,12 +246,25 @@ int Hamster::_mount_rootfs()
 
 void *Hamster::_malloc(size_t size)
 {
-    return o1heapAllocate(heap, size);
+    void *ptr = nullptr;
+    if (!ptr && size < 1024)
+        ptr = o1heapAllocate(ram2_heap, size);
+    if (!ptr)
+        ptr = o1heapAllocate(ext_heap, size);
+    return ptr;
 }
 
 int Hamster::_free(void *ptr)
 {
-    o1heapFree(heap, ptr);
+    if (ptr >= extmem_buffer &&
+        ptr < extmem_buffer + sizeof(extmem_buffer))
+        o1heapFree(ext_heap, ptr);
+
+    else if (ptr >= ram2_buffer &&
+             ptr < ram2_buffer + sizeof(ram2_buffer))
+        o1heapFree(ram2_heap, ptr);
+    else
+        __builtin_unreachable();
     return 0;
 }
 
@@ -253,8 +287,12 @@ uint64_t Hamster::_get_sys_time()
 
 size_t Hamster::_get_free_memory()
 {
-    auto diagnostics = o1heapGetDiagnostics(heap);
-    return diagnostics.capacity - diagnostics.allocated;
+    size_t used = 0;
+    auto diagnostics = o1heapGetDiagnostics(ram2_heap);
+    used += diagnostics.allocated;
+    diagnostics = o1heapGetDiagnostics(ext_heap);
+    used += diagnostics.allocated;
+    return used;
 }
 
 void Hamster::_trace(const char *fmt, ...)

@@ -592,6 +592,12 @@ namespace
 
             BaseFile *file = nullptr;
 
+            if ((flags & OPEN_DIRECTORY) && !S_ISDIR(st.st_mode))
+            {
+                error = ENOTDIR;
+                return nullptr;
+            }
+
             if (S_ISREG(st.st_mode))
             {
                 file = alloc<NativeRegularFileHandle>(1, new_fd, filesystem);

@@ -92,7 +92,7 @@ namespace Hamster
         return dir;
     }
 
-    BaseFile *Mounts::resolve_symlink(BaseSymlink *link, int flags)
+    BaseFile *Mounts::resolve_symlink(BaseSymlink *link, int flags, BaseDirectory *dir)
     {
         if (!link)
         {
@@ -104,7 +104,13 @@ namespace Hamster
         dealloc(link);
         if (!target)
             return nullptr;
-        BaseFile *file = lopen(target, (flags & ~OPEN_DIRECTORY) | OPEN_NOFOLLOW, 0);
+        if (target[0] == '/')
+        {
+            // If the path is absolute, use root directory
+            dealloc(dir);
+            dir = nullptr;
+        }
+        BaseFile *file = lopen(target, (flags & ~OPEN_DIRECTORY & ~OPEN_CREAT & ~OPEN_EXCL) | OPEN_NOFOLLOW, 0, dir);
         dealloc(target);
 
         if (!file)
@@ -125,6 +131,7 @@ namespace Hamster
 
         if (file->type() != FileType::Directory && (flags & OPEN_DIRECTORY))
         {
+            _trace("%s:%d: vfs_mounts: OPEN_DIRECTORY specified but file not directory\n", __FILE__, __LINE__);
             error = ENOTDIR;
             dealloc(file);
             return nullptr;
@@ -170,6 +177,7 @@ namespace Hamster
             }
             if (file->type() != FileType::Directory && (flags & OPEN_DIRECTORY))
             {
+                _trace("%s:%d: vfs_mounts: OPEN_DIRECTORY specified but file not directory. filename='%s'\n", __FILE__, __LINE__, path);
                 dealloc(file);
                 error = ENOTDIR;
                 return nullptr;
@@ -179,14 +187,17 @@ namespace Hamster
         else
         {
             String next_name(path, next - path);
-            BaseFile *next_file = dir->get(next_name.c_str(), (flags & ~OPEN_CREAT & ~OPEN_EXCL));
-            dealloc(dir);
+            BaseFile *next_file = dir->get(next_name.c_str(), (flags & ~OPEN_CREAT & ~OPEN_EXCL & ~OPEN_DIRECTORY));
             if (!next_file)
+            {
+                dealloc(dir);
                 return nullptr;
+            }
             switch (next_file->type())
             {
             case FileType::Symlink:
-                next_file = resolve_symlink((BaseSymlink *)next_file, (flags & ~OPEN_CREAT & ~OPEN_EXCL) | OPEN_DIRECTORY);
+                next_file = resolve_symlink((BaseSymlink *)next_file, (flags & ~OPEN_CREAT & ~OPEN_EXCL) | OPEN_DIRECTORY, dir);
+                dir = nullptr;
                 if (!next_file)
                 {
                     return nullptr;
@@ -195,6 +206,7 @@ namespace Hamster
             [[fallthrough]];
             case FileType::Directory:
             {
+                dealloc(dir);
                 BaseDirectory *next_dir = (BaseDirectory *)next_file;
                 next_dir = resolve_mount(next_dir);
                 if (!next_dir)
@@ -207,13 +219,13 @@ namespace Hamster
                 return file;
             }
             default:
-            {
-                dealloc(next_file);
-                error = ENOTDIR;
-                return nullptr;
+                break;
             }
-            }
+            // non-directory in middle of path
             dealloc(next_file);
+            dealloc(dir);
+            error = ENOTDIR;
+            _trace("%s:%d: vfs_mounts: Non-directory in middle of path. filename='%s'\n", __FILE__, __LINE__, next_name.c_str());
             return nullptr;
         }
     }
