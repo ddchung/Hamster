@@ -12,6 +12,8 @@ namespace Hamster
     {
         int load_elf32(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk)
         {
+            mem_space.unmap_all();
+
             if (file.seek(0, H_SEEK_SET) < 0)
             {
                 error = EIO;
@@ -105,39 +107,27 @@ namespace Hamster
                     uint64_t top = phdr.p_vaddr + phdr.p_memsz;
                     if (top > brk)
                         brk = top;
+                    
+                    // Map segment
 
-                    static uint8_t buf[64];
-                    size_t bytes_to_read = phdr.p_filesz;
-                    size_t bytes_read = 0;
-                    while (bytes_to_read > 0)
+                    _trace("%s:%d load_elf32: mapping private region, vaddr=0x%08x, fd=%d, offset=%d, filesz=0x%08x\n", __FILE__, __LINE__, phdr.p_vaddr, file.get_fd(), phdr.p_offset, phdr.p_filesz);
+                    int res = mem_space.map_private_file(phdr.p_vaddr, file.get_fd(), phdr.p_offset, phdr.p_filesz, phdr.p_flags & 07);
+                    if (res < 0)
+                        _trace("%s:%d load_elf32: map_private_file failed: error %d\n", __FILE__, __LINE__, error);
+                    
+                    if (phdr.p_memsz > phdr.p_filesz)
                     {
-                        size_t chunk_size = bytes_to_read < sizeof(buf) ? bytes_to_read : sizeof(buf);
-                        ssize_t ret = file.read(buf, chunk_size);
-                        if (ret < 0)
+                        // Zero out rest
+                        if (mem_space.memset_alloc(phdr.p_vaddr + phdr.p_filesz, 0, phdr.p_memsz - phdr.p_filesz) < 0)
                         {
                             error = EIO;
                             return -1;
                         }
-
-                        mem_space.memcpy_alloc(phdr.p_vaddr + bytes_read, buf, ret);
-                        bytes_read += ret;
-                        bytes_to_read -= ret;
-                    }
-
-                    // Zero out the rest of the segment
-                    if (phdr.p_memsz > phdr.p_filesz)
-                    {
-                        size_t zero_size = phdr.p_memsz - phdr.p_filesz;
-                        mem_space.memset_alloc(phdr.p_vaddr + bytes_read, 0, zero_size);
                     }
                 }
             }
 
-            _trace("Loaded elf with brk: %lx\n", brk);
-
             brk = (brk + (HAMSTER_PAGE_SIZE - 1)) & ~((uint64_t)HAMSTER_PAGE_SIZE - 1);
-
-            _trace("Adjusted brk to: %lx\n", brk);
 
             // done loading
             return 0;

@@ -388,6 +388,57 @@ void test_filesystem()
     assert(vfs->remove("/noexist.txt") < 0);
 
     dealloc(vfs);
+
+    vfs = &Hamster::vfs;
+    assert(vfs->mount("/", alloc<RamFs>(1)) == 0);
+
+    // --- Memory Mapping ---
+    {
+        Hamster::MemorySpace ms;
+        constexpr uint32_t page_size = HAMSTER_PAGE_SIZE;
+        constexpr uint32_t region_size = page_size * 2;
+        uint8_t perms = Hamster::PERM_READ | Hamster::PERM_WRITE;
+
+        // Create and write to a file
+        const char *mapfile = "/mapped_file.bin";
+        int fd = vfs->open(mapfile, OPEN_RDWR | OPEN_CREAT, 0644);
+        assert(fd >= 0);
+        char filedata[page_size * 2];
+        for (uint32_t i = 0; i < sizeof(filedata); ++i) filedata[i] = (char)(i % 256);
+        assert(vfs->write(fd, filedata, sizeof(filedata)) == (ssize_t)sizeof(filedata));
+        assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
+
+        // Map the file privately into memory
+        assert(ms.map_private_file(0x40000, fd, 0, region_size, perms) == 0);
+        // Check mapping
+        assert(ms.is_mapped(0x40000, region_size) == 1);
+        assert(ms.how_many_mapped(0x40000, region_size) == 2);
+
+        // Read from mapped region and compare to file
+        char buf[page_size * 2] = {0};
+        assert(ms.memcpy(buf, 0x40000, sizeof(buf)) == 0);
+        assert(memcmp(buf, filedata, sizeof(buf)) == 0);
+
+        // Write to mapped region and verify change is private
+        for (uint32_t i = 0; i < sizeof(buf); ++i) buf[i] = (char)(255 - (i % 256));
+        assert(ms.memcpy(0x40000, buf, sizeof(buf)) == 0);
+        // Read back from memory
+        char memcheck[page_size * 2] = {0};
+        assert(ms.memcpy(memcheck, 0x40000, sizeof(memcheck)) == 0);
+        assert(memcmp(memcheck, buf, sizeof(buf)) == 0);
+        // Read from file again to verify file is unchanged
+        assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
+        char filecheck[page_size * 2] = {0};
+        assert(vfs->read(fd, filecheck, sizeof(filecheck)) == (ssize_t)sizeof(filecheck));
+        assert(memcmp(filecheck, filedata, sizeof(filedata)) == 0);
+
+        // Unmap and cleanup
+        assert(ms.unmap(0x40000, region_size) == 0);
+        vfs->close(fd);
+        assert(vfs->remove(mapfile) == 0);
+    }
+
+    assert(vfs->unmount("/") == 0);
 }
 
 #endif // NDEBUG

@@ -202,6 +202,7 @@ namespace Hamster
             if (vfs.read(entry->fd, entry->data, HAMSTER_PAGE_SIZE) != HAMSTER_PAGE_SIZE)
                 return -1;
             // Convert to anonymous mapping, since it behaves like one now
+            vfs.close(entry->fd);
             entry->fd = -1;
             return 0;
         }

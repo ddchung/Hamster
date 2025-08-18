@@ -107,6 +107,12 @@ namespace Hamster
          */
         int unmap(uint32_t loc, uint32_t size);
 
+        /**
+         * @brief Unmap all regions
+         * @return 0 on success, or -1 and set `error` on failiure
+         */
+        int unmap_all();
+
     private:
         UnorderedMap<uint32_t, uint32_t> page_table; // vaddr -> page id
         uint32_t next_mmap = HAMSTER_PAGE_SIZE;

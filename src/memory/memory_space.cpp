@@ -17,13 +17,7 @@ namespace Hamster
 {   
     MemorySpace::~MemorySpace()
     {
-        // Clean up pages
-        for (auto &[_, id] : page_table)
-        {
-            page_manager.free_page(id);
-        }
-
-        page_table.clear();
+        unmap_all();
     }
 
     MemorySpace::MemorySpace(const MemorySpace &other)
@@ -195,8 +189,6 @@ namespace Hamster
     {
         // Round up size to nearest page size
         size = ROUND_UP_PAGE(size);
-        // if (loc == 0)
-        //     loc = next_mmap;
         loc = ROUND_DOWN_PAGE(loc);
         next_mmap = std::max<uint32_t>(next_mmap, loc + size);
 
@@ -211,9 +203,8 @@ namespace Hamster
 
     int MemorySpace::map_private_file(uint32_t loc, int fd, uint32_t offset, uint32_t size, uint8_t perms)
     {
-        size = ROUND_UP_PAGE(size);
-        if (loc == 0)
-            loc = next_mmap;
+        size = ROUND_UP_PAGE(size + (offset & (HAMSTER_PAGE_SIZE - 1)));
+        offset = ROUND_DOWN_PAGE(offset);
         loc = ROUND_DOWN_PAGE(loc);
         next_mmap = std::max<uint32_t>(next_mmap, loc + size);
 
@@ -226,8 +217,6 @@ namespace Hamster
                 return -1;
             page_table[addr] = page_manager.mmap_private(cloned, offset + (addr - loc), perms);
         }
-
-        vfs.close(fd);
         return 0;
     }
 
@@ -245,6 +234,16 @@ namespace Hamster
             page_manager.free_page(it->second);
             page_table.erase(it);
         }
+        return 0;
+    }
+
+    int MemorySpace::unmap_all()
+    {
+        for (auto &[_, page_id] : page_table)
+        {
+            page_manager.free_page(page_id);
+        }
+        page_table.clear();
         return 0;
     }
 
