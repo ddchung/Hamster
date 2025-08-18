@@ -47,11 +47,6 @@ namespace Hamster
         else
         {
             // Normal path
-            if (!path_str)
-            {
-                error = EFAULT; // Bad address
-                return cvt_error();
-            }
             int vfs_relfd = task->get_relative_fd(path_str, dirfd);
             if (vfs_relfd < 0)
             {
