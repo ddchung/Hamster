@@ -427,6 +427,9 @@ namespace Hamster
                     break;
             }
 
+            // we must delete the handle here, because this file isn't owned by
+            // the file descriptor manager, and thus won't have the handle deleted
+            // automatically.
             dealloc(handle);
         }
 
@@ -1341,7 +1344,6 @@ namespace Hamster
         
         if (handle->special_type() != SpecialFileType::CharacterDevice)
         {
-            dealloc(handle);
             error = ENOTTY;
             return 0;
         }
