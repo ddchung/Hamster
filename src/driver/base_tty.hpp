@@ -207,6 +207,8 @@ namespace Hamster
                 {
                     proc->send_signal(H_SIGTTOU);
                 }
+
+                return 1;
             }
 
             return 0;
@@ -577,28 +579,17 @@ namespace Hamster
         }
         case H_TIOCSPGRP:
         {
-            // Check if we are the controlling TTY
-            Task *current_task = scheduler.get_current_task();
-            if (current_task)
-            {
-                int res = driver->check_writable();
-                if (res < 0)
-                    return res;
-                if (res > 0)
-                {
-                    error = EINTR;
-                    return -1; // Not allowed to set the foreground process group
-                }
-            }
             uint32_t pgid = *(uint32_t *)arg.p;
             ProcessGroup *pg = scheduler.get_process_group(pgid);
             if (!pg)
             {
+                _trace("base_tty: cannot set foreground to nonexistent process group\n");
                 error = EPERM;
                 return -1;
             }
             if (&pg->session->obj != driver->session)
             {
+                _trace("base_tty: cannot set foreground to process group in different session\n");
                 error = EPERM;
                 return -1;
             }
