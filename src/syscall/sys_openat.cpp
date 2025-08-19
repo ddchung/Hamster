@@ -55,6 +55,8 @@ namespace Hamster
 
                         arg.p = &current_task->process->obj.pg->obj.pgid;
                         vfs.ioctl(new_fd, H_TIOCSPGRP, arg);
+
+                        session.controlling_tty = dev_id;
                     }
                 }
             }
