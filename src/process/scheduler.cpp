@@ -100,7 +100,7 @@ namespace Hamster
         {
             current_task = task;
 
-            if (task->is_paused || task->is_dead)
+            if (task->is_dead)
                 continue;
 
             int result = do_tick(*task);
@@ -310,6 +310,9 @@ namespace Hamster
             // Signal handled, or error occurred
             return signal_result == 1 ? 0 : -1;
         }
+
+        if (task.is_paused)
+            return 0;
 
         if (task.blocking_operation)
         {
