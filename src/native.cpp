@@ -944,7 +944,7 @@ int Hamster::_free(void *ptr)
     return 0;
 }
 
-uint64_t Hamster::_get_free_memory()
+size_t Hamster::_get_free_memory()
 {
     // Since we are on a host, we can't get actual free memory
     // but we can do this to always trick the page manager into thinking
