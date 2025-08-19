@@ -231,19 +231,8 @@ namespace Hamster
             // Clean up resources
             if (fd_table->refcount == 1)
             {
-                for (auto &fd : fd_table->obj.fds)
-                {
-                    if (fd.type == UserFDType::VFS && fd.vfs_fd >= 0)
-                    {
-                        fd_refcount[fd.vfs_fd]--;
-                        if (fd_refcount[fd.vfs_fd] == 0)
-                        {
-                            vfs.close(fd.vfs_fd);
-                            fd_refcount.erase(fd.vfs_fd);
-                        }
-                        fd.vfs_fd = -1; // Mark as closed
-                    }
-                }
+                for (size_t i = 0; i < fd_table->obj.fds.size(); ++i)
+                    close(i);
                 fd_table->obj.fds.clear();
             }
         }
@@ -793,6 +782,53 @@ namespace Hamster
             {
                 pending_signals.normal_signals[siginfo.signo] = {siginfo};
             }
+        }
+
+        return 0;
+    }
+
+    int Task::close(int fd)
+    {
+        UserFD *p_user_fd = get_user_fd(fd);
+        if (!p_user_fd)
+            return -1;
+        UserFD &user_fd = *p_user_fd;
+
+        switch (user_fd.type)
+        {
+        case UserFDType::VFS:
+        {
+            // Close the VFS file descriptor
+            int vfs_fd = user_fd.vfs_fd;
+
+            user_fd.vfs_fd = -1; // Reset the VFS file descriptor
+            
+            fd_refcount[vfs_fd]--;
+            if (fd_refcount[vfs_fd] == 0)
+            {
+                fd_refcount.erase(vfs_fd);
+
+                return vfs.close(user_fd.vfs_fd);
+            }
+            break;
+        }
+        case UserFDType::PID:
+            // Mark as closed
+
+            user_fd.type = UserFDType::VFS;
+            user_fd.vfs_fd = -1; // Reset the VFS file descriptor
+            break;
+        case UserFDType::PIPE_READ:
+        case UserFDType::PIPE_WRITE:
+            if (user_fd.type == UserFDType::PIPE_READ)
+                --user_fd.pipe->readers;
+            else
+                --user_fd.pipe->writers;
+            
+            if (user_fd.pipe->is_destroyable())
+                dealloc(user_fd.pipe);
+            user_fd.type = UserFDType::VFS;
+            user_fd.vfs_fd = -1;
         }
 
         return 0;

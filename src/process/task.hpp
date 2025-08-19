@@ -97,10 +97,52 @@ namespace Hamster
     {
         VFS,
         PID,
+        PIPE_READ,
+        PIPE_WRITE
     };
+
+    struct UserFDPipe
+    {
+        Deque<char> buffer;
+        uint8_t readers;
+        uint8_t writers;
+
+        /**
+         * @brief When closing the pipe, use this to check
+         *      * whether there are still references to the pipe.
+         * @return true if the pipe can be destroyed, false otherwise
+         */
+        bool is_destroyable();
+
+        /**
+         * @brief Write to the pipe
+         * @param buf The buffer to write
+         * @param size The size of the buffer
+         * @return The number of bytes read, or -1 on error and sets `error`
+         */
+        ssize_t write(const void *buf, size_t size);
+
+        /**
+         * @brief Read from the pipe
+         * @param buf The buffer to read into
+         * @param size The size of the buffer
+         * @return The number of bytes read, or -1 on error and sets `error`
+         */
+        ssize_t read(void *buf, size_t size);
+
+        /**
+         * @brief Poll the pipe
+         * @param op The events to poll for. Bitmask of 0x1 (read) and 0x2 (write)
+         * @return 1 if ready, 0 if not ready, -1 on error and set `error`
+         */
+        int poll(int op);
+    };
+
+    inline constexpr int USER_FD_PIPE_NONBLOCK = 0x2;
 
     struct UserFD
     {
+        // FD_CLOEXEC, and for pipes only USER_FD_PIPE_NONBLOCK;
         int flags;
         UserFDType type;
 
@@ -112,6 +154,8 @@ namespace Hamster
             int vfs_fd;
 
             uint32_t pid;
+
+            UserFDPipe *pipe;
         };
     };
 
@@ -505,6 +549,13 @@ namespace Hamster
          * @note This also takes ownership of the path, so it will deallocate it later
          */
         char *process_user_path(char *user_path);
+
+        /**
+         * @brief Close a file descriptor
+         * @param fd The thread file descriptor to close
+         * @return 0 on success, -1 on error
+         */
+        int close(int fd);
 
         TaskMember<EmulatorMemory> *memory;
         TaskMember<uint32_t> *program_brk;

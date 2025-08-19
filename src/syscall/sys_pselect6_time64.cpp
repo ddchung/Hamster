@@ -110,24 +110,26 @@ namespace Hamster
             constexpr int READY_READ = 1, READY_WRITE = 2;
             int ready = 0;
 
-            int vfs_fd = current_task->get_vfs_fd(i);
-            if (vfs_fd < 0)
+            UserFD *user_fd = current_task->get_user_fd(i);
+            if (!user_fd)
                 return cvt_error();
             
-            if (is_fd_set(read_fds, i))
+            switch (user_fd->type)
             {
-                if (vfs.poll(vfs_fd, 0x1) > 0)
-                {
-                    ready |= READY_READ; // File descriptor is ready for reading
-                }
+            case UserFDType::VFS:
+                ready |= (vfs.poll(user_fd->vfs_fd, 0x1) == 1) ? READY_READ : 0;
+                ready |= (vfs.poll(user_fd->vfs_fd, 0x2) == 1) ? READY_WRITE : 0;
+                break;
+            case UserFDType::PIPE_READ:
+                ready |= (user_fd->pipe->poll(0x1) == 1) ? READY_READ : 0;
+                break;
+            case UserFDType::PIPE_WRITE:
+                ready |= (user_fd->pipe->poll(0x2) == 1) ? READY_WRITE : 0;
+                break;
+            default:
+                return -EPERM;
             }
-            if (is_fd_set(write_fds, i))
-            {
-                if (vfs.poll(vfs_fd, 0x2) > 0)
-                {
-                    ready |= READY_WRITE; // File descriptor is ready for writing
-                }
-            }
+
             if (ready == 0)
                 continue; // Not ready, skip
 

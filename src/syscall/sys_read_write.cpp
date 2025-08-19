@@ -76,8 +76,8 @@ namespace Hamster
         Task *current_task = scheduler.get_current_task();
         assert(current_task != nullptr && "No current task");
 
-        int vfs_fd = current_task->get_vfs_fd(fd);
-        if (vfs_fd < 0)
+        UserFD *user_fd = current_task->get_user_fd(fd);
+        if (!user_fd)
             return cvt_error();
 
         // Copy as many times as needed
@@ -87,7 +87,24 @@ namespace Hamster
         while (count > 0)
         {
             size_t to_read = std::min(count, (uint32_t)sizeof(IO_BUFFER));
-            ssize_t bytes_read = vfs.read(vfs_fd, IO_BUFFER, to_read);
+
+            ssize_t bytes_read = 0;
+            bool is_open_nonblock = false;
+
+            switch (user_fd->type)
+            {
+            case UserFDType::VFS:
+                bytes_read = vfs.read(user_fd->vfs_fd, IO_BUFFER, to_read);
+                is_open_nonblock = vfs.get_flags(user_fd->vfs_fd) & OPEN_NONBLOCK;
+                break;
+            case UserFDType::PIPE_READ:
+                bytes_read = user_fd->pipe->read(IO_BUFFER, to_read);
+                is_open_nonblock = user_fd->flags & USER_FD_PIPE_NONBLOCK;
+                break;
+            default:
+                return -EPERM;
+            }
+
             if (bytes_read < 0)
             {
                 if (total_read > 0)
@@ -99,7 +116,7 @@ namespace Hamster
                 if (error == EAGAIN)
                 {
                     // Blocking read
-                    if ((vfs.get_flags(vfs_fd) & OPEN_NONBLOCK) == 0)
+                    if (!is_open_nonblock)
                     {
                         if (!current_task->blocking_operation)
                             _trace("sys_read: blocking read on Thread FD %d, count %u\n", fd, count);
@@ -134,8 +151,8 @@ namespace Hamster
         Task *current_task = scheduler.get_current_task();
         assert(current_task != nullptr && "No current task");
 
-        int vfs_fd = current_task->get_vfs_fd(fd);
-        if (vfs_fd < 0)
+        UserFD *user_fd = current_task->get_user_fd(fd);
+        if (!user_fd)
             return cvt_error();
 
         // Copy as many times as needed
@@ -151,7 +168,23 @@ namespace Hamster
                 return cvt_error();
             }
 
-            ssize_t bytes_written = vfs.write(vfs_fd, IO_BUFFER, to_write);
+            ssize_t bytes_written = 0;
+            bool is_open_nonblock = false;
+
+            switch (user_fd->type)
+            {
+            case UserFDType::VFS:
+                bytes_written = vfs.write(user_fd->vfs_fd, IO_BUFFER, to_write);
+                is_open_nonblock = vfs.get_flags(user_fd->vfs_fd) & OPEN_NONBLOCK;
+                break;
+            case UserFDType::PIPE_WRITE:
+                bytes_written = user_fd->pipe->write(IO_BUFFER, to_write);
+                is_open_nonblock = user_fd->flags & USER_FD_PIPE_NONBLOCK;
+                break;
+            default:
+                return -EPERM;
+            }
+
             if (bytes_written < 0)
             {
                 if (total_written > 0)
@@ -163,8 +196,7 @@ namespace Hamster
                 if (error == EAGAIN)
                 {
                     // Blocking write
-                    if (!current_task->blocking_operation &&
-                        (vfs.get_flags(vfs_fd) & OPEN_NONBLOCK) == 0)
+                    if (!current_task->blocking_operation && !is_open_nonblock)
                     {
                         _trace("sys_write: blocking write on Thread FD %d, count %u\n", fd, count);
 

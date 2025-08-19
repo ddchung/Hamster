@@ -27,3 +27,6 @@ static_assert((HAMSTER_PAGE_SIZE & (HAMSTER_PAGE_SIZE - 1)) == 0, "Page size mus
 // - too low: The system will keep too many pages in RAM, possibly causing an out-of-memory situation
 // - too high: The system will swap out too many pages, possibly causing performance issues
 #define HAMSTER_TARGET_FREE_RAM (sizeof(void *) * HAMSTER_PAGE_SIZE)
+
+// Maximum pipe buffer size, in bytes
+#define HAMSTER_MAX_PIPE_BUFFERED 512
