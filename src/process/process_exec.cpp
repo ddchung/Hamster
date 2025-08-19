@@ -118,6 +118,12 @@ namespace Hamster
         // Load stack
         uint64_t sp = HAMSTER_STACK_TOP;
 
+        // map in a 1 MB stack
+        if (memory_space.map_anonymous(sp - 1024 * 1024, 1024 * 1024, PERM_READ | PERM_WRITE) < 0)
+        {
+            return -1;
+        }
+
         // some zeros
         push_stack(memory_space, sp, 0);
         push_stack(memory_space, sp, 0);
