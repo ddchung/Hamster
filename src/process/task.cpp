@@ -614,9 +614,19 @@ namespace Hamster
         {
             for (UserFD &file : new_task->fd_table->obj.fds)
             {
-                if (file.type == UserFDType::VFS && file.vfs_fd >= 0)
+                switch (file.type)
                 {
-                    fd_refcount[file.vfs_fd]++;
+                case UserFDType::VFS:
+                    ++fd_refcount[file.vfs_fd];
+                    break;
+                case UserFDType::PIPE_READ:
+                    ++file.pipe->readers;
+                    break;
+                case UserFDType::PIPE_WRITE:
+                    ++file.pipe->writers;
+                    break;
+                default:
+                    break;
                 }
             }
         }
