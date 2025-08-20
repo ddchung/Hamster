@@ -1392,4 +1392,9 @@ namespace Hamster
 
         return handle->poll(op);
     }
+
+    bool VFS::is_valid_fd(int fd)
+    {
+        return data->fd_manager.get_fd(fd) != nullptr;
+    }
 } // namespace Hamster

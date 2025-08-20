@@ -537,6 +537,12 @@ namespace Hamster
          */
         int poll(int fd, int op);
 
+        /**
+         * @brief Check if a file descriptor is valid
+         * @return true if it is, false otherwise
+         */
+        bool is_valid_fd(int fd);
+
     private:
         VFSData *data;
     };
