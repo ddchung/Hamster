@@ -6,6 +6,7 @@
 #include <memory/stl_sequential.hpp>
 #include <memory/stl_map.hpp>
 #include <memory/tree.hpp>
+#include <memory/circular_buffer.hpp>
 #include <memory/allocator.hpp>
 #include <platform/platform.hpp>
 #include <cassert>
@@ -201,6 +202,71 @@ void test_memory()
     stl_map[1] = 2;
     stl_map[3] = 4;
     assert(stl_map[1] == 2 && stl_map[3] == 4);
+
+    // --- CircularBuffer tests ---
+    {
+        Hamster::CircularBuffer<int> cb;
+        assert(cb.empty());
+        assert(cb.size() == 0);
+
+        // Push elements
+
+        // ()
+
+        cb.push(10);
+        // (10)
+        assert(!cb.empty());
+        assert(cb.size() == 1);
+        assert(cb.front() == 10);
+
+        cb.push(20);
+        // (20, 10)
+        assert(cb.size() == 2);
+        assert(cb.front() == 20);
+
+        cb.push(30);
+        // (30, 10, 20)
+        assert(cb.size() == 3);
+        assert(cb.front() == 30);
+
+        // Advance and retreat
+        cb.advance();
+        // (10, 20, 30)
+        assert(cb.front() == 10);
+        cb.advance();
+        // (20, 30, 10)
+        assert(cb.front() == 20);
+        cb.retreat();
+        // (10, 20, 30)
+        assert(cb.front() == 10);
+        cb.retreat();
+        // (30, 10, 20)
+        assert(cb.front() == 30);
+
+        // Pop elements
+        cb.pop();
+        // (10, 20)
+        assert(cb.size() == 2);
+        assert(cb.front() == 10);
+        cb.pop();
+        // (20)
+        assert(cb.size() == 1);
+        assert(cb.front() == 20);
+        cb.pop();
+        // ()
+        assert(cb.size() == 0);
+        assert(cb.empty());
+
+        // Test emplace
+        cb.emplace(42);
+        // (42)
+        assert(cb.size() == 1);
+        assert(cb.front() == 42);
+        cb.pop();
+        // ()
+        assert(cb.empty());
+    }
+
     // --- PageManager: double free, copy, permissions, swap, dirty, invalid ops ---
     {
         Hamster::PageManager &pm = Hamster::page_manager;
