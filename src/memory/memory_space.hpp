@@ -127,6 +127,17 @@ namespace Hamster
         { next_mmap = addr; }
 
         /**
+         * @brief Get the permissions of a page range
+         * @param loc The starting address of the memory region
+         * @param size The size of the memory region
+         * @return The permissions of the memory region, or -1 on failure
+         * @note Permissions are a mask of `PERM_*` flags
+         * @note The returned permissions is the conjunction of all page permissions in the range
+         * @note This will fail if any of the pages in the range aren't mapped
+         */
+        int8_t get_permissions(uint32_t loc, uint32_t size = 1);
+
+        /**
          * @brief Allocate a new free region
          * @param size The size of the region
          * @return The address of the newly allocated region

@@ -427,6 +427,13 @@ namespace Hamster
             return result;
         }
 
+        if ((PERM_READ | PERM_EXEC) & ~memory->memory.get_permissions(pc))
+        {
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = pc;
+            return result;
+        }
+
         if (read32(pc, inst) != 0)
         {
             result.status = ExecuteResult::Status::IllegalLoad;

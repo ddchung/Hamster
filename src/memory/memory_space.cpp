@@ -308,6 +308,28 @@ namespace Hamster
         return addr;
     }
 
+    int8_t MemorySpace::get_permissions(uint32_t loc, uint32_t size)
+    {
+        loc = ROUND_DOWN_PAGE(loc);
+        size = ROUND_UP_PAGE(size);
+
+        uint8_t perms = 07; // Start with all
+
+        for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
+        {
+            auto it = page_table.find(addr);
+            if (it == page_table.end())
+                return -1;
+
+            int8_t page_perms = page_manager.get_permissions(it->second);
+            if (page_perms < 0)
+                return -1;
+
+            perms &= page_perms;
+        }
+        return perms;
+    }
+
     void MemorySpace::deallocate(uint32_t addr, uint32_t size)
     {
         assert(addr % HAMSTER_PAGE_SIZE == 0);
