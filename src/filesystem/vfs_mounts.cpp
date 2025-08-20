@@ -131,7 +131,6 @@ namespace Hamster
 
         if (file->type() != FileType::Directory && (flags & OPEN_DIRECTORY))
         {
-            _trace("%s:%d: vfs_mounts: OPEN_DIRECTORY specified but file not directory\n", __FILE__, __LINE__);
             error = ENOTDIR;
             dealloc(file);
             return nullptr;
@@ -179,7 +178,6 @@ namespace Hamster
             }
             if (file->type() != FileType::Directory && (flags & OPEN_DIRECTORY))
             {
-                _trace("%s:%d: vfs_mounts: OPEN_DIRECTORY specified but file not directory. filename='%s'\n", __FILE__, __LINE__, path);
                 dealloc(file);
                 error = ENOTDIR;
                 return nullptr;
@@ -227,7 +225,6 @@ namespace Hamster
             dealloc(next_file);
             dealloc(dir);
             error = ENOTDIR;
-            _trace("%s:%d: vfs_mounts: Non-directory in middle of path. filename='%s'\n", __FILE__, __LINE__, next_name.c_str());
             return nullptr;
         }
     }
