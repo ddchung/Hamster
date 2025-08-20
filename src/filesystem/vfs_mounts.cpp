@@ -165,7 +165,9 @@ namespace Hamster
         const char *next = strchr(path, '/');
         if (!next)
         {
-            BaseFile *file = dir->get(path, flags, mode);
+            int get_flags = flags;
+            if ((flags & OPEN_CREAT) == 0) get_flags &= ~OPEN_DIRECTORY;
+            BaseFile *file = dir->get(path, get_flags, mode);
             dealloc(dir);
             if (!file)
                 return nullptr;
