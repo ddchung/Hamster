@@ -376,6 +376,31 @@ namespace Hamster
     inline constexpr int H_SIG_UNBLOCK = 1;
     inline constexpr int H_SIG_SETMASK = 2;
 
+    inline constexpr int H_PROT_READ = 0x1;             /* page can be read */
+    inline constexpr int H_PROT_WRITE = 0x2;            /* page can be written */
+    inline constexpr int H_PROT_EXEC = 0x4;             /* page can be executed */
+    inline constexpr int H_PROT_SEM = 0x8;              /* page may be used for atomic ops */
+    inline constexpr int H_PROT_NONE = 0x0;             /* page can not be accessed */
+    inline constexpr int H_PROT_GROWSDOWN = 0x01000000; /* mprotect flag: extend change to start of growsdown vma */
+    inline constexpr int H_PROT_GROWSUP = 0x02000000;   /* mprotect flag: extend change to end of growsup vma */
+
+    inline constexpr int H_MAP_TYPE = 0x0f;      /* Mask for type of mapping */
+    inline constexpr int H_MAP_FIXED = 0x10;     /* Interpret addr exactly */
+    inline constexpr int H_MAP_ANONYMOUS = 0x20; /* don't use a file */
+
+    inline constexpr int H_MAP_POPULATE = 0x008000;        /* populate (prefault) pagetables */
+    inline constexpr int H_MAP_NONBLOCK = 0x010000;        /* do not block on IO */
+    inline constexpr int H_MAP_STACK = 0x020000;           /* give out an address that is best suited for process/thread stacks */
+    inline constexpr int H_MAP_HUGETLB = 0x040000;         /* create a huge page mapping */
+    inline constexpr int H_MAP_SYNC = 0x080000;            /* perform synchronous page faults for the mapping */
+    inline constexpr int H_MAP_FIXED_NOREPLACE = 0x100000; /* MAP_FIXED which doesn't unmap underlying mapping */
+    inline constexpr int H_MAP_UNINITIALIZED = 0x4000000;  /* For anonymous mmap, memory could be
+                                                            * uninitialized */
+    inline constexpr int H_MAP_SHARED = 0x01;              /* Share changes */
+    inline constexpr int H_MAP_PRIVATE = 0x02;             /* Changes are private */
+    inline constexpr int H_MAP_SHARED_VALIDATE = 0x03;     /* share + validate extension flags */
+    inline constexpr int H_MAP_DROPPABLE = 0x08;           /* Zero memory under memory pressure. */
+
     inline constexpr uint8_t H_SIGHAND_TRAMPOLINE[] = {
         // li a7,139 # SyscallID::RT_SIGRETURN
         0x93, 0x08, 0xb0, 0x08,

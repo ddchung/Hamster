@@ -207,6 +207,17 @@ namespace Hamster
         leader->emulator.pc = entry_point;
         leader->emulator.x[2] = sp;
         leader->emulator.x[1] = 0; // Set return address to 0 (no return)
+        // Set mmap allocation start to the 1/4 point of the free space
+        // 
+        // Before
+        // [ program ] [ free space > < stack ]
+        //
+        // After
+        // [ program ] [ brk space ] [ mmap allocation >*< stack ]
+        //                                              *
+        //                            sliding  boundary *
+        memory_space.set_next_mmap(brk + (HAMSTER_STACK_TOP - brk) / 4);
+
         return 0;
     }
 
