@@ -214,6 +214,7 @@ namespace Hamster
 
     inline constexpr int H_AT_FDCWD = -100; // Special value for current working directory
     inline constexpr int H_AT_REMOVEDIR = 0x200; // unlinkat(2) flag to remove directories instead of files
+    inline constexpr int H_AT_EACCESS = 0x200; // faccessat2(2) flag to use EUID/EGID instead of UID/GID for permission checking
 
     inline constexpr int H_SIGHUP = 1;
     inline constexpr int H_SIGINT = 2;
