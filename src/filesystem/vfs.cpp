@@ -259,26 +259,28 @@ namespace Hamster
             return -1;
         }
 
-        BaseDirectory *dir = (BaseDirectory *)file->clone();
-        if (!dir)
-            return -1;
+        BaseDirectory *dir;
         
         const char *last = strrchr(path, '/');
-        if (!last)
+        if (last)
         {
-            error = EINVAL;
-            return -1;
+            dir = (BaseDirectory *)file->clone();
+            if (!dir)
+                return -1;
+
+            String dir_name{path, (size_t)(last - path)};
+            dir = (BaseDirectory*)data->mounts.lopen(dir_name.c_str(), OPEN_WRONLY | OPEN_DIRECTORY, 0, dir);
+            if (!dir)
+                return -1;
+
+            int res = dir->remove(last + 1);
+            dealloc(dir);
+            return res;
         }
-
-        String dir_name{path, (size_t)(last - path)};
-        dir = (BaseDirectory*)data->mounts.lopen(dir_name.c_str(), OPEN_WRONLY | OPEN_DIRECTORY, 0, dir);
-
-        if (!dir)
-            return -1;
-
-        int res = dir->remove(last + 1);
-        dealloc(dir);
-        return res;
+        else
+        {
+            return ((BaseDirectory *)file)->remove(path);
+        }
     }
 
     int VFS::remove(const char *path)

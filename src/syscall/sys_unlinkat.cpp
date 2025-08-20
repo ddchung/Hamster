@@ -27,8 +27,34 @@ namespace Hamster
             return cvt_error();
         }
 
+        // Check if it's a directory
+        sys_stat statbuf;
+        int result = vfs.lstatat(vfs_rel_fd, path_str, &statbuf);
+        if (result == 0)
+        {
+            int err = 0;
+            if (is_directory(statbuf.mode) && (flags & H_AT_REMOVEDIR) == 0)
+                err = EISDIR;
+            else if (!is_directory(statbuf.mode) && (flags & H_AT_REMOVEDIR) != 0)
+                err = ENOTDIR;
+            
+            if (err)
+            {
+                dealloc(path_str);
+                vfs.close(vfs_rel_fd);
+                return -err;
+            }
+        }
+        else
+        {
+            _trace("WARN: sys_unlinkat: lstatat failed for path '%s' with unexpected error %d, return value %d\n",
+                   path_str, error, result);
+            _trace("WARN: sys_unlinkat: continuing anyway with remove operation..\n");
+            _trace("WARN: sys_unlinkat: note: from %s:%d\n", __FILE__, __LINE__);
+        }
+
         // Unlink the file or directory
-        int result = vfs.removeat(vfs_rel_fd, path_str);
+        result = vfs.removeat(vfs_rel_fd, path_str);
         dealloc(path_str);
         vfs.close(vfs_rel_fd);
         

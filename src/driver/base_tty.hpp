@@ -385,7 +385,7 @@ namespace Hamster
         Session *session = nullptr;
         ProcessGroup *fg_pgroup = nullptr;
         sys_termios termios = {};
-        sys_winsize win_sz = {};
+        sys_winsize win_sz = {}; // TODO: Send SIGWINCH on size change
 
         Deque<char> input_buffer;
         Deque<char> output_buffer;
