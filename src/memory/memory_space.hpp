@@ -4,6 +4,7 @@
 
 #include <memory/stl_map.hpp>
 #include <memory/page_manager.hpp> // for PERM_*
+#include <memory/circular_buffer.hpp>
 #include <sys/types.h>
 #include <cstdint>
 #include <cstddef>
@@ -12,6 +13,10 @@ namespace Hamster
 {
     class MemorySpace
     {
+        struct FreeRange
+        {
+            uint32_t addr, size;
+        };
     public:
         MemorySpace() = default;
         ~MemorySpace();
@@ -113,12 +118,33 @@ namespace Hamster
          */
         int unmap_all();
 
+        /**
+         * @brief Set the next mmap address
+         * @param addr The address to set
+         * @note This will be used and incremented if all free ranges are exhausted
+         */
+        void set_next_mmap(uint32_t addr)
+        { next_mmap = addr; }
+
+        /**
+         * @brief Allocate a new free region
+         * @param size The size of the region
+         * @return The address of the newly allocated region
+         * @note Be sure to map with the exact address returned, and the exact size specified,
+         *     * so that on unmap, the resources can be properly freed.
+         */
+        uint32_t allocate(uint32_t size);
+
     private:
         UnorderedMap<uint32_t, uint32_t> page_table; // vaddr -> page id
-        uint32_t next_mmap = HAMSTER_PAGE_SIZE;
+        CircularBuffer<FreeRange> free_ranges;
+        uint32_t next_mmap = 0;
 
         ssize_t do_read(uint32_t addr, void *buf, size_t size);
         ssize_t do_write(uint32_t addr, const void *buf, size_t size);
+
+        // Called on unmap
+        void deallocate(uint32_t addr, uint32_t size);
     };
 } // namespace Hamster
 

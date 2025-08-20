@@ -226,15 +226,29 @@ namespace Hamster
         loc = ROUND_DOWN_PAGE(loc);
         size = ROUND_UP_PAGE(size);
 
+        uint32_t free_range_start = loc;
+        uint32_t free_range_size = 0;
+
         for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
             auto it = page_table.find(addr);
             if (it == page_table.end())
-                continue;
+            {
+                if (free_range_size)
+                    deallocate(free_range_start, free_range_size);
+                free_range_start = addr + HAMSTER_PAGE_SIZE;
+                free_range_size = 0;
+            }
+
+            free_range_size += HAMSTER_PAGE_SIZE;
 
             page_manager.free_page(it->second);
             page_table.erase(it);
         }
+
+        if (free_range_size)
+            deallocate(free_range_start, free_range_size);
+
         return 0;
     }
 
@@ -263,6 +277,62 @@ namespace Hamster
                 return -1;
         }
         return 0;
+    }
+
+    uint32_t MemorySpace::allocate(uint32_t size)
+    {
+        size = ROUND_UP_PAGE(size);
+
+        for (uint32_t i = 0; i < free_ranges.size(); ++i)
+        {
+            FreeRange &range = free_ranges.front();
+            assert(range.size % HAMSTER_PAGE_SIZE == 0);
+            assert(range.addr % HAMSTER_PAGE_SIZE == 0);
+            if (range.size >= size)
+            {
+                range.size -= size;
+                uint32_t addr = range.addr;
+                range.addr += size;
+
+                if (range.size == 0)
+                    free_ranges.pop();
+
+                return addr;
+            }
+            free_ranges.advance();
+        }
+
+        assert(next_mmap % HAMSTER_PAGE_SIZE == 0);
+        uint32_t addr = next_mmap;
+        next_mmap += size;
+        return addr;
+    }
+
+    void MemorySpace::deallocate(uint32_t addr, uint32_t size)
+    {
+        assert(addr % HAMSTER_PAGE_SIZE == 0);
+        assert(size % HAMSTER_PAGE_SIZE == 0);
+
+        for (size_t i = 0; i < free_ranges.size(); ++i)
+        {
+            // Attempt to merge into an existing range if possible
+            FreeRange &range = free_ranges.front();
+            free_ranges.advance();
+            assert(range.size % HAMSTER_PAGE_SIZE == 0);
+            assert(range.addr % HAMSTER_PAGE_SIZE == 0);
+            if (range.addr + range.size == addr)
+            {
+                range.size += size;
+                return;
+            }
+            if (addr + size == range.addr)
+            {
+                range.addr = addr;
+                range.size += size;
+                return;
+            }
+        }
+        free_ranges.push(FreeRange{addr, size});
     }
 
     ssize_t MemorySpace::do_read(uint32_t addr, void *buf, size_t len)
