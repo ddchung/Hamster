@@ -813,12 +813,11 @@ namespace Hamster
 
             user_fd.vfs_fd = -1; // Reset the VFS file descriptor
             
-            fd_refcount[vfs_fd]--;
-            if (fd_refcount[vfs_fd] == 0)
+            if (--fd_refcount[vfs_fd] == 0)
             {
                 fd_refcount.erase(vfs_fd);
 
-                return vfs.close(user_fd.vfs_fd);
+                return vfs.close(vfs_fd);
             }
             break;
         }
