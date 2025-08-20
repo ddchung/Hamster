@@ -80,6 +80,7 @@ namespace Hamster
         if (flags & H_MAP_ANONYMOUS)
         {
             memory.map_anonymous(internal_addr, length, internal_perms);
+            memory.memset(internal_addr, 0, length);
         }
         else
         {

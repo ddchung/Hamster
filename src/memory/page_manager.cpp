@@ -36,9 +36,6 @@ namespace Hamster
             free_pages.pop_front();
         }
 
-        static uint8_t zero_page[HAMSTER_PAGE_SIZE] = {0};
-        _swap_out(id, zero_page);
-
         PageEntry *&entry = page_table[id];
         
         // Initialize the page entry
@@ -184,7 +181,6 @@ namespace Hamster
         // use _malloc instead of alloc<uint8_t> to avoid
         // the allocator's overhead
         entry->data = (uint8_t *)_malloc(HAMSTER_PAGE_SIZE);
-        memset(entry->data, 0, HAMSTER_PAGE_SIZE);
         entry->swapped = 0;
 
         if (entry->eviction_queue_count <= 3)
