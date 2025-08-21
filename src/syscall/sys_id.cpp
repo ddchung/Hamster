@@ -129,6 +129,28 @@ namespace Hamster
         return 0;
     }
 
+    int32_t sys_getsid(int32_t pid)
+    {
+        if (pid == 0)
+        {
+            Task *current_task = scheduler.get_current_task();
+            assert(current_task != nullptr);
+
+            return current_task->get_sid();
+        }
+        else
+        {
+            Process *process = scheduler.get_process(pid);
+            if (!process)
+            {
+                error = ESRCH;
+                return cvt_error();
+            }
+
+            return process->get_sid();
+        }
+    }
+
     int32_t sys_setsid()
     {
         Task *current_task = scheduler.get_current_task();
