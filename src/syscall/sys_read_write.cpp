@@ -13,63 +13,42 @@ namespace Hamster
         // Buffer for read/write operations
         char IO_BUFFER[512];
 
-        void poll_read(Task &)
+        void poll_read(Task &task)
         {
-            Task *current_task = scheduler.get_current_task();
-            assert(current_task != nullptr && "No current task");
+            int32_t blocking_fd = task.blocking_operation_saved[0];
 
-            // Call the system call
+            int vfs_fd = task.get_vfs_fd(blocking_fd);
 
-            // Load the blocking file descriptor
-            current_task->emulator.x[10] = current_task->blocking_operation_saved[0];
+            int res = vfs.poll(vfs_fd, 0x1); // Poll for read
 
-            int32_t result = syscall(sys_read);
+            if (res != 1)
+                return; // not ready
 
-            if (result < 0 && result == -EAGAIN)
-            {
-                // Still blocking, do nothing and check again next time
-                return;
-            }
+            task.emulator.x[10] = blocking_fd;
 
-            _trace("sys_read: completed read on Thread FD %d, bytes read %d\n",
-                   current_task->blocking_operation_saved[0], result);
+            task.emulator.x[10] = syscall(sys_read);
 
-            // Completed successfully
-            // Copy to a0 register (return value)
+            task.blocking_operation = nullptr;
+        }
 
-            current_task->emulator.x[10] = result;
-            current_task->blocking_operation = nullptr;
-            return;
+        void poll_write(Task &task)
+        {
+            int32_t blocking_fd = task.blocking_operation_saved[0];
+
+            int vfs_fd = task.get_vfs_fd(blocking_fd);
+
+            int res = vfs.poll(vfs_fd, 0x2); // Poll for write
+
+            if (res != 1)
+                return; // not ready
+
+            task.emulator.x[10] = blocking_fd;
+
+            task.emulator.x[10] = syscall(sys_write);
+
+            task.blocking_operation = nullptr;
         }
     } // namespace
-
-    void poll_write(Task &)
-    {
-        Task *current_task = scheduler.get_current_task();
-        assert(current_task != nullptr && "No current task");
-
-        // Call the system call
-
-        // Load the blocking file descriptor
-        current_task->emulator.x[10] = current_task->blocking_operation_saved[0];
-
-        int32_t result = syscall(sys_write);
-        if (result < 0 && result == -EAGAIN)
-        {
-            // Still blocking, do nothing and check again next time
-            return;
-        }
-
-        _trace("sys_write: completed write on Thread FD %d, bytes written %d\n",
-               current_task->blocking_operation_saved[0], result);
-
-        // Completed successfully
-
-        // Copy to a0 register (return value)
-        current_task->emulator.x[10] = result;
-        current_task->blocking_operation = nullptr;
-        return;
-    }
 
     int32_t sys_read(int32_t fd, uint32_t buf_loc, uint32_t count)
     {
