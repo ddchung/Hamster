@@ -62,7 +62,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return -1;
             }
 
@@ -80,7 +80,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return -1;
             }
 
@@ -141,7 +141,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return -1;
             }
 
@@ -178,7 +178,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return -1;
             }
 
@@ -194,7 +194,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return -1;
             }
 
@@ -210,7 +210,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return -1;
             }
 
@@ -396,7 +396,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return nullptr;
             }
 
@@ -453,7 +453,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return nullptr;
             }
 
@@ -512,7 +512,7 @@ namespace
             case H_SEEK_SET:
                 if (offset < 0)
                 {
-                    errno = EINVAL;
+                    error = EINVAL;
                     return -1; // Invalid offset
                 }
                 pos = offset;
@@ -520,7 +520,7 @@ namespace
             case H_SEEK_CUR:
                 if (pos + offset < 0)
                 {
-                    errno = EINVAL;
+                    error = EINVAL;
                     return -1; // Invalid offset
                 }
                 pos += offset;
@@ -529,7 +529,7 @@ namespace
                 error = ENOTSUP;
                 return -1; // Not supported for directories
             default:
-                errno = EINVAL;
+                error = EINVAL;
                 return -1; // Invalid whence
             }
 
@@ -545,7 +545,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return nullptr;
             }
 
@@ -617,7 +617,7 @@ namespace
             else
             {
                 close(new_fd);
-                errno = ENOSYS; // Unsupported file type
+                error = ENOSYS; // Unsupported file type
                 return nullptr;
             }
 
@@ -628,7 +628,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return nullptr;
             }
 
@@ -647,11 +647,17 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return nullptr;
             }
 
-            int new_fd = mkdirat(fd, name, mode);
+            if (mkdirat(fd, name, mode) < 0)
+            {
+                swap_error();
+                return nullptr;
+            }
+
+            int new_fd = openat(fd, name, O_RDONLY | O_DIRECTORY, mode);
             if (new_fd < 0)
             {
                 swap_error();
@@ -665,7 +671,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return nullptr;
             }
 
@@ -690,7 +696,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return nullptr;
             }
 
@@ -709,13 +715,13 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return -1;
             }
 
             if (get_filesystem() != file->get_filesystem())
             {
-                errno = EXDEV; // Cross-device link not permitted
+                error = EXDEV; // Cross-device link not permitted
                 return -1;
             }
 
@@ -735,13 +741,13 @@ namespace
                 file_fd = ((NativeSpecialFileHandle *)file)->get_fd();
                 break;
             default:
-                errno = EBADF; // Invalid file type for linking
+                error = EBADF; // Invalid file type for linking
                 return -1;
             }
 
             if (file_fd < 0)
             {
-                errno = EBADF; // Bad file descriptor
+                error = EBADF; // Bad file descriptor
                 return -1;
             }
 
@@ -760,7 +766,7 @@ namespace
         {
             if (fd < 0)
             {
-                errno = EBADF;
+                error = EBADF;
                 return -1;
             }
 
@@ -821,7 +827,7 @@ namespace
                 new_termios.c_iflag &= ~(IXON | ICRNL); // Disable flow control and CR to NL translation
                 new_termios.c_oflag &= ~(OPOST); // Disable output processing
                 new_termios.c_cflag |= (CS8 | CREAD); // 8-bit characters and enable receiver
-                new_termios.c_cc[VMIN] = 0;
+                new_termios.c_cc[VMIN] = 1;
                 new_termios.c_cc[VTIME] = 0; 
                 tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
             }
