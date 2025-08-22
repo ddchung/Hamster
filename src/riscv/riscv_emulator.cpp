@@ -423,12 +423,14 @@ namespace Hamster
 
         if (!memory)
         {
+            _trace("RiscVEmulator: Memory not initialized!\n");
             result.status = ExecuteResult::Status::Error;
             return result;
         }
 
         if ((PERM_READ | PERM_EXEC) & ~memory->memory.get_permissions(pc))
         {
+            _trace("RiscVEmulator: Execute from non-executable address 0x%08x\n", pc);
             result.status = ExecuteResult::Status::IllegalLoad;
             result.illegal_load.address = pc;
             return result;
@@ -436,6 +438,7 @@ namespace Hamster
 
         if (read32(pc, inst) != 0)
         {
+            _trace("RiscVEmulator: Failed to read instruction at 0x%08x\n", pc);
             result.status = ExecuteResult::Status::IllegalLoad;
             result.illegal_load.address = pc;
             return result;
@@ -555,6 +558,7 @@ namespace Hamster
                     break;
                 default:
                     // Unknown funct3
+                    _trace("RiscVEmulator: Unknown funct3 for OP_REG, instruction: 0x%08x\n", inst);
                     result.status = ExecuteResult::Status::IllegalInstruction;
                     result.illegal_instruction.instruction = inst;
                     return result;
@@ -609,6 +613,7 @@ namespace Hamster
                 break;
             default:
                 // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_IMM, instruction: 0x%08x\n", inst);
                 result.status = ExecuteResult::Status::IllegalInstruction;
                 result.illegal_instruction.instruction = inst;
                 return result;
@@ -625,6 +630,7 @@ namespace Hamster
                 uint8_t value;
                 if (read8(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
                 {
+                    _trace("RiscVEmulator: LB: Failed to load 8-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_i(inst));
                     result.status = ExecuteResult::Status::IllegalLoad;
                     result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
                     return result;
@@ -637,6 +643,7 @@ namespace Hamster
                 uint16_t value;
                 if (read16(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
                 {
+                    _trace("RiscVEmulator: LH: Failed to load 16-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_i(inst));
                     result.status = ExecuteResult::Status::IllegalLoad;
                     result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
                     return result;
@@ -649,6 +656,7 @@ namespace Hamster
                 uint32_t value;
                 if (read32(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
                 {
+                    _trace("RiscVEmulator: LW: Failed to load 32-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_i(inst));
                     result.status = ExecuteResult::Status::IllegalLoad;
                     result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
                     return result;
@@ -661,6 +669,7 @@ namespace Hamster
                 uint8_t value;
                 if (read8(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
                 {
+                    _trace("RiscVEmulator: LBU: Failed to load 8-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_i(inst));
                     result.status = ExecuteResult::Status::IllegalLoad;
                     result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
                     return result;
@@ -673,6 +682,7 @@ namespace Hamster
                 uint16_t value;
                 if (read16(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
                 {
+                    _trace("RiscVEmulator: LHU: Failed to load 16-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_i(inst));
                     result.status = ExecuteResult::Status::IllegalLoad;
                     result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
                     return result;
@@ -682,6 +692,7 @@ namespace Hamster
             break;
             default:
                 // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_LOAD, instruction: 0x%08x\n", inst);
                 result.status = ExecuteResult::Status::IllegalInstruction;
                 result.illegal_instruction.instruction = inst;
                 return result;
@@ -698,6 +709,7 @@ namespace Hamster
                 uint8_t value = x[extract_rs2(inst)] & 0xFF;
                 if (write8(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
                 {
+                    _trace("RiscVEmulator: SB: Failed to store 8-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_s(inst));
                     result.status = ExecuteResult::Status::IllegalStore;
                     result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
                     result.illegal_store.value = value;
@@ -710,6 +722,7 @@ namespace Hamster
                 uint16_t value = x[extract_rs2(inst)] & 0xFFFF;
                 if (write16(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
                 {
+                    _trace("RiscVEmulator: SH: Failed to store 16-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_s(inst));
                     result.status = ExecuteResult::Status::IllegalStore;
                     result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
                     result.illegal_store.value = value;
@@ -722,6 +735,7 @@ namespace Hamster
                 uint32_t value = x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
                 {
+                    _trace("RiscVEmulator: SW: Failed to store 32-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_s(inst));
                     result.status = ExecuteResult::Status::IllegalStore;
                     result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
                     result.illegal_store.value = value;
@@ -731,6 +745,7 @@ namespace Hamster
             break;
             default:
                 // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_STORE, instruction: 0x%08x\n", inst);
                 result.status = ExecuteResult::Status::IllegalInstruction;
                 result.illegal_instruction.instruction = inst;
                 return result;
@@ -750,6 +765,7 @@ namespace Hamster
                     uint32_t dummy;
                     if (read32(new_pc, dummy) != 0)
                     {
+                        _trace("RiscVEmulator: BEQ: Branch to unreadable address 0x%08x\n", new_pc);
                         result.status = ExecuteResult::Status::IllegalLoad;
                         result.illegal_load.address = new_pc;
                         return result;
@@ -765,6 +781,7 @@ namespace Hamster
                     uint32_t dummy;
                     if (read32(new_pc, dummy) != 0)
                     {
+                        _trace("RiscVEmulator: BNE: Branch to unreadable address 0x%08x\n", new_pc);
                         result.status = ExecuteResult::Status::IllegalLoad;
                         result.illegal_load.address = new_pc;
                         return result;
@@ -780,6 +797,7 @@ namespace Hamster
                     uint32_t dummy;
                     if (read32(new_pc, dummy) != 0)
                     {
+                        _trace("RiscVEmulator: BLT: Branch to unreadable address 0x%08x\n", new_pc);
                         result.status = ExecuteResult::Status::IllegalLoad;
                         result.illegal_load.address = new_pc;
                         return result;
@@ -795,6 +813,7 @@ namespace Hamster
                     uint32_t dummy;
                     if (read32(new_pc, dummy) != 0)
                     {
+                        _trace("RiscVEmulator: BGE: Branch to unreadable address 0x%08x\n", new_pc);
                         result.status = ExecuteResult::Status::IllegalLoad;
                         result.illegal_load.address = new_pc;
                         return result;
@@ -810,6 +829,7 @@ namespace Hamster
                     uint32_t dummy;
                     if (read32(new_pc, dummy) != 0)
                     {
+                        _trace("RiscVEmulator: BLTU: Branch to unreadable address 0x%08x\n", new_pc);
                         result.status = ExecuteResult::Status::IllegalLoad;
                         result.illegal_load.address = new_pc;
                         return result;
@@ -825,6 +845,7 @@ namespace Hamster
                     uint32_t dummy;
                     if (read32(new_pc, dummy) != 0)
                     {
+                        _trace("RiscVEmulator: BGEU: Branch to unreadable address 0x%08x\n", new_pc);
                         result.status = ExecuteResult::Status::IllegalLoad;
                         result.illegal_load.address = new_pc;
                         return result;
@@ -834,6 +855,7 @@ namespace Hamster
                 break;
             default:
                 // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_BRANCH, instruction: 0x%08x\n", inst);
                 result.status = ExecuteResult::Status::IllegalInstruction;
                 result.illegal_instruction.instruction = inst;
                 return result;
@@ -848,6 +870,7 @@ namespace Hamster
             uint32_t dummy;
             if (read32(new_pc, dummy) != 0)
             {
+                _trace("RiscVEmulator: JAL: Jump to unreadable address 0x%08x\n", new_pc);
                 result.status = ExecuteResult::Status::IllegalLoad;
                 result.illegal_load.address = new_pc;
                 return result;
@@ -864,6 +887,7 @@ namespace Hamster
             uint32_t dummy;
             if (read32(new_pc, dummy) != 0)
             {
+                _trace("RiscVEmulator: JALR: Jump to unreadable address 0x%08x\n", new_pc);
                 result.status = ExecuteResult::Status::IllegalLoad;
                 result.illegal_load.address = new_pc;
                 return result;
@@ -927,6 +951,7 @@ namespace Hamster
                         break;
                     default:
                         // Unknown CSR
+                        _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", inst);
                         result.status = ExecuteResult::Status::IllegalInstruction;
                         result.illegal_instruction.instruction = inst;
                         return result;
@@ -953,6 +978,7 @@ namespace Hamster
                         break;
                     default:
                         // Unknown CSR
+                        _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", inst);
                         result.status = ExecuteResult::Status::IllegalInstruction;
                         result.illegal_instruction.instruction = inst;
                         return result;
@@ -979,6 +1005,7 @@ namespace Hamster
                         break;
                     default:
                         // Unknown CSR
+                        _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", inst);
                         result.status = ExecuteResult::Status::IllegalInstruction;
                         result.illegal_instruction.instruction = inst;
                         return result;
@@ -1007,6 +1034,7 @@ namespace Hamster
                         break;
                     default:
                         // Unknown CSR
+                        _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", inst);
                         result.status = ExecuteResult::Status::IllegalInstruction;
                         result.illegal_instruction.instruction = inst;
                         return result;
@@ -1033,6 +1061,7 @@ namespace Hamster
                         break;
                     default:
                         // Unknown CSR
+                        _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", inst);
                         result.status = ExecuteResult::Status::IllegalInstruction;
                         result.illegal_instruction.instruction = inst;
                         return result;
@@ -1059,6 +1088,7 @@ namespace Hamster
                         break;
                     default:
                         // Unknown CSR
+                        _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", inst);
                         result.status = ExecuteResult::Status::IllegalInstruction;
                         result.illegal_instruction.instruction = inst;
                         return result;
@@ -1067,6 +1097,7 @@ namespace Hamster
                 break;
             default:
                 // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_CSR, instruction: 0x%08x\n", inst);
                 result.status = ExecuteResult::Status::IllegalInstruction;
                 result.illegal_instruction.instruction = inst;
                 return result;
@@ -1111,6 +1142,7 @@ namespace Hamster
                 uint32_t val;
                 if (read32(x[extract_rs1(inst)], val) != 0)
                 {
+                    _trace("RiscVEmulator: LR: Load from unreadable address 0x%08x\n", x[extract_rs1(inst)]);
                     result.status = ExecuteResult::Status::IllegalLoad;
                     result.illegal_load.address = x[extract_rs1(inst)];
                     return result;
@@ -1132,6 +1164,7 @@ namespace Hamster
                 uint32_t val = x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], val) != 0)
                 {
+                    _trace("RiscVEmulator: SC: Store to bad address 0x%08x\n", x[extract_rs1(inst)]);
                     result.status = ExecuteResult::Status::IllegalStore;
                     result.illegal_store.address = x[extract_rs1(inst)];
                     result.illegal_store.value = val;
@@ -1147,6 +1180,7 @@ namespace Hamster
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
                 {
+                    _trace("RiscVEmulator: AMOSWAP: Swap from unreadable address 0x%08x\n", x[extract_rs1(inst)]);
                     result.status = ExecuteResult::Status::IllegalLoad;
                     result.illegal_load.address = x[extract_rs1(inst)];
                     return result;
@@ -1154,6 +1188,7 @@ namespace Hamster
                 uint32_t new_val = x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
                 {
+                    _trace("RiscVEmulator: AMOSWAP: Swap to unwritable address 0x%08x\n", x[extract_rs1(inst)]);
                     result.status = ExecuteResult::Status::IllegalStore;
                     result.illegal_store.address = x[extract_rs1(inst)];
                     result.illegal_store.value = new_val;
@@ -1168,6 +1203,7 @@ namespace Hamster
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
                 {
+                    _trace("RiscVEmulator: AMOADD: Load from unreadable address 0x%08x\n", x[extract_rs1(inst)]);   
                     result.status = ExecuteResult::Status::IllegalLoad;
                     result.illegal_load.address = x[extract_rs1(inst)];
                     return result;
@@ -1175,6 +1211,7 @@ namespace Hamster
                 uint32_t new_val = old_val + x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
                 {
+                    _trace("RiscVEmulator: AMOADD: Store to unwritable address 0x%08x\n", x[extract_rs1(inst)]);
                     result.status = ExecuteResult::Status::IllegalStore;
                     result.illegal_store.address = x[extract_rs1(inst)];
                     result.illegal_store.value = new_val;
@@ -1189,6 +1226,7 @@ namespace Hamster
                 uint32_t old_val;
                 if (read32(x[extract_rs1(inst)], old_val) != 0)
                 {
+                    _trace("RiscVEmulator: AMOAND: Load from unreadable address 0x%08x\n", x[extract_rs1(inst)]);
                     result.status = ExecuteResult::Status::IllegalLoad;
                     result.illegal_load.address = x[extract_rs1(inst)];
                     return result;
@@ -1196,6 +1234,7 @@ namespace Hamster
                 uint32_t new_val = old_val & x[extract_rs2(inst)];
                 if (write32(x[extract_rs1(inst)], new_val) != 0)
                 {
+                    _trace("RiscVEmulator: AMOAND: Store to unwritable address 0x%08x\n", x[extract_rs1(inst)]);
                     result.status = ExecuteResult::Status::IllegalStore;
                     result.illegal_store.address = x[extract_rs1(inst)];
                     result.illegal_store.value = new_val;
