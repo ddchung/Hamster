@@ -399,7 +399,7 @@ namespace Hamster
              * @brief Check if a file exists, and potentially if it is read|write|execute accessible
              * @note Userspace sig: `long faccessat(int dirfd, const char *pathname, int mode);`
              */
-            FACCESSAT = 48,
+            FACCESSAT = 48,//
 
             /**
              * @brief Check if a file exists, and potentially if it is read|write|execute accessible
@@ -407,7 +407,7 @@ namespace Hamster
              * and potentially checks if it is readable, writable, or executable.
              * @note Userspace sig: `long faccessat2(int dirfd, const char *pathname, int mode, int flags);`
              */
-            FACCESSAT2 = 439,
+            FACCESSAT2 = 439,//
 
             /**
              * @brief Create an unnamed pipe
@@ -415,7 +415,7 @@ namespace Hamster
              * be used for inter-process communication.
              * @note Userspace sig: `int pipe(int pipefd[2], int flags);`
              */
-            PIPE2 = 59,
+            PIPE2 = 59,//
 
             /**
              * @brief Set the program data's end (the break)
@@ -428,7 +428,7 @@ namespace Hamster
              * This system call maps a file or device into memory, allowing it to be accessed as if it were part of the process's address space.
              * @note Userspace sig: `void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);`
              */
-            MMAP2 = 222,
+            MMAP2 = 222,//
 
             /**
              * @brief Remap a memory region
@@ -442,14 +442,14 @@ namespace Hamster
              * This system call unmaps a previously mapped memory region, releasing the resources associated with it.
              * @note Userspace sig: `int munmap(void *addr, size_t length);`
              */
-            MUNMAP = 215,
+            MUNMAP = 215,//
 
             /**
              * @brief Change the protection of a memory region
              * This system call changes the memory protection of a specified memory region, allowing or disallowing access to it.
              * @note Userspace sig: `int mprotect(void *addr, size_t len, int prot);`
              */
-            MPROTECT = 226,
+            MPROTECT = 226,//
 
             /**
              * @brief Extended stat
