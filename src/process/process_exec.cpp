@@ -216,7 +216,7 @@ namespace Hamster
         // [ program ] [ brk space ] [ mmap allocation >*< stack ]
         //                                              *
         //                            sliding  boundary *
-        memory_space.set_next_mmap(brk + (HAMSTER_STACK_TOP - brk) / 4);
+        memory_space.set_next_mmap((brk + (HAMSTER_STACK_TOP - brk) / 4) & ~(HAMSTER_PAGE_SIZE - 1));
 
         return 0;
     }
