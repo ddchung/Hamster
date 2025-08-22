@@ -39,6 +39,8 @@ namespace Hamster
             current_task->memory->obj.memory.memcpy(arg, IOCTL_BUF, sizeof(IOCTL_BUF));
         }
 
+        if (result == -1)
+            return cvt_error();
         return result;
     }
     
