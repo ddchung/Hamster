@@ -19,8 +19,9 @@ namespace Hamster
         Task *current_task = scheduler.get_current_task();
         assert(current_task != nullptr && "No current task");
 
-        if (sys_faccessat(dfd, path_loc, 0b101) < 0)
-            return -EACCES;
+        int32_t acc = sys_faccessat(dfd, path_loc, 0b101);
+        if (acc < 0)
+            return acc;
 
         // Get the path
         char *path = current_task->memory->obj.memory.get_string(path_loc);
