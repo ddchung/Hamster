@@ -10,124 +10,16 @@
 #include <memory/allocator.hpp>
 #include <filesystem/device_manager.hpp>
 #include <driver/base_tty.hpp>
+#include <driver/base_romfs.hpp>
 #include <errno/errno.h>
 #include <o1heap.h>
 
 using namespace Hamster;
 
+#define HAMSTER_ROOT_IMG "/rootfs.img"
+
 namespace
 {
-    void recursive_copy_to_vfs(const char *sd_path, int vfs_dir_fd)
-    {
-        if (!sd_path || vfs_dir_fd < 0)
-            return;
-
-        SdFile dir;
-        if (!dir.open(sd_path, O_READ))
-        {
-            // Failed to open SD directory
-            return;
-        }
-
-        SdFile entry;
-        while (entry.openNext(&dir, O_RDONLY))
-        {
-            static char entry_name[13];
-            entry.getName(entry_name, sizeof(entry_name));
-
-            // Skip "." and ".."
-            if (strcmp(entry_name, ".") == 0 || strcmp(entry_name, "..") == 0)
-            {
-                entry.close();
-                continue;
-            }
-
-            if (entry.isDir())
-            {
-                // Directory: create in VFS and recurse
-
-                int new_vfs_dir = vfs.mkdirat(vfs_dir_fd, entry_name, OPEN_RDWR, 0755);
-                if (new_vfs_dir >= 0)
-                {
-                    // Construct full path for recursion
-                    size_t path_len = strlen(sd_path) + strlen(entry_name) + 2;
-                    char *new_sd_path = alloc<char>(path_len);
-                    if (new_sd_path)
-                    {
-                        snprintf(new_sd_path, path_len, "%s/%s", sd_path, entry_name);
-                        recursive_copy_to_vfs(new_sd_path, new_vfs_dir);
-                        dealloc(new_sd_path);
-                    }
-                    vfs.close(new_vfs_dir);
-                }
-            }
-            else
-            {
-                // Symlinks are supported by naming a regular file with the prefix `hsln_`
-
-                if (strncmp(entry_name, "hsln_", 5) == 0)
-                {
-                    // Read the file data
-
-                    static char buf[64];
-                    buf[0] = '\0';
-                    entry.seekSet(0);
-                    int len = entry.read(buf, sizeof(buf) - 1);
-                    if (len > 0)
-                    {
-                        buf[len] = '\0';
-                        _trace("Making symlink '%s' -> '%s'\n", entry_name + 5, buf);
-                        vfs.symlinkat(vfs_dir_fd, entry_name + 5, (const char *)buf);
-                    }
-                }
-                else
-                {
-                    int file_fd = vfs.openat(vfs_dir_fd, entry_name, OPEN_CREAT | OPEN_RDWR | OPEN_EXCL, 0755);
-                    if (file_fd >= 0)
-                    {
-                        // Copy contents from SdFat file to VFS file
-
-                        if (vfs.seek(file_fd, 0, H_SEEK_SET) < 0)
-                        {
-                            vfs.close(file_fd);
-                            entry.close();
-                            continue;
-                        }
-
-                        static char buffer[4096];
-                        int32_t bytes_read;
-
-                        // Read from SdFat file
-                        entry.seekSet(0);
-                        while ((bytes_read = entry.read(buffer, sizeof(buffer))) > 0)
-                        {
-                            int32_t bytes_written = vfs.write(file_fd, (uint8_t *)buffer, bytes_read);
-                            if (bytes_written < 0)
-                                break;
-                            // Write remainder if partial write
-                            int32_t total_written = bytes_written;
-                            while (total_written < bytes_read)
-                            {
-                                int32_t w = vfs.write(file_fd, (uint8_t *)buffer + total_written, bytes_read - total_written);
-                                if (w < 0)
-                                    break;
-                                total_written += w;
-                            }
-                            if (total_written < bytes_read)
-                                break;
-                        }
-
-                        vfs.close(file_fd);
-                    }
-                }
-            }
-
-            entry.close();
-        }
-
-        dir.close();
-    }
-
     class TeensyTTYBackend
     {
     public:
@@ -182,6 +74,27 @@ namespace
         }
     };
 
+    class ArduinoRomFsBackend
+    {
+    public:
+        ArduinoRomFsBackend()
+        {
+            rootfs_file.open(HAMSTER_ROOT_IMG, O_RDONLY);
+        }
+        ~ArduinoRomFsBackend()
+        {
+            rootfs_file.close();
+        }
+
+        ssize_t read(uint32_t loc, void *buf, size_t count)
+        {
+            rootfs_file.seekSet(loc);
+            return rootfs_file.read(buf, count);
+        }
+    private:
+        SdFile rootfs_file;
+    };
+
     O1HeapInstance *ext_heap;
     O1HeapInstance *ram2_heap;
     EXTMEM uint8_t extmem_buffer[16 * 1024 * 1024];
@@ -221,14 +134,7 @@ int Hamster::_init_platform()
 
 int Hamster::_mount_rootfs()
 {
-    vfs.mount("/", alloc<RamFs>());
-
-    int rootfd = vfs.open("/", OPEN_RDWR);
-    if (rootfd < 0)
-        return -1;
-    recursive_copy_to_vfs("/rootfs", rootfd);
-    vfs.close(rootfd);
-
+    vfs.mount("/", alloc<BaseRomFs<ArduinoRomFsBackend>>());
     Hamster::vfs.mkdir("/dev", 0755);
     Hamster::vfs.mkdir("/tmp", 0755);
     BaseFilesystem *ramfs = Hamster::alloc<Hamster::RamFs>();

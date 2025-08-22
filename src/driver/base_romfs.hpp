@@ -275,6 +275,7 @@ namespace Hamster
 
         buf->size = file_struct.size;
         buf->mode = get_mode();
+        buf->ino = file_loc;
 
         return 0;
     }
