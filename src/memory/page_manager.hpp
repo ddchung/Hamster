@@ -27,6 +27,7 @@ namespace Hamster
             uint32_t swapped : 1; // Note: a lazy-loaded file mapping is considered swapped
             uint32_t dirty : 1;
             uint32_t perms : 3;
+            uint32_t zero : 1;
         };
     public:
         PageManager() = default;

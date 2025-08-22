@@ -48,6 +48,7 @@ namespace Hamster
         entry->dirty = 0;
         entry->perms = perms;
         entry->refcount = 1;
+        entry->zero = 1;
         return id;
     }
 
@@ -61,6 +62,10 @@ namespace Hamster
         PageEntry *entry = page_table[id];
         entry->fd = fd;
         entry->offset = offset;
+
+        // clear zero, since this is a file mapping, 
+        // and swap_in skips everything else if `zero` is set
+        entry->zero = 0;
 
         return id;
     }
@@ -187,6 +192,13 @@ namespace Hamster
         {
             eviction_queue.push_back(id);
             ++entry->eviction_queue_count;
+        }
+
+        if (entry->zero)
+        {
+            entry->zero = 0;
+            memset(entry->data, 0, HAMSTER_PAGE_SIZE);
+            return 0;
         }
 
         if (entry->fd == -1)

@@ -38,12 +38,6 @@ namespace Hamster
             if (file_size < 0)
                 return -EIO;
         }
-        else
-        {
-            // anonymous mapping
-            if (fd != -1)
-                return -EINVAL; // fd must be -1 for anonymous mappings
-        }
 
         uint8_t internal_perms = 0
             | (prot & H_PROT_READ ? PERM_READ : 0)
@@ -80,7 +74,6 @@ namespace Hamster
         if (flags & H_MAP_ANONYMOUS)
         {
             memory.map_anonymous(internal_addr, length, internal_perms);
-            memory.memset(internal_addr, 0, length);
         }
         else
         {
