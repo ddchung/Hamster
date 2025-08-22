@@ -401,38 +401,34 @@ namespace Hamster
         {
             // Get the special file handle
             BaseSpecialDriverHandle *handle = get_special_handle((BaseSpecialFile *)file);
-            if (!handle)
+            if (handle)
             {
-                dealloc(file);
-                error = EBADF;
-                return -1;
+                buf->mode &= ~STAT_IFMT; // Clear the file type bits
+
+                switch (handle->special_type())
+                {
+                    case SpecialFileType::CharacterDevice:
+                        buf->mode |= STAT_IFCHR;
+                        break;
+                    case SpecialFileType::BlockDevice:
+                        buf->mode |= STAT_IFBLK;
+                        break;
+                    case SpecialFileType::Socket:
+                        buf->mode |= STAT_IFSOCK;
+                        break;
+                    case SpecialFileType::Fifo:
+                        buf->mode |= STAT_IFIFO;
+                        break;
+                    default:
+                        // Do nothing for other types
+                        break;
+                }
+
+                // we must delete the handle here, because this file isn't owned by
+                // the file descriptor manager, and thus won't have the handle deleted
+                // automatically.
+                dealloc(handle);
             }
-
-            buf->mode &= ~STAT_IFMT; // Clear the file type bits
-
-            switch (handle->special_type())
-            {
-                case SpecialFileType::CharacterDevice:
-                    buf->mode |= STAT_IFCHR;
-                    break;
-                case SpecialFileType::BlockDevice:
-                    buf->mode |= STAT_IFBLK;
-                    break;
-                case SpecialFileType::Socket:
-                    buf->mode |= STAT_IFSOCK;
-                    break;
-                case SpecialFileType::Fifo:
-                    buf->mode |= STAT_IFIFO;
-                    break;
-                default:
-                    // Do nothing for other types
-                    break;
-            }
-
-            // we must delete the handle here, because this file isn't owned by
-            // the file descriptor manager, and thus won't have the handle deleted
-            // automatically.
-            dealloc(handle);
         }
 
         dealloc(file);
