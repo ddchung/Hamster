@@ -15,13 +15,19 @@ namespace Hamster
     constexpr int PERM_WRITE = 0b010;
     constexpr int PERM_EXEC = 0b001;
 
+    struct FileMappingFD
+    {
+        int fd;
+        uint32_t refcount;
+    };
+
     class PageManager
     {
         struct PageEntry
         {
             int64_t offset;
             uint8_t *data;
-            int fd;
+            FileMappingFD *fd;
             uint32_t refcount : 4;
             uint32_t eviction_queue_count : 4;
             uint32_t swapped : 1; // Note: a lazy-loaded file mapping is considered swapped
@@ -46,13 +52,13 @@ namespace Hamster
 
         /**
          * @brief Get a new page that has a private file mapping
-         * @param fd The file descriptor of the file to map
+         * @param fd The file descriptor of the file to map. Takes ownership.
          * @param offset The offset within the file to map
          * @param perms The permissions of the page. Defaults to RW
          * @return The ID of the new page
          * @note This takes ownership of the file descriptor
          */
-        uint32_t mmap_private(int fd, int64_t offset, uint8_t perms = PERM_READ | PERM_WRITE);
+        uint32_t mmap_private(FileMappingFD *fd, int64_t offset, uint8_t perms = PERM_READ | PERM_WRITE);
 
         /**
          * @brief Copy a page with copy-on-write management

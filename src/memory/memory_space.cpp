@@ -208,15 +208,22 @@ namespace Hamster
         loc = ROUND_DOWN_PAGE(loc);
         next_mmap = std::max<uint32_t>(next_mmap, loc + size);
 
+        FileMappingFD *fmfd = alloc<FileMappingFD>();
+        fmfd->fd = vfs.dup(fd);
+        fmfd->refcount = 0;
+
+        if (fmfd->fd < 0)
+        {
+            dealloc(fmfd);
+            return -1;
+        }
+
         for (uint32_t addr = loc; addr <= loc + size; addr += HAMSTER_PAGE_SIZE)
         {
             auto it = page_table.find(addr);
             if (it != page_table.end())
                 page_manager.free_page(it->second);
-            int cloned = vfs.dup(fd);
-            if (cloned < 0)
-                return -1;
-            page_table[addr] = page_manager.mmap_private(cloned, offset + (addr - loc), perms);
+            page_table[addr] = page_manager.mmap_private(fmfd, offset + (addr - loc), perms);
         }
         return 0;
     }

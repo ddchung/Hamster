@@ -15,7 +15,15 @@ namespace Hamster
         {
             if (entry && --entry->refcount == 0)
             {
+                
                 _free(entry->data);
+                if (entry->fd && --entry->fd->refcount == 0)
+                {
+                    // Note: we cannot close the file descriptors here
+                    // since `vfs` might be destroyed before us
+                    // but we still have to free the FileMappingFD's
+                    dealloc(entry->fd);
+                }
                 dealloc(entry);
             }
         }
@@ -42,7 +50,7 @@ namespace Hamster
         assert(entry == nullptr);
         entry = alloc<PageEntry>();
         entry->data = nullptr;
-        entry->fd = -1;
+        entry->fd = nullptr;
         entry->eviction_queue_count = 0;
         entry->swapped = 1;
         entry->dirty = 0;
@@ -52,15 +60,16 @@ namespace Hamster
         return id;
     }
 
-    uint32_t PageManager::mmap_private(int fd, int64_t offset, uint8_t perms)
+    uint32_t PageManager::mmap_private(FileMappingFD *fd, int64_t offset, uint8_t perms)
     {
         // Check if the file descriptor is valid
-        if (vfs.seek(fd, offset, H_SEEK_SET) < 0)
+        if (vfs.seek(fd->fd, offset, H_SEEK_SET) < 0)
             return 0;
 
         uint32_t id = allocate_page(perms);
         PageEntry *entry = page_table[id];
         entry->fd = fd;
+        fd->refcount++;
         entry->offset = offset;
 
         // clear zero, since this is a file mapping, 
@@ -81,8 +90,11 @@ namespace Hamster
         if (--entry->refcount == 0)
         {
             _free(entry->data);
-            if (entry->fd != -1)
-                vfs.close(entry->fd);
+            if (entry->fd && --entry->fd->refcount == 0)
+            {
+                vfs.close(entry->fd->fd);
+                dealloc(entry->fd);
+            }
             dealloc(entry);
         }
         entry = nullptr;
@@ -180,7 +192,7 @@ namespace Hamster
         assert(entry->data == nullptr);
 
         // Ensure that if it is a file mapping, the file descriptor is OK
-        if (entry->fd != -1 && vfs.seek(entry->fd, entry->offset, H_SEEK_SET) < 0)
+        if (entry->fd && vfs.seek(entry->fd->fd, entry->offset, H_SEEK_SET) < 0)
             return -1;
 
         // use _malloc instead of alloc<uint8_t> to avoid
@@ -201,7 +213,7 @@ namespace Hamster
             return 0;
         }
 
-        if (entry->fd == -1)
+        if (!entry->fd)
         {
             // Anonymous mapping
             // Swap in the page
@@ -211,11 +223,16 @@ namespace Hamster
         else
         {
             // Private file mapping
-            if (vfs.read(entry->fd, entry->data, HAMSTER_PAGE_SIZE) < 0)
+            if (vfs.read(entry->fd->fd, entry->data, HAMSTER_PAGE_SIZE) < 0)
                 return -1;
             // Convert to anonymous mapping, since it behaves like one now
-            vfs.close(entry->fd);
-            entry->fd = -1;
+
+            if (--entry->fd->refcount == 0)
+            {
+                vfs.close(entry->fd->fd);
+                dealloc(entry->fd);
+            }
+            entry->fd = nullptr;
             return 0;
         }
     }
