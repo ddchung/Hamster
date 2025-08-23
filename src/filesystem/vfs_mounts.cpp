@@ -167,15 +167,21 @@ namespace Hamster
             int get_flags = flags;
             if ((flags & OPEN_CREAT) == 0) get_flags &= ~OPEN_DIRECTORY;
             BaseFile *file = dir->get(path, get_flags, mode);
-            dealloc(dir);
             if (!file)
+            {
+                dealloc(dir);
                 return nullptr;
+            }
             if (file->type() == FileType::Symlink && !(flags & OPEN_NOFOLLOW))
             {
-                file = resolve_symlink((BaseSymlink *)file, flags);
+                file = resolve_symlink((BaseSymlink *)file, flags, dir);
+                dir = nullptr;
                 if (!file)
+                {
                     return nullptr;
+                }
             }
+            dealloc(dir);
             if (file->type() != FileType::Directory && (flags & OPEN_DIRECTORY))
             {
                 dealloc(file);

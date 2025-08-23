@@ -21,7 +21,7 @@ namespace Hamster
             if (new_brk < brk)
             {
                 // Unmap some pages
-                if (current_task->get_memory().unmap(new_brk, brk - new_brk) < 0)
+                if (current_task->get_memory().unmap(new_brk + (HAMSTER_PAGE_SIZE - 1), brk - new_brk) < 0)
                 {
                     error = EFAULT;
                     return -1;
