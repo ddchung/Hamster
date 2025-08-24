@@ -403,6 +403,9 @@ namespace Hamster
     inline constexpr int H_MAP_SHARED_VALIDATE = 0x03;     /* share + validate extension flags */
     inline constexpr int H_MAP_DROPPABLE = 0x08;           /* Zero memory under memory pressure. */
 
+    inline constexpr int H_CLOCK_REALTIME = 0;
+    inline constexpr int H_CLOCK_MONOTONIC = 1;
+
     inline constexpr uint8_t H_SIGHAND_TRAMPOLINE[] = {
         // li a7,139 # SyscallID::RT_SIGRETURN
         0x93, 0x08, 0xb0, 0x08,

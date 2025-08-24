@@ -40,6 +40,13 @@ namespace Hamster
     int error{0};
 
     /**
+     * CLOCK_REALTIME
+     * requires: none
+     * provides: clock_rt_offset
+     */
+    int32_t clock_rt_offset{0};
+
+    /**
      * Kernel Scheduler
      * requires: allocator, error
      * provides: kscheduler
