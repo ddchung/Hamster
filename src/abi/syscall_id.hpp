@@ -640,7 +640,7 @@ namespace Hamster
 
             /**
              * @brief Sleep for a certain time
-             * @note Userspace sig: `int clock_nanosleep_time64(clockid_t clock_id, const struct timespec *req, struct timespec *rem);`
+             * @note Userspace sig: `int clock_nanosleep_time64(clockid_t clock_id, int flags, const struct timespec *req, struct timespec *rem);`
              */
             CLOCK_NANOSLEEP_TIME64 = 407,
 

@@ -607,7 +607,7 @@ namespace Hamster
     __attribute__((weak)) int32_t sys_fdatasync(int32_t fd) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_clock_getres_time64(int32_t clock_id, uint32_t res_loc) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_clock_gettime64(int32_t clock_id, uint32_t tp_loc) { return -ENOSYS; }
-    __attribute__((weak)) int32_t sys_clock_nanosleep_time64(int32_t clock_id, uint32_t req_loc, uint32_t rem_loc) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_clock_nanosleep_time64(int32_t clock_id, int32_t flags, uint32_t req_loc, uint32_t rem_loc) { return -ENOSYS; }
     __attribute__((weak)) int32_t sys_clock_settime64(int32_t clock_id, uint32_t tp_loc) { return -ENOSYS; }
 } // namespace Hamster
 

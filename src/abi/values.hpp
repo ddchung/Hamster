@@ -406,6 +406,8 @@ namespace Hamster
     inline constexpr int H_CLOCK_REALTIME = 0;
     inline constexpr int H_CLOCK_MONOTONIC = 1;
 
+    inline constexpr int H_TIMER_ABSTIME = 1;
+
     inline constexpr uint8_t H_SIGHAND_TRAMPOLINE[] = {
         // li a7,139 # SyscallID::RT_SIGRETURN
         0x93, 0x08, 0xb0, 0x08,
