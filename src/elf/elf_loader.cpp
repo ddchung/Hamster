@@ -88,13 +88,6 @@ namespace Hamster
                     return -1;
                 }
 
-                // Copy the program header to the memory space
-                if (mem_space.memcpy_alloc(HAMSTER_STACK_TOP + 1 + i * sizeof(phdr), &phdr, sizeof(phdr)) != 0)
-                {
-                    error = EIO;
-                    return -1;
-                }
-
                 if (phdr.p_type == PT_LOAD)
                 {
                     // Load segment
