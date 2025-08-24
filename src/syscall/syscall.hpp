@@ -150,7 +150,9 @@ namespace Hamster
     int32_t sys_pselect6_time64(int32_t nfds, uint32_t readfds_loc,
                                 uint32_t writefds_loc, uint32_t exceptfds_loc,
                                 uint32_t timeout_loc, uint32_t sigmask_loc);
-    
+    int32_t sys_fsync(int32_t fd);
+    int32_t sys_fdatasync(int32_t fd);
+
     /**
      * @brief Call a system call
      * @param sys_id The system call ID to call, one of `Hamster::SyscallID::*`

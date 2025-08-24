@@ -410,6 +410,14 @@ namespace Hamster
             result = syscall(sys_pselect6_time64);
             arg_count = num_args(sys_pselect6_time64);
             break;
+        case SyscallID::FSYNC:
+            result = syscall(sys_fsync);
+            arg_count = num_args(sys_fsync);
+            break;
+        case SyscallID::FDATASYNC:
+            result = syscall(sys_fdatasync);
+            arg_count = num_args(sys_fdatasync);
+            break;
         default:
             // Unsupported syscall ID
             result = -ENOSYS;
@@ -579,5 +587,7 @@ namespace Hamster
     __attribute__((weak)) int32_t sys_pselect6_time64(int32_t nfds, uint32_t readfds_loc,
                           uint32_t writefds_loc, uint32_t exceptfds_loc,
                           uint32_t timeout_loc, uint32_t sigmask_loc) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_fsync(int32_t fd) { return -ENOSYS; }
+    __attribute__((weak)) int32_t sys_fdatasync(int32_t fd) { return -ENOSYS; }
 } // namespace Hamster
 

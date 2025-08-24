@@ -612,6 +612,18 @@ namespace Hamster
              * @note Userspace sig: `int pselect6_time64(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask);`
              */
             PSELECT6_TIME64 = 413,//
+
+            /**
+             * @brief Sync a file and its data
+             * @note Userspace sig: `int fsync(int fd);`
+             */
+            FSYNC = 82,
+
+            /**
+             * @brief Sync a file's data, and strictly needed metadata
+             * @note Userspace sig: `int fdatasync(int fd);`
+             */
+            FDATASYNC = 83,
         };
     } // namespace SyscallID
 } // namespace Hamster
