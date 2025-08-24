@@ -624,6 +624,31 @@ namespace Hamster
              * @note Userspace sig: `int fdatasync(int fd);`
              */
             FDATASYNC = 83,
+
+            /**
+             * @brief Get the clock resolution of a specific clock
+             * Right now, all clocks have 1 millisecond resolution.
+             * @note Userspace sig: `int clock_getres_time64(clockid_t clock_id, struct timespec *res);`
+             */
+            CLOCK_GETRES_TIME64 = 406,
+
+            /**
+             * @brief Get the current time of a specific clock
+             * @note Userspace sig: `int clock_gettime64(clockid_t clock_id, struct timespec *tp);`
+             */
+            CLOCK_GETTIME64 = 403,
+
+            /**
+             * @brief Sleep for a certain time
+             * @note Userspace sig: `int clock_nanosleep_time64(clockid_t clock_id, const struct timespec *req, struct timespec *rem);`
+             */
+            CLOCK_NANOSLEEP_TIME64 = 407,
+
+            /**
+             * @brief Set the time of a specific clock
+             * @note Userspace sig: `int clock_settime64(clockid_t clock_id, const struct timespec *tp);`
+             */
+            CLOCK_SETTIME64 = 404,
         };
     } // namespace SyscallID
 } // namespace Hamster
