@@ -24,12 +24,14 @@ namespace Hamster
         case H_CLOCK_MONOTONIC:
             res.nsec = 1'000'000; // 1ms
             res.sec = 0;
-            if (current_task->copy_to_user(res, res_loc) < 0)
-                return cvt_error();
-            return 0;
+            break;
         default:
             return -EINVAL;
         }
+
+        if (current_task->copy_to_user(res, res_loc) < 0)
+            return cvt_error();
+        return 0;
     }
 } // namespace Hamster
 
