@@ -1395,4 +1395,21 @@ namespace Hamster
     {
         return data->fd_manager.get_fd(fd) != nullptr;
     }
+
+    int VFS::sync(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+        return file->sync();
+    }
+
+    int VFS::datasync(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        return file->datasync();
+    }
 } // namespace Hamster

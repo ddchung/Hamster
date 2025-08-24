@@ -543,6 +543,22 @@ namespace Hamster
          */
         bool is_valid_fd(int fd);
 
+        /**
+         * @brief Sync cached changes
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This might do nothing, depending on underlying filesystem support
+         * @note This is equivalent to POSIX `fsync`
+         */
+        int sync(int fd);
+
+        /**
+         * @brief Sync file data, and strictly necessary metadata
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This might do nothing, depending on underlying filesystem support
+         * @note This is equivalent to POSIX `fdatasync`
+         */
+        int datasync(int fd);
+
     private:
         VFSData *data;
     };
