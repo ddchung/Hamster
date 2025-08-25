@@ -25,9 +25,9 @@ namespace Hamster
         switch (clock_id)
         {
         case H_CLOCK_REALTIME:
-            ts.nsec = clock_rt_offset % 1000 * 1'000'000; // 1 million ms in ns
-            ts.sec = clock_rt_offset / 1000;
-            [[fallthrough]];
+            ts.nsec = (now + clock_rt_offset) % 1000 * 1'000'000; // 1 million ms in ns
+            ts.sec = (now + clock_rt_offset) / 1000;
+            break;
         case H_CLOCK_MONOTONIC:
             ts.nsec += now % 1000 * 1'000'000;
             ts.sec += now / 1000;

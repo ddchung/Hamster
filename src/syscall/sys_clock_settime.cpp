@@ -17,18 +17,18 @@ namespace Hamster
         sys_timespec ts;
 
         if (!ts_loc)
-            return -EINVAL;
+            return -EFAULT;
 
         if (current_task->copy_from_user(ts, ts_loc) < 0)
             return cvt_error();
 
-        uint64_t ts_ms = ts.sec * 1000 + ts.nsec / 1000000;
+        uint64_t ts_ms = ts.sec * 1000 + (ts.nsec + 500'000) / 1'000'000;
         uint64_t now = _get_sys_time();
 
         switch (clock_id)
         {
         case H_CLOCK_REALTIME:
-            clock_rt_offset = ts_ms - now;
+            clock_rt_offset = now - ts_ms;
             break;
         case H_CLOCK_MONOTONIC:
             return -EPERM;
