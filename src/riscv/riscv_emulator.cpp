@@ -415,6 +415,18 @@ namespace Hamster
         // Note that writing to unallocating memory will allocate it
         return memory->memory.memcpy(addr, &value, sizeof(value));
     }
+
+    RiscVEmulator::ExecuteResult RiscVEmulator::run()
+    {
+        ExecuteResult result;
+        for (int i = 0; i < HAMSTER_THREAD_TIME_SLICE; i++)
+        {
+            result = execute();
+            if (result.status != ExecuteResult::Status::Success)
+                break;
+        }
+        return result;
+    }
     
     RiscVEmulator::ExecuteResult RiscVEmulator::execute()
     {

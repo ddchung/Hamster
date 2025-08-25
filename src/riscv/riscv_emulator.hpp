@@ -62,11 +62,13 @@ namespace Hamster
         };
 
         /**
-         * @brief Executes a single instruction at the current PC
-         * @return ExecuteResult indicating the outcome of the execution
+         * @brief Execute HAMSTER_THREAD_TIME_SLICE instructions, or until an exception occurs
+         * @return An ExecuteResult struct containing the result of the execution
          */
-        ExecuteResult execute();
+        ExecuteResult run();
+
     private:
+        ExecuteResult execute();
         
         int read8(uint32_t addr, uint8_t &out);
         int read16(uint32_t addr, uint16_t &out);

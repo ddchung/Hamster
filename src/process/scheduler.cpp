@@ -322,67 +322,54 @@ namespace Hamster
 
         // Execute the task's instruction
         sys_siginfo siginfo = {};
-        for (uint16_t i = 0; i < HAMSTER_THREAD_TIME_SLICE; ++i)
+        
+        auto result = task.emulator.run();
+        if (result.status == RiscVEmulator::ExecuteResult::Status::ECALL)
         {
-            auto result = task.emulator.execute();
-            if (__builtin_expect(result.status == RiscVEmulator::ExecuteResult::Status::Success, 1))
-            {
-                // Successful execution, continue
-                continue;
-            }
-            else if (result.status == RiscVEmulator::ExecuteResult::Status::ECALL)
-            {
-                // Handle system call
-                int32_t syscall_id = task.emulator.x[17]; // a7 is syscall ID
-                int32_t syscall_result = Hamster::syscall(syscall_id);
-                task.emulator.x[10] = syscall_result; // a0 is syscall return value
-                break;
-            }
-            else if (result.status == RiscVEmulator::ExecuteResult::Status::EBREAK)
-            {
-                // TODO: Handle EBREAK
-                break;
-            }
+            // Handle system call
+            int32_t syscall_id = task.emulator.x[17]; // a7 is syscall ID
+            int32_t syscall_result = Hamster::syscall(syscall_id);
+            task.emulator.x[10] = syscall_result; // a0 is syscall return value
+        }
+        else if (result.status == RiscVEmulator::ExecuteResult::Status::EBREAK)
+        {
+            // TODO: Handle EBREAK
+        }
+        else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalInstruction)
+        {
+            siginfo.signo = H_SIGILL;
+            siginfo.errno_value = 0;
+            siginfo.code = H_ILL_ILLOPC;
 
-            if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalInstruction)
-            {
-                siginfo.signo = H_SIGILL;
-                siginfo.errno_value = 0;
-                siginfo.code = H_ILL_ILLOPC;
+            siginfo.fields.fault.addr = task.emulator.pc;
 
-                siginfo.fields.fault.addr = task.emulator.pc;
+            task.send_signal(siginfo);
+        }
+        else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalLoad)
+        {
+            siginfo.signo = H_SIGSEGV;
+            siginfo.errno_value = 0;
+            siginfo.code = H_SEGV_MAPERR;
 
-                task.send_signal(siginfo);
-                break;
-            }
-            else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalLoad)
-            {
-                siginfo.signo = H_SIGSEGV;
-                siginfo.errno_value = 0;
-                siginfo.code = H_SEGV_MAPERR;
+            siginfo.fields.fault.addr = task.emulator.pc;
 
-                siginfo.fields.fault.addr = task.emulator.pc;
+            task.send_signal(siginfo);
+        }
+        else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalStore)
+        {
+            siginfo.signo = H_SIGSEGV;
+            siginfo.errno_value = 0;
+            siginfo.code = H_SEGV_ACCERR;
 
-                task.send_signal(siginfo);
-                break;
-            }
-            else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalStore)
-            {
-                siginfo.signo = H_SIGSEGV;
-                siginfo.errno_value = 0;
-                siginfo.code = H_SEGV_ACCERR;
+            siginfo.fields.fault.addr = task.emulator.pc;
 
-                siginfo.fields.fault.addr = task.emulator.pc;
-
-                task.send_signal(siginfo);
-                break;
-            }
-            else if (result.status == RiscVEmulator::ExecuteResult::Status::Error)
-            {
-                // Error means that there was an internal error in the emulator
-                // so, try again next time
-                return -1;
-            }
+            task.send_signal(siginfo);
+        }
+        else if (result.status == RiscVEmulator::ExecuteResult::Status::Error)
+        {
+            // Error means that there was an internal error in the emulator
+            // so, try again next time
+            return -1;
         }
 
         task.last_tick = _get_sys_time();
