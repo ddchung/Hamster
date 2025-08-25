@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <memory/stl_map.hpp>
+#include <memory/page_table.hpp>
 #include <memory/page_manager.hpp> // for PERM_*
 #include <memory/circular_buffer.hpp>
 #include <sys/types.h>
@@ -19,14 +19,11 @@ namespace Hamster
         };
     public:
         MemorySpace() = default;
-        ~MemorySpace();
-        
-        // copy constructor/assignment makes copy-on-write pages
         MemorySpace(const MemorySpace &other);
         MemorySpace &operator=(const MemorySpace &other);
-        MemorySpace(MemorySpace &&other);
-        MemorySpace &operator=(MemorySpace &&other);
-
+        MemorySpace(MemorySpace &&other) = default;
+        MemorySpace &operator=(MemorySpace &&other) = default;
+        ~MemorySpace() = default;
         // Copy to/from external buffers into the virtual memory
         // These will fail if the memory is not mapped
 
@@ -147,7 +144,7 @@ namespace Hamster
         uint32_t allocate(uint32_t size);
 
     private:
-        UnorderedMap<uint32_t, uint32_t> page_table; // vaddr -> page id
+        PageTable page_table;
         CircularBuffer<FreeRange> free_ranges;
         uint32_t next_mmap = 0;
 

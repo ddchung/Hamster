@@ -2,15 +2,6 @@
 
 #pragma once
 
-
-// The size of each page
-#define HAMSTER_PAGE_SIZE 4096
-static_assert((HAMSTER_PAGE_SIZE & (HAMSTER_PAGE_SIZE - 1)) == 0, "Page size must be a power of 2");
-
-// The absolute maximum number of pages
-// RAM pages + swapped pages
-#define HAMSTER_MAX_PAGES 16384
-
 // The stack top, leave some space above for reserved data
 #define HAMSTER_STACK_TOP 0xFFFF0000
 
@@ -30,3 +21,30 @@ static_assert((HAMSTER_PAGE_SIZE & (HAMSTER_PAGE_SIZE - 1)) == 0, "Page size mus
 
 // Maximum pipe buffer size, in bytes
 #define HAMSTER_MAX_PIPE_BUFFERED 512
+
+
+/* Page table layout config
+    [      L1      ]    // L1 is root
+    [L2][L2][L2][L2]    // (1 << L1_BITS) amount of L2 in L1
+                /  \
+  _____________/    |
+ / [LEAF][LEAF][LEAF]   // (1 << L2_BITS) amount of LEAF in L2
+               /    |
+  ____________/     |
+ / [PAGE][PAGE][PAGE]   // (1 << LEAF_BITS) amount of PAGE in LEAF
+               /    |
+  ____________/     |
+ / 01 23 45 67 89 AB    // PAGE_SIZE bytes in a PAGE
+   CD EF 01 23 45 67
+          ...
+*/
+
+// Note: L1_BITS + L2_BITS + L3_BITS + PAGE_SIZE_BITS must equal 32
+#define HAMSTER_PAGETABLE_L1_BITS 9
+#define HAMSTER_PAGETABLE_L2_BITS 7
+#define HAMSTER_PAGETABLE_LEAF_BITS 4
+#define HAMSTER_PAGE_SIZE_BITS 12
+
+// compatibility
+#define HAMSTER_PAGE_SIZE (1 << HAMSTER_PAGE_SIZE_BITS)
+static_assert((HAMSTER_PAGE_SIZE & (HAMSTER_PAGE_SIZE - 1)) == 0, "Page size must be a power of 2");

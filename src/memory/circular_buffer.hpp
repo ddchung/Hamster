@@ -75,6 +75,8 @@ namespace Hamster
         bool empty() const
         { return count == 0; }
 
+        void clear();
+
     private:
         Node * pos;
         size_t count;
@@ -108,12 +110,18 @@ namespace Hamster
     template <typename T>
     CircularBuffer<T>::~CircularBuffer()
     {
-        while (count > 0)
-            pop();
+        clear();
         // Destroy the single guard
         dealloc(pos);
 
         pos = nullptr;
+    }
+
+    template <typename T>
+    void CircularBuffer<T>::clear()
+    {
+        while (count > 0)
+            pop();
     }
 
     template <typename T>

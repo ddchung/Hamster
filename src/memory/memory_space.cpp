@@ -14,62 +14,19 @@
 #define ROUND_UP_PAGE(addr) (ROUND_DOWN_PAGE((addr) + HAMSTER_PAGE_SIZE - 1))
 
 namespace Hamster
-{   
-    MemorySpace::~MemorySpace()
-    {
-        unmap_all();
-    }
-
+{
     MemorySpace::MemorySpace(const MemorySpace &other)
+        : page_table(other.page_table), free_ranges(), next_mmap(other.next_mmap)
     {
-        page_table.reserve(other.page_table.size());
-        for (const auto &[id, entry] : other.page_table)
-        {
-            page_table[id] = page_manager.copy(entry);
-        }
     }
 
     MemorySpace &MemorySpace::operator=(const MemorySpace &other)
     {
         if (this != &other)
         {
-            // Clean up current pages
-            for (auto &[id, entry] : page_table)
-            {
-                page_manager.free_page(id);
-            }
-            page_table.clear();
-
-            // Copy pages from other
-            page_table.reserve(other.page_table.size());
-            for (const auto &[id, entry] : other.page_table)
-            {
-                page_table[id] = page_manager.copy(entry);
-            }
-        }
-        return *this;
-    }
-
-    MemorySpace::MemorySpace(MemorySpace &&other)
-    {
-        page_table = std::move(other.page_table);
-        other.page_table.clear();
-    }
-
-    MemorySpace &MemorySpace::operator=(MemorySpace &&other)
-    {
-        if (this != &other)
-        {
-            // Clean up current pages
-            for (auto &[id, entry] : page_table)
-            {
-                page_manager.free_page(id);
-            }
-            page_table.clear();
-
-            // Move pages from other
-            page_table = std::move(other.page_table);
-            other.page_table.clear();
+            page_table = other.page_table;
+            free_ranges.clear();
+            next_mmap = other.next_mmap;
         }
         return *this;
     }
@@ -139,7 +96,7 @@ namespace Hamster
         size = ROUND_UP_PAGE(size);
         for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
-            if (page_table.find(addr) == page_table.end())
+            if (page_table.get_page_read(addr) == PageTable::PAGE_ID_UNUSED)
                 return 0;
         }
         return 1;
@@ -179,7 +136,7 @@ namespace Hamster
         ssize_t count = 0;
         for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
-            if (page_table.find(addr) != page_table.end())
+            if (page_table.get_page_read(addr) != PageTable::PAGE_ID_UNUSED)
                 count++;
         }
         return count;
@@ -194,9 +151,9 @@ namespace Hamster
 
         for (uint32_t addr = loc; addr <= loc + size; addr += HAMSTER_PAGE_SIZE)
         {
-            if (page_table.find(addr) != page_table.end())
+            if (page_table.get_page_read(addr) != PageTable::PAGE_ID_UNUSED)
                 continue;
-            page_table[addr] = page_manager.allocate_page(perms);
+            page_table.set_page(addr, page_manager.allocate_page(perms));
         }
         return 0;
     }
@@ -220,10 +177,8 @@ namespace Hamster
 
         for (uint32_t addr = loc; addr <= loc + size; addr += HAMSTER_PAGE_SIZE)
         {
-            auto it = page_table.find(addr);
-            if (it != page_table.end())
-                page_manager.free_page(it->second);
-            page_table[addr] = page_manager.mmap_private(fmfd, offset + (addr - loc), perms);
+            // note: set_page automatically frees an existing entry, if present
+            page_table.set_page(addr, page_manager.mmap_private(fmfd, offset + (addr - loc), perms));
         }
         return 0;
     }
@@ -238,8 +193,7 @@ namespace Hamster
 
         for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
-            auto it = page_table.find(addr);
-            if (it == page_table.end())
+            if (page_table.get_page_read(addr) == PageTable::PAGE_ID_UNUSED)
             {
                 if (free_range_size)
                     deallocate(free_range_start, free_range_size);
@@ -249,8 +203,7 @@ namespace Hamster
 
             free_range_size += HAMSTER_PAGE_SIZE;
 
-            page_manager.free_page(it->second);
-            page_table.erase(it);
+            page_table.set_page(addr, PageTable::PAGE_ID_UNUSED);
         }
 
         if (free_range_size)
@@ -261,10 +214,6 @@ namespace Hamster
 
     int MemorySpace::unmap_all()
     {
-        for (auto &[_, page_id] : page_table)
-        {
-            page_manager.free_page(page_id);
-        }
         page_table.clear();
         return 0;
     }
@@ -276,11 +225,10 @@ namespace Hamster
 
         for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
-            auto it = page_table.find(addr);
-            if (it == page_table.end())
+            if (page_table.get_page_read(addr) == PageTable::PAGE_ID_UNUSED)
                 continue;
 
-            if (page_manager.set_permissions(it->second, perms) < 0)
+            if (page_manager.set_permissions(page_table.get_page_write(addr), perms) < 0)
                 return -1;
         }
         return 0;
@@ -324,11 +272,10 @@ namespace Hamster
 
         for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
         {
-            auto it = page_table.find(addr);
-            if (it == page_table.end())
-                return -1;
+            if (page_table.get_page_read(addr) == PageTable::PAGE_ID_UNUSED)
+                continue;
 
-            int8_t page_perms = page_manager.get_permissions(it->second);
+            int8_t page_perms = page_manager.get_permissions(page_table.get_page_read(addr));
             if (page_perms < 0)
                 return -1;
 
@@ -371,14 +318,11 @@ namespace Hamster
         if (len == 0)
             return 0;
 
-        auto it = page_table.find(ROUND_DOWN_PAGE(addr));
-        if (it == page_table.end())
-        {
-            error = EFAULT;
+        uint32_t id = page_table.get_page_read(addr);
+        if (id == PageTable::PAGE_ID_UNUSED)
             return -1;
-        }
 
-        return page_manager.read(it->second, addr & (HAMSTER_PAGE_SIZE - 1), buf, len);
+        return page_manager.read(id, addr & (HAMSTER_PAGE_SIZE - 1), buf, len);
     }
 
     ssize_t MemorySpace::do_write(uint32_t addr, const void *buf, size_t len)
@@ -388,14 +332,11 @@ namespace Hamster
         if (len == 0)
             return 0;
 
-        auto it = page_table.find(ROUND_DOWN_PAGE(addr));
-        if (it == page_table.end())
-        {
-            error = EFAULT;
+        uint32_t id = page_table.get_page_write(addr);
+        if (id == PageTable::PAGE_ID_UNUSED)
             return -1;
-        }
 
-        return page_manager.write(it->second, addr & (HAMSTER_PAGE_SIZE - 1), buf, len);
+        return page_manager.write(id, addr & (HAMSTER_PAGE_SIZE - 1), buf, len);
     }
 } // namespace Hamster
 
