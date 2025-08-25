@@ -557,6 +557,12 @@ namespace Hamster
          */
         int close(int fd);
 
+        /**
+         * @brief Close all file descriptors marked FD_CLOEXEC
+         * @return 0 on success, -1 on error
+         */
+        int close_cloexec_fds();
+
         TaskMember<EmulatorMemory> *memory;
         TaskMember<uint32_t> *program_brk;
         TaskMember<FDTable> *fd_table;

@@ -119,7 +119,7 @@ namespace Hamster
         uint64_t sp = HAMSTER_STACK_TOP;
 
         // map in an 8 MB stack
-        if (memory_space.map_anonymous(sp - 8 * 1024 * 1024, 8 * 1024 * 1024, PERM_READ | PERM_WRITE) < 0)
+        if (memory_space.map_anonymous(sp - 8 * 1024 * 1024, 8 * 1024 * 1024, PERM_READ | PERM_WRITE | PERM_EXEC) < 0)
         {
             return -1;
         }

@@ -843,6 +843,18 @@ namespace Hamster
         return 0;
     }
 
+    int Task::close_cloexec_fds()
+    {
+        for (size_t i = 0; i < fd_table->obj.fds.size(); i++)
+        {
+            if (fd_table->obj.fds[i].flags & H_FD_CLOEXEC)
+            {
+                close(i);
+            }
+        }
+        return 0;
+    }
+
     int Task::is_signal_blocked(int signo)
     {
         if (signo < 1 || signo >= 64)
