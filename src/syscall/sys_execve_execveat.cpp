@@ -124,6 +124,9 @@ namespace Hamster
             return cvt_error();
         }
 
+        // Close all FD_CLOEXEC file descriptors
+        current_task->close_cloexec_fds();
+
         return 0;
     }
 } // namespace Hamster
