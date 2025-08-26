@@ -63,6 +63,7 @@ namespace Hamster
             destroy_l1(root);
             root = other.root;
             ++root->refcount;
+            invalidate_caches();
         }
         return *this;
     }
@@ -81,6 +82,14 @@ namespace Hamster
 
     uint32_t PageTable::get_page_read(uint32_t address) const
     {
+        for (const auto &entry : cache)
+        {
+            if (entry.leaf_start == (address & ~((1 << LEAF_TOTAL_BITS) - 1)) && entry.leaf)
+            {
+                return entry.leaf->page_ids[leaf_index(address)];
+            }
+        }
+
         L2Table *l2 = root->tables[l1_index(address)];
         if (!l2) return PAGE_ID_UNUSED;
 
@@ -92,31 +101,31 @@ namespace Hamster
 
     uint32_t PageTable::get_page_write(uint32_t address)
     {
-        if (root->refcount > 1) root = replace_l1(root);
+        if (root->refcount > 1) { invalidate_caches();  root = replace_l1(root); }
 
         L2Table *&l2 = root->tables[l1_index(address)];
         if (!l2) return PAGE_ID_UNUSED;
-        if (l2->refcount > 1) l2 = replace_l2(l2);
+        if (l2->refcount > 1) { invalidate_caches(l1_index(address)); l2 = replace_l2(l2); }
 
         LeafEntry *&leaf = l2->entries[l2_index(address)];
         if (!leaf) return PAGE_ID_UNUSED;
-        if (leaf->refcount > 1) leaf = replace_leaf(leaf);
+        if (leaf->refcount > 1) { invalidate_caches(leaf); leaf = replace_leaf(leaf); }
 
         return leaf->page_ids[leaf_index(address)];
     }
 
     void PageTable::set_page(uint32_t address, uint32_t page_id)
     {
-        if (root->refcount > 1) root = replace_l1(root);
+        if (root->refcount > 1) { invalidate_caches();  root = replace_l1(root); }
 
         L2Table *&l2 = root->tables[l1_index(address)];
         if (!l2) l2 = make_l2();
-        if (l2->refcount > 1) l2 = replace_l2(l2);
+        if (l2->refcount > 1) { invalidate_caches(l1_index(address)); l2 = replace_l2(l2); }
 
         LeafEntry *&leaf = l2->entries[l2_index(address)];
         if (!leaf && page_id == PAGE_ID_UNUSED) return;
         if (!leaf) leaf = make_leaf();
-        if (leaf->refcount > 1) leaf = replace_leaf(leaf);
+        if (leaf->refcount > 1) { invalidate_caches(leaf); leaf = replace_leaf(leaf); }
 
         if (leaf->page_ids[leaf_index(address)] != PAGE_ID_UNUSED)
         {
@@ -147,8 +156,23 @@ namespace Hamster
 
     void PageTable::clear()
     {
+        invalidate_caches();
         destroy_l1(root);
         root = make_l1();
+    }
+
+    void PageTable::set_cache(uint32_t index, uint32_t addr)
+    {
+        if (index < sizeof(cache) / sizeof(cache[0]))
+        {
+            L2Table *l2 = root->tables[l1_index(addr)];
+            if (!l2) return;
+            LeafEntry *leaf = l2->entries[l2_index(addr)];
+            if (!leaf) return;
+
+            cache[index].leaf = leaf;
+            cache[index].leaf_start = addr & ~((1 << LEAF_TOTAL_BITS) - 1);
+        }
     }
 
     PageTable::L1Table *PageTable::make_l1(L1Table *old_l1)
@@ -274,6 +298,37 @@ namespace Hamster
             if (page_id != PAGE_ID_UNUSED)
                 page_manager.free_page(page_id);
         dealloc(leaf);
+    }
+
+    void PageTable::invalidate_caches()
+    {
+        for (auto &entry : cache)
+        {
+            entry.leaf = nullptr;
+        }
+    }
+
+    void PageTable::invalidate_caches(uint32_t l2_addr)
+    {
+        uint32_t upper_bound = l2_addr + (1 << HAMSTER_PAGETABLE_L2_BITS);
+        for (auto &entry : cache)
+        {
+            if (entry.leaf_start >= l2_addr && entry.leaf_start < upper_bound)
+            {
+                entry.leaf = nullptr;
+            }
+        }
+    }
+
+    void PageTable::invalidate_caches(LeafEntry *leaf)
+    {
+        for (auto &entry : cache)
+        {
+            if (entry.leaf == leaf)
+            {
+                entry.leaf = nullptr;
+            }
+        }
     }
 } // namespace Hamster
 

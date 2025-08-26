@@ -143,6 +143,14 @@ namespace Hamster
          */
         uint32_t allocate(uint32_t size);
 
+        /**
+         * @brief Set a cache entry
+         * @param index The index of the cache entry to set
+         * @param addr The address to set
+         */
+        void set_cache(uint32_t index, uint32_t addr)
+        { page_table.set_cache(index, addr); }
+
     private:
         PageTable page_table;
         CircularBuffer<FreeRange> free_ranges;

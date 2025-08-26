@@ -419,6 +419,7 @@ namespace Hamster
     RiscVEmulator::ExecuteResult RiscVEmulator::run()
     {
         ExecuteResult result;
+        memory->memory.set_cache(0, pc);
         for (int i = 0; i < HAMSTER_THREAD_TIME_SLICE; i++)
         {
             result = execute();
@@ -634,6 +635,7 @@ namespace Hamster
         }
         case OP_LOAD:
         {
+            memory->memory.set_cache(1, x[rs1] + imm_i);
             switch (extract_funct3(inst))
             {
                 // Base load instructions
@@ -713,6 +715,7 @@ namespace Hamster
         }
         case OP_STORE:
         {
+            memory->memory.set_cache(1, x[rs1] + imm_s);
             switch (extract_funct3(inst))
             {
                 // Base store instructions

@@ -37,6 +37,12 @@ namespace Hamster
             uint8_t refcount;
         };
 
+        struct LeafCache
+        {
+            LeafEntry *leaf;
+            uint32_t leaf_start;
+        };
+
     public:
         static constexpr uint32_t PAGE_ID_UNUSED = 0xFFFFFFFF;
 
@@ -77,8 +83,16 @@ namespace Hamster
          */
         void clear();
 
+        /**
+         * @brief Sets the cache to look at a certain address
+         * @param index The index of the cache to set. 0 or 1.
+         * @param address The virtual address to set the cache for
+         */
+        void set_cache(uint32_t index, uint32_t address);
+
     private:
         L1Table *root;
+        LeafCache cache[2] = {};
 
         // These functions allocate new parts of the table,
         // potentially copying existing entries
@@ -96,6 +110,15 @@ namespace Hamster
 
         // note: all pages in the leaf must be gone before this is called
         void destroy_leaf(LeafEntry *leaf);
+
+        // Invalidate all caches
+        void invalidate_caches();
+
+        // Invalidate all caches in an L2 table
+        void invalidate_caches(uint32_t l2_addr);
+
+        // Invalidate all caches pointing to a certain leaf
+        void invalidate_caches(LeafEntry *leaf);
     };
 } // namespace Hamster
 
