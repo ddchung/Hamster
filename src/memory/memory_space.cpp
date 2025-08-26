@@ -92,11 +92,12 @@ namespace Hamster
 
     int MemorySpace::is_mapped(uint32_t loc, uint32_t size) const
     {
-        loc = ROUND_DOWN_PAGE(loc);
-        size = ROUND_UP_PAGE(size);
-        for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        for (; loc < end; ++loc)
         {
-            if (page_table.get_page_read(addr) == PageTable::PAGE_ID_UNUSED)
+            if (page_table.get_page_direct(loc) == PageTable::PAGE_ID_UNUSED)
                 return 0;
         }
         return 1;
@@ -131,12 +132,13 @@ namespace Hamster
 
     ssize_t MemorySpace::how_many_mapped(uint32_t loc, uint32_t size) const
     {
-        loc = ROUND_DOWN_PAGE(loc);
-        size = ROUND_UP_PAGE(size);
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+
         ssize_t count = 0;
-        for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
+        for (uint32_t i = loc; i < end; i++)
         {
-            if (page_table.get_page_read(addr) != PageTable::PAGE_ID_UNUSED)
+            if (page_table.get_page_direct(i) != PageTable::PAGE_ID_UNUSED)
                 count++;
         }
         return count;
@@ -144,25 +146,26 @@ namespace Hamster
 
     int MemorySpace::map_anonymous(uint32_t loc, uint32_t size, uint8_t perms)
     {
-        // Round up size to nearest page size
-        size = ROUND_UP_PAGE(size);
-        loc = ROUND_DOWN_PAGE(loc);
-        next_mmap = std::max<uint32_t>(next_mmap, loc + size);
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+        next_mmap = std::max<uint32_t>(next_mmap, end << HAMSTER_PAGE_SIZE_BITS);
 
-        for (uint32_t addr = loc; addr <= loc + size; addr += HAMSTER_PAGE_SIZE)
+        for (; loc < end; ++loc)
         {
-            if (page_table.get_page_read(addr) != PageTable::PAGE_ID_UNUSED)
-                continue;
-            page_table.set_page(addr, page_manager.allocate_page(perms));
+            if (page_table.get_page_direct(loc) == PageTable::PAGE_ID_UNUSED)
+                page_table.set_page_direct(loc, page_manager.allocate_page(perms));
         }
         return 0;
     }
 
     int MemorySpace::map_private_file(uint32_t loc, int fd, uint32_t offset, uint32_t size, uint8_t perms)
     {
-        size = ROUND_UP_PAGE(size + (offset & (HAMSTER_PAGE_SIZE - 1)));
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        // Correctly account for attempts to map in the middle of a page
         offset = ROUND_DOWN_PAGE(offset);
-        loc = ROUND_DOWN_PAGE(loc);
+
         next_mmap = std::max<uint32_t>(next_mmap, loc + size);
 
         FileMappingFD *fmfd = alloc<FileMappingFD>();
@@ -175,35 +178,36 @@ namespace Hamster
             return -1;
         }
 
-        for (uint32_t addr = loc; addr <= loc + size; addr += HAMSTER_PAGE_SIZE)
+        for (; loc < end; ++loc)
         {
             // note: set_page automatically frees an existing entry, if present
-            page_table.set_page(addr, page_manager.mmap_private(fmfd, offset + (addr - loc), perms));
+            page_table.set_page_direct(loc, page_manager.mmap_private(fmfd, offset, perms));
+            offset += HAMSTER_PAGE_SIZE;
         }
         return 0;
     }
 
     int MemorySpace::unmap(uint32_t loc, uint32_t size)
     {
-        loc = ROUND_DOWN_PAGE(loc);
-        size = ROUND_UP_PAGE(size);
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
 
-        uint32_t free_range_start = loc;
+        uint32_t free_range_start = loc << HAMSTER_PAGE_SIZE_BITS;
         uint32_t free_range_size = 0;
 
-        for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
+        for (; loc < end; ++loc)
         {
-            if (page_table.get_page_read(addr) == PageTable::PAGE_ID_UNUSED)
+            if (page_table.get_page_direct(loc) == PageTable::PAGE_ID_UNUSED)
             {
                 if (free_range_size)
                     deallocate(free_range_start, free_range_size);
-                free_range_start = addr + HAMSTER_PAGE_SIZE;
+                free_range_start = (loc >> HAMSTER_PAGE_SIZE_BITS) + HAMSTER_PAGE_SIZE;
                 free_range_size = 0;
             }
 
             free_range_size += HAMSTER_PAGE_SIZE;
 
-            page_table.set_page(addr, PageTable::PAGE_ID_UNUSED);
+            page_table.set_page_direct(loc, PageTable::PAGE_ID_UNUSED);
         }
 
         if (free_range_size)
@@ -220,15 +224,15 @@ namespace Hamster
 
     int MemorySpace::mprotect(uint32_t loc, uint32_t size, uint8_t perms)
     {
-        loc = ROUND_DOWN_PAGE(loc);
-        size = ROUND_UP_PAGE(size);
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
 
-        for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
+        for (; loc < end; ++loc)
         {
-            if (page_table.get_page_read(addr) == PageTable::PAGE_ID_UNUSED)
+            if (page_table.get_page_direct(loc) == PageTable::PAGE_ID_UNUSED)
                 continue;
 
-            if (page_manager.set_permissions(page_table.get_page_write(addr), perms) < 0)
+            if (page_manager.set_permissions(page_table.get_page_direct(loc), perms) < 0)
                 return -1;
         }
         return 0;
@@ -265,17 +269,18 @@ namespace Hamster
 
     int8_t MemorySpace::get_permissions(uint32_t loc, uint32_t size)
     {
-        loc = ROUND_DOWN_PAGE(loc);
-        size = ROUND_UP_PAGE(size);
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
 
         uint8_t perms = 07; // Start with all
 
-        for (uint32_t addr = loc; addr < loc + size; addr += HAMSTER_PAGE_SIZE)
+        for (; loc < end; ++loc)
         {
-            if (page_table.get_page_read(addr) == PageTable::PAGE_ID_UNUSED)
+            auto page_id = page_table.get_page_direct(loc);
+            if (page_id == PageTable::PAGE_ID_UNUSED)
                 continue;
 
-            int8_t page_perms = page_manager.get_permissions(page_table.get_page_read(addr));
+            int8_t page_perms = page_manager.get_permissions(page_id);
             if (page_perms < 0)
                 return -1;
 
@@ -318,7 +323,7 @@ namespace Hamster
         if (len == 0)
             return 0;
 
-        uint32_t id = page_table.get_page_read(addr);
+        uint32_t id = page_table.get_page(addr);
         if (id == PageTable::PAGE_ID_UNUSED)
             return -1;
 
@@ -332,7 +337,7 @@ namespace Hamster
         if (len == 0)
             return 0;
 
-        uint32_t id = page_table.get_page_write(addr);
+        uint32_t id = page_table.get_page(addr);
         if (id == PageTable::PAGE_ID_UNUSED)
             return -1;
 

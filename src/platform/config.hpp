@@ -3,7 +3,7 @@
 #pragma once
 
 // The stack top, leave some space above for reserved data
-#define HAMSTER_STACK_TOP 0xFFFF0000
+#define HAMSTER_STACK_TOP (96 * 1024 * 1024)
 
 // The length of each thread's time slice, in # of instructions
 #define HAMSTER_THREAD_TIME_SLICE 1024
@@ -22,27 +22,18 @@
 // Maximum pipe buffer size, in bytes
 #define HAMSTER_MAX_PIPE_BUFFERED 512
 
+// Maximum number of pages per process
+//
+// The addressable range of each process is:
+// 0x00000000...(PAGE_SIZE * PAGES_PER_PROC)
+//
+// For example, if PAGES_PER_PROC=32768 and PAGE_SIZE=4096:
+// 0x00000000...0x08000000 (128MiB)
+#define HAMSTER_PAGES_PER_PROC 32768
 
-/* Page table layout config
-    [      L1      ]    // L1 is root
-    [L2][L2][L2][L2]    // (1 << L1_BITS) amount of L2 in L1
-                /  \
-  _____________/    |
- / [LEAF][LEAF][LEAF]   // (1 << L2_BITS) amount of LEAF in L2
-               /    |
-  ____________/     |
- / [PAGE][PAGE][PAGE]   // (1 << LEAF_BITS) amount of PAGE in LEAF
-               /    |
-  ____________/     |
- / 01 23 45 67 89 AB    // PAGE_SIZE bytes in a PAGE
-   CD EF 01 23 45 67
-          ...
-*/
-
-// Note: L1_BITS + L2_BITS + L3_BITS + PAGE_SIZE_BITS must equal 32
-#define HAMSTER_PAGETABLE_L1_BITS 9
-#define HAMSTER_PAGETABLE_L2_BITS 7
-#define HAMSTER_PAGETABLE_LEAF_BITS 4
+// warning: Changing this won't adversely affect the kernel, but RISC-V linux
+//          userspace programs expect a 4096-byte page size, and so changing this
+//          will probably break all the programs
 #define HAMSTER_PAGE_SIZE_BITS 12
 
 // compatibility
