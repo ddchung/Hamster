@@ -635,7 +635,7 @@ namespace Hamster
         }
         case OP_LOAD:
         {
-            memory->memory.set_cache(1, x[rs1] + imm_i);
+            memory->memory.set_cache(1, x[extract_rs1(inst)] + extract_imm_i(inst));
             switch (extract_funct3(inst))
             {
                 // Base load instructions
@@ -715,7 +715,7 @@ namespace Hamster
         }
         case OP_STORE:
         {
-            memory->memory.set_cache(1, x[rs1] + imm_s);
+            memory->memory.set_cache(1, x[extract_rs1(inst)] + extract_imm_s(inst));
             switch (extract_funct3(inst))
             {
                 // Base store instructions
