@@ -80,6 +80,27 @@ namespace Hamster
         int write32(uint32_t addr, uint32_t value);
         int writef32(uint32_t addr, float value);
         int writef64(uint32_t addr, double value);
+
+        ExecuteResult do_op_reg(uint32_t inst);
+        ExecuteResult do_op_imm(uint32_t inst);
+        ExecuteResult do_op_load(uint32_t inst);
+        ExecuteResult do_op_store(uint32_t inst);
+        ExecuteResult do_op_branch(uint32_t inst);
+        ExecuteResult do_op_jal(uint32_t inst);
+        ExecuteResult do_op_jalr(uint32_t inst);
+        ExecuteResult do_op_lui(uint32_t inst);
+        ExecuteResult do_op_auipc(uint32_t inst);
+        ExecuteResult do_op_system(uint32_t inst);
+        ExecuteResult do_op_misc_mem(uint32_t inst);
+        ExecuteResult do_op_atomic(uint32_t inst);
+        ExecuteResult do_op_flw(uint32_t inst);
+        ExecuteResult do_op_fsw(uint32_t inst);
+        ExecuteResult do_op_fmadd(uint32_t inst);
+        ExecuteResult do_op_fmsub(uint32_t inst);
+        ExecuteResult do_op_fnmsub(uint32_t inst);
+        ExecuteResult do_op_fnmadd(uint32_t inst);
+        ExecuteResult do_op_freg(uint32_t inst);
+        ExecuteResult do_op_csr(uint32_t inst);
     };
 } // namespace Hamster
 

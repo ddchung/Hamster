@@ -1,0 +1,1724 @@
+// opcode implementation
+
+#include <riscv/riscv_emulator.hpp>
+#include <math.h>
+#include <cfenv>
+#include <cstring>
+
+namespace Hamster
+{
+    namespace
+    {
+        enum Funct3
+        {
+            FUNCT3_BEQ = 0b000,
+            FUNCT3_BNE = 0b001,
+            FUNCT3_BLT = 0b100,
+            FUNCT3_BGE = 0b101,
+            FUNCT3_BLTU = 0b110,
+            FUNCT3_BGEU = 0b111,
+
+            FUNCT3_LB = 0b000,
+            FUNCT3_LH = 0b001,
+            FUNCT3_LW = 0b010,
+            FUNCT3_LBU = 0b100,
+            FUNCT3_LHU = 0b101,
+
+            FUNCT3_SB = 0b000,
+            FUNCT3_SH = 0b001,
+            FUNCT3_SW = 0b010,
+
+            FUNCT3_ADD_SUB = 0b000,
+            FUNCT3_SLL = 0b001,
+            FUNCT3_SLT = 0b010,
+            FUNCT3_SLTU = 0b011,
+            FUNCT3_XOR = 0b100,
+            FUNCT3_SRL_SRA = 0b101,
+            FUNCT3_OR = 0b110,
+            FUNCT3_AND = 0b111,
+
+            FUNCT3_FENCE = 0b000,
+            FUNCT3_FENCE_I = 0b001,
+
+            FUNCT3_MUL = 0b000,
+            FUNCT3_MULH = 0b001,
+            FUNCT3_MULHSU = 0b010,
+            FUNCT3_MULHU = 0b011,
+            FUNCT3_DIV = 0b100,
+            FUNCT3_DIVU = 0b101,
+            FUNCT3_REM = 0b110,
+            FUNCT3_REMU = 0b111,
+
+            FUNCT3_ECALL_EBREAK = 0b000,
+
+            FUNCT3_CSRRW = 0b001,
+            FUNCT3_CSRRS = 0b010,
+            FUNCT3_CSRRC = 0b011,
+            FUNCT3_CSRRWI = 0b101,
+            FUNCT3_CSRRSI = 0b110,
+            FUNCT3_CSRRCI = 0b111,
+        };
+
+        enum Funct5
+        {
+            FUNCT5_LR = 0b00010,
+            FUNCT5_SC = 0b00011,
+            FUNCT5_AMOSWAP = 0b00001,
+            FUNCT5_AMOADD = 0b00000,
+            FUNCT5_AMOAND = 0b01100,
+            FUNCT5_AMOOR = 0b01000,
+            FUNCT5_AMOXOR = 0b00100,
+            FUNCT5_AMOMAX = 0b10100,
+            FUNCT5_AMOMIN = 0b10000,
+            FUNCT5_AMOMAXU = 0b11100,
+            FUNCT5_AMOMINU = 0b11000,
+        };
+
+        enum RoundingMode
+        {
+            ROUND_RNE = 0b000,
+            ROUND_RTZ = 0b001,
+            ROUND_RDN = 0b010,
+            ROUND_RUP = 0b011,
+            ROUND_RMM = 0b100,
+            ROUND_DYN = 0b111,
+        };
+
+        uint32_t sign_extend(uint32_t value, uint32_t bits)
+        {
+            if (value & (1U << (bits - 1))) // Use 1U to avoid signed shift
+            {
+                value |= ~((1U << bits) - 1);
+            }
+            return value;
+        }
+
+        uint32_t extract_rd(uint32_t inst)
+        {
+            return (inst >> 7) & 0x1F;
+        }
+
+        uint32_t extract_funct3(uint32_t inst)
+        {
+            return (inst >> 12) & 0x07;
+        }
+
+        uint32_t extract_rs1(uint32_t inst)
+        {
+            return (inst >> 15) & 0x1F;
+        }
+
+        uint32_t extract_rs2(uint32_t inst)
+        {
+            return (inst >> 20) & 0x1F;
+        }
+
+        uint32_t extract_rs3(uint32_t inst)
+        {
+            return (inst >> 27) & 0x1F;
+        }
+
+        uint32_t extract_funct7(uint32_t inst)
+        {
+            return (inst >> 25) & 0x7F;
+        }
+
+        uint32_t extract_funct5(uint32_t inst)
+        {
+            return (inst >> 27) & 0x1F;
+        }
+
+        uint32_t extract_imm_i(uint32_t inst)
+        {
+            return sign_extend((inst >> 20) & 0xFFF, 12);
+        }
+
+        uint32_t extract_imm_s(uint32_t inst)
+        {
+            return sign_extend(((inst >> 25) & 0x7F) << 5 | ((inst >> 7) & 0x1F), 12);
+        }
+
+        uint32_t extract_imm_b(uint32_t inst)
+        {
+            return sign_extend(
+                ((inst >> 31) & 0x1) << 12 |     // imm[12]
+                    ((inst >> 7) & 0x1) << 11 |  // imm[11]
+                    ((inst >> 25) & 0x3F) << 5 | // imm[10:5]
+                    ((inst >> 8) & 0xF) << 1,    // imm[4:1]
+                13);
+        }
+
+        uint32_t extract_imm_u(uint32_t inst)
+        {
+            return (inst & 0xFFFFF000);
+        }
+
+        uint32_t extract_imm_j(uint32_t inst)
+        {
+            return sign_extend(
+                ((inst >> 31) & 0x1) << 20 |      // imm[20]
+                    ((inst >> 12) & 0xFF) << 12 | // imm[19:12]
+                    ((inst >> 20) & 0x1) << 11 |  // imm[11]
+                    ((inst >> 21) & 0x3FF) << 1,  // imm[10:1]
+                21);
+        }
+
+        bool is_double_precision(uint32_t inst)
+        {
+            return (extract_funct7(inst) & 0b11) == 0b01;
+        }
+
+        void write_float_to_double(float f, double &d)
+        {
+            static char buf_double[8]{0};
+
+            memcpy(buf_double, &f, sizeof(float));
+            memcpy(&d, buf_double, sizeof(double));
+        }
+
+        float read_float_from_double(double d)
+        {
+            static char buf_float[8]{0};
+
+            memcpy(buf_float, &d, sizeof(double));
+            float f;
+            memcpy(&f, buf_float, sizeof(float));
+            return f;
+        }
+
+        void set_round_mode(uint8_t round_mode, uint32_t fcsr)
+        {
+            switch (round_mode)
+            {
+            case ROUND_RNE:
+                std::fesetround(FE_TONEAREST);
+                break;
+            case ROUND_RTZ:
+                std::fesetround(FE_TOWARDZERO);
+                break;
+            case ROUND_RDN:
+                std::fesetround(FE_DOWNWARD);
+                break;
+            case ROUND_RUP:
+                std::fesetround(FE_UPWARD);
+                break;
+            case ROUND_RMM:
+                std::fesetround(FE_TOWARDZERO);
+                break;
+            case ROUND_DYN:
+                // Extract rounding mode from FCSR
+                round_mode = (fcsr >> 5) & 0b111;
+                if (round_mode == ROUND_DYN)
+                    return;
+                set_round_mode(round_mode, fcsr);
+                break;
+            }
+        }
+
+        uint32_t classify_float(float f)
+        {
+            if (isnan(f))
+            {
+                // Check signaling vs quiet NaN
+                union
+                {
+                    float f;
+                    uint32_t u;
+                } u = {f};
+                return (u.u & 0x00400000) ? (1u << 9) : (1u << 8); // bit 22 = quiet NaN flag
+            }
+            if (isinf(f))
+            {
+                return signbit(f) ? (1u << 0) : (1u << 7);
+            }
+            if (f == 0.0f)
+            {
+                return signbit(f) ? (1u << 3) : (1u << 4);
+            }
+            if (fpclassify(f) == FP_SUBNORMAL)
+            {
+                return signbit(f) ? (1u << 2) : (1u << 5);
+            }
+            // Normal number
+            return signbit(f) ? (1u << 1) : (1u << 6);
+        }
+
+        uint32_t classify_double(double d)
+        {
+            if (isnan(d))
+            {
+                union
+                {
+                    double d;
+                    uint64_t u;
+                } u = {d};
+                return (u.u & 0x0008000000000000ULL) ? (1u << 9) : (1u << 8); // bit 51 = quiet NaN flag
+            }
+            if (isinf(d))
+            {
+                return signbit(d) ? (1u << 0) : (1u << 7);
+            }
+            if (d == 0.0)
+            {
+                return signbit(d) ? (1u << 3) : (1u << 4);
+            }
+            if (fpclassify(d) == FP_SUBNORMAL)
+            {
+                return signbit(d) ? (1u << 2) : (1u << 5);
+            }
+            return signbit(d) ? (1u << 1) : (1u << 6);
+        }
+
+        RiscVEmulator::ExecuteResult result;
+    } // namespace
+
+#define OPCODE_RETURN do { result.status = ExecuteResult::Status::Success; return result; } while (0)
+
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_reg(uint32_t inst)
+    {
+        if ((extract_funct7(inst) & 0x1) == 0)
+            switch (extract_funct3(inst))
+            {
+                // Base integer instructions
+            case FUNCT3_ADD_SUB:
+                if ((extract_funct7(inst) & 0x20) == 0)
+                    // ADD
+                    x[extract_rd(inst)] =
+                        x[extract_rs1(inst)] + x[extract_rs2(inst)];
+                else
+                    // SUB
+                    x[extract_rd(inst)] =
+                        x[extract_rs1(inst)] - x[extract_rs2(inst)];
+                break;
+            case FUNCT3_XOR:
+                x[extract_rd(inst)] =
+                    x[extract_rs1(inst)] ^ x[extract_rs2(inst)];
+                break;
+            case FUNCT3_OR:
+                x[extract_rd(inst)] =
+                    x[extract_rs1(inst)] | x[extract_rs2(inst)];
+                break;
+            case FUNCT3_AND:
+                x[extract_rd(inst)] =
+                    x[extract_rs1(inst)] & x[extract_rs2(inst)];
+                break;
+            case FUNCT3_SLL:
+                x[extract_rd(inst)] =
+                    x[extract_rs1(inst)] << (x[extract_rs2(inst)] & 0x1F);
+                break;
+            case FUNCT3_SRL_SRA:
+                if ((extract_funct7(inst) & 0x20) == 0)
+                    // SRL
+                    x[extract_rd(inst)] =
+                        x[extract_rs1(inst)] >> (x[extract_rs2(inst)] & 0x1F);
+                else
+                {
+                    // SRA
+                    x[extract_rd(inst)] = (int32_t)x[extract_rs1(inst)] >> (x[extract_rs2(inst)] & 0x1F);
+                }
+                break;
+            case FUNCT3_SLT:
+                x[extract_rd(inst)] =
+                    (int32_t)x[extract_rs1(inst)] < (int32_t)x[extract_rs2(inst)];
+                break;
+            case FUNCT3_SLTU:
+                x[extract_rd(inst)] =
+                    x[extract_rs1(inst)] < x[extract_rs2(inst)];
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+        else
+            switch (extract_funct3(inst))
+            {
+                // -M extension instructions
+            case FUNCT3_MUL:
+                x[extract_rd(inst)] =
+                    (int64_t)x[extract_rs1(inst)] * (int64_t)x[extract_rs2(inst)];
+                break;
+            case FUNCT3_MULH:
+                x[extract_rd(inst)] =
+                    ((int64_t)x[extract_rs1(inst)] * (int64_t)x[extract_rs2(inst)]) >> 32;
+                break;
+            case FUNCT3_MULHSU:
+                x[extract_rd(inst)] =
+                    ((int64_t)x[extract_rs1(inst)] * (uint64_t)x[extract_rs2(inst)]) >> 32;
+                break;
+            case FUNCT3_MULHU:
+                x[extract_rd(inst)] =
+                    ((uint64_t)x[extract_rs1(inst)] * (uint64_t)x[extract_rs2(inst)]) >> 32;
+                break;
+            case FUNCT3_DIV:
+                if (x[extract_rs2(inst)] == 0)
+                    x[extract_rd(inst)] = 0xFFFFFFFF;
+                else
+                    x[extract_rd(inst)] =
+                        (int32_t)x[extract_rs1(inst)] /
+                        (int32_t)x[extract_rs2(inst)];
+                break;
+            case FUNCT3_DIVU:
+                if (x[extract_rs2(inst)] == 0)
+                    x[extract_rd(inst)] = 0xFFFFFFFF;
+                else
+                    x[extract_rd(inst)] =
+                        x[extract_rs1(inst)] / x[extract_rs2(inst)];
+                break;
+            case FUNCT3_REM:
+                if (x[extract_rs2(inst)] == 0)
+                    x[extract_rd(inst)] = x[extract_rs1(inst)];
+                else
+                    x[extract_rd(inst)] =
+                        (int32_t)x[extract_rs1(inst)] %
+                        (int32_t)x[extract_rs2(inst)];
+                break;
+            case FUNCT3_REMU:
+                if (x[extract_rs2(inst)] == 0)
+                    x[extract_rd(inst)] = x[extract_rs1(inst)];
+                else
+                    x[extract_rd(inst)] =
+                        x[extract_rs1(inst)] % x[extract_rs2(inst)];
+                break;
+            default:
+                // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_REG, instruction: 0x%08x\n", inst);
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+        OPCODE_RETURN;
+    }
+
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_imm(uint32_t inst)
+    {
+        switch (extract_funct3(inst))
+        {
+            // Base integer instructions
+        case FUNCT3_ADD_SUB:
+            // ADDI, there is no SUBI
+            x[extract_rd(inst)] =
+                x[extract_rs1(inst)] + extract_imm_i(inst);
+            break;
+        case FUNCT3_XOR:
+            x[extract_rd(inst)] =
+                x[extract_rs1(inst)] ^ extract_imm_i(inst);
+            break;
+        case FUNCT3_OR:
+            x[extract_rd(inst)] =
+                x[extract_rs1(inst)] | extract_imm_i(inst);
+            break;
+        case FUNCT3_AND:
+            x[extract_rd(inst)] =
+                x[extract_rs1(inst)] & extract_imm_i(inst);
+            break;
+        case FUNCT3_SLL:
+            x[extract_rd(inst)] =
+                x[extract_rs1(inst)] << (extract_imm_i(inst) & 0x1F);
+            break;
+        case FUNCT3_SRL_SRA:
+            if ((extract_funct7(inst) & 0x20) == 0)
+                // SRLI
+                x[extract_rd(inst)] =
+                    x[extract_rs1(inst)] >> (extract_imm_i(inst) & 0x1F);
+            else
+            {
+                // SRAI
+                x[extract_rd(inst)] =
+                    (int32_t)x[extract_rs1(inst)] >> (extract_imm_i(inst) & 0x1F);
+            }
+            break;
+        case FUNCT3_SLT:
+            x[extract_rd(inst)] =
+                (int32_t)x[extract_rs1(inst)] < (int32_t)extract_imm_i(inst);
+            break;
+        case FUNCT3_SLTU:
+            x[extract_rd(inst)] =
+                x[extract_rs1(inst)] < extract_imm_i(inst);
+            break;
+        default:
+            // Unknown funct3
+            _trace("RiscVEmulator: Unknown funct3 for OP_IMM, instruction: 0x%08x\n", inst);
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = inst;
+            return result;
+        }
+        OPCODE_RETURN;
+    }
+
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_load(uint32_t inst)
+    {
+        switch (extract_funct3(inst))
+        {
+            // Base load instructions
+        case FUNCT3_LB:
+        {
+            uint8_t value;
+            if (read8(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
+            {
+                _trace("RiscVEmulator: LB: Failed to load 8-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_i(inst));
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                return result;
+            }
+            x[extract_rd(inst)] = sign_extend(value, 8);
+        }
+        break;
+        case FUNCT3_LH:
+        {
+            uint16_t value;
+            if (read16(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
+            {
+                _trace("RiscVEmulator: LH: Failed to load 16-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_i(inst));
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                return result;
+            }
+            x[extract_rd(inst)] = sign_extend(value, 16);
+        }
+        break;
+        case FUNCT3_LW:
+        {
+            uint32_t value;
+            if (read32(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
+            {
+                _trace("RiscVEmulator: LW: Failed to load 32-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_i(inst));
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                return result;
+            }
+            x[extract_rd(inst)] = value;
+        }
+        break;
+        case FUNCT3_LBU:
+        {
+            uint8_t value;
+            if (read8(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
+            {
+                _trace("RiscVEmulator: LBU: Failed to load 8-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_i(inst));
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                return result;
+            }
+            x[extract_rd(inst)] = value;
+        }
+        break;
+        case FUNCT3_LHU:
+        {
+            uint16_t value;
+            if (read16(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
+            {
+                _trace("RiscVEmulator: LHU: Failed to load 16-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_i(inst));
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                return result;
+            }
+            x[extract_rd(inst)] = value;
+        }
+        break;
+        default:
+            // Unknown funct3
+            _trace("RiscVEmulator: Unknown funct3 for OP_LOAD, instruction: 0x%08x\n", inst);
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = inst;
+            return result;
+        }
+        OPCODE_RETURN;
+    }
+
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_store(uint32_t inst)
+    {
+        switch (extract_funct3(inst))
+        {
+            // Base store instructions
+        case FUNCT3_SB:
+        {
+            uint8_t value = x[extract_rs2(inst)] & 0xFF;
+            if (write8(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
+            {
+                _trace("RiscVEmulator: SB: Failed to store 8-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_s(inst));
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
+                result.illegal_store.value = value;
+                return result;
+            }
+        }
+        break;
+        case FUNCT3_SH:
+        {
+            uint16_t value = x[extract_rs2(inst)] & 0xFFFF;
+            if (write16(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
+            {
+                _trace("RiscVEmulator: SH: Failed to store 16-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_s(inst));
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
+                result.illegal_store.value = value;
+                return result;
+            }
+        }
+        break;
+        case FUNCT3_SW:
+        {
+            uint32_t value = x[extract_rs2(inst)];
+            if (write32(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
+            {
+                _trace("RiscVEmulator: SW: Failed to store 32-bit value at 0x%08x\n", x[extract_rs1(inst)] + extract_imm_s(inst));
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
+                result.illegal_store.value = value;
+                return result;
+            }
+        }
+        break;
+        default:
+            // Unknown funct3
+            _trace("RiscVEmulator: Unknown funct3 for OP_STORE, instruction: 0x%08x\n", inst);
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = inst;
+            return result;
+        }
+        OPCODE_RETURN;
+    }
+
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_branch(uint32_t inst)
+    {
+        switch (extract_funct3(inst))
+        {
+            // Base branch instructions
+        case FUNCT3_BEQ:
+            if (x[extract_rs1(inst)] == x[extract_rs2(inst)])
+            {
+                auto new_pc = pc + extract_imm_b(inst);
+                // Ensure that it is readable
+                uint32_t dummy;
+                if (read32(new_pc, dummy) != 0)
+                {
+                    _trace("RiscVEmulator: BEQ: Branch to unreadable address 0x%08x\n", new_pc);
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = new_pc;
+                    return result;
+                }
+                pc = new_pc;
+            }
+            break;
+        case FUNCT3_BNE:
+            if (x[extract_rs1(inst)] != x[extract_rs2(inst)])
+            {
+                auto new_pc = pc + extract_imm_b(inst);
+                // Ensure that it is readable
+                uint32_t dummy;
+                if (read32(new_pc, dummy) != 0)
+                {
+                    _trace("RiscVEmulator: BNE: Branch to unreadable address 0x%08x\n", new_pc);
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = new_pc;
+                    return result;
+                }
+                pc = new_pc;
+            }
+            break;
+        case FUNCT3_BLT:
+            if ((int32_t)x[extract_rs1(inst)] < (int32_t)x[extract_rs2(inst)])
+            {
+                auto new_pc = pc + extract_imm_b(inst);
+                // Ensure that it is readable
+                uint32_t dummy;
+                if (read32(new_pc, dummy) != 0)
+                {
+                    _trace("RiscVEmulator: BLT: Branch to unreadable address 0x%08x\n", new_pc);
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = new_pc;
+                    return result;
+                }
+                pc = new_pc;
+            }
+            break;
+        case FUNCT3_BGE:
+            if ((int32_t)x[extract_rs1(inst)] >= (int32_t)x[extract_rs2(inst)])
+            {
+                auto new_pc = pc + extract_imm_b(inst);
+                // Ensure that it is readable
+                uint32_t dummy;
+                if (read32(new_pc, dummy) != 0)
+                {
+                    _trace("RiscVEmulator: BGE: Branch to unreadable address 0x%08x\n", new_pc);
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = new_pc;
+                    return result;
+                }
+                pc = new_pc;
+            }
+            break;
+        case FUNCT3_BLTU:
+            if (x[extract_rs1(inst)] < x[extract_rs2(inst)])
+            {
+                auto new_pc = pc + extract_imm_b(inst);
+                // Ensure that it is readable
+                uint32_t dummy;
+                if (read32(new_pc, dummy) != 0)
+                {
+                    _trace("RiscVEmulator: BLTU: Branch to unreadable address 0x%08x\n", new_pc);
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = new_pc;
+                    return result;
+                }
+                pc = new_pc;
+            }
+            break;
+        case FUNCT3_BGEU:
+            if (x[extract_rs1(inst)] >= x[extract_rs2(inst)])
+            {
+                auto new_pc = pc + extract_imm_b(inst);
+                // Ensure that it is readable
+                uint32_t dummy;
+                if (read32(new_pc, dummy) != 0)
+                {
+                    _trace("RiscVEmulator: BGEU: Branch to unreadable address 0x%08x\n", new_pc);
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = new_pc;
+                    return result;
+                }
+                pc = new_pc;
+            }
+            break;
+        default:
+            // Unknown funct3
+            _trace("RiscVEmulator: Unknown funct3 for OP_BRANCH, instruction: 0x%08x\n", inst);
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = inst;
+            return result;
+        }
+        OPCODE_RETURN;
+    }
+
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_jal(uint32_t inst)
+    {
+        // JAL
+        auto new_pc = pc + extract_imm_j(inst);
+        // Ensure that it is readable
+        uint32_t dummy;
+        if (read32(new_pc, dummy) != 0)
+        {
+            _trace("RiscVEmulator: JAL: Jump to unreadable address 0x%08x\n", new_pc);
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = new_pc;
+            return result;
+        }
+        x[extract_rd(inst)] = pc + 4;
+        pc = new_pc;
+        OPCODE_RETURN;
+    }
+
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_jalr(uint32_t inst)
+    {
+        // JALR
+        auto new_pc = (x[extract_rs1(inst)] + extract_imm_i(inst)) & ~0x1;
+        // Ensure that it is readable
+        uint32_t dummy;
+        if (read32(new_pc, dummy) != 0)
+        {
+            _trace("RiscVEmulator: JALR: Jump to unreadable address 0x%08x\n", new_pc);
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = new_pc;
+            return result;
+        }
+        x[extract_rd(inst)] = pc + 4;
+        pc = new_pc;
+        OPCODE_RETURN;
+    }
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_lui(uint32_t inst)
+    {
+        // LUI
+        x[extract_rd(inst)] = extract_imm_u(inst);
+        OPCODE_RETURN;
+    }
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_auipc(uint32_t inst)
+    {
+        // AUIPC
+        x[extract_rd(inst)] = pc + extract_imm_u(inst);
+        OPCODE_RETURN;
+    }
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_system(uint32_t inst)
+    {
+        // System instructions
+        switch (extract_funct3(inst))
+        {
+        case FUNCT3_ECALL_EBREAK:
+            if ((extract_imm_i(inst) & 0x1) == 0)
+            {
+                // ECALL
+                result.status = ExecuteResult::Status::ECALL;
+                return result;
+            }
+            else
+            {
+                // EBREAK
+                result.status = ExecuteResult::Status::EBREAK;
+                return result;
+            }
+            break;
+        case FUNCT3_CSRRW:
+            // CSR Read and Write
+            {
+                uint32_t csr = extract_imm_i(inst);
+                switch (csr)
+                {
+                case 0x1: // FP Flags
+                    x[extract_rd(inst)] = (fcsr & 0x1F);
+                    fcsr &= ~0x1F;
+                    fcsr |= (x[extract_rs1(inst)] & 0x1F);
+                    break;
+                case 0x2: // FP default round mode
+                    x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
+                    fcsr &= ~(0b111 << 5);
+                    fcsr |= ((x[extract_rs1(inst)] & 0b111) << 5);
+                    break;
+                case 0x3: // whole FCSR
+                    x[extract_rd(inst)] = fcsr;
+                    fcsr = x[extract_rs1(inst)] & 0xFFFFFFFF;
+                    break;
+                default:
+                    // Unknown CSR
+                    _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", inst);
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
+                }
+            }
+            break;
+        case FUNCT3_CSRRS:
+            // CSR Read and Set
+            {
+                uint32_t csr = extract_imm_i(inst);
+                switch (csr)
+                {
+                case 0x1: // FP Flags
+                    x[extract_rd(inst)] = (fcsr & 0x1F);
+                    fcsr |= (x[extract_rs1(inst)] & 0x1F);
+                    break;
+                case 0x2: // FP default round mode
+                    x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
+                    fcsr |= ((x[extract_rs1(inst)] & 0b111) << 5);
+                    break;
+                case 0x3: // whole FCSR
+                    x[extract_rd(inst)] = fcsr;
+                    fcsr |= (x[extract_rs1(inst)] & 0xFFFFFFFF);
+                    break;
+                default:
+                    // Unknown CSR
+                    _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", inst);
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
+                }
+            }
+            break;
+        case FUNCT3_CSRRC:
+            // CSR Read and Clear
+            {
+                uint32_t csr = extract_imm_i(inst);
+                switch (csr)
+                {
+                case 0x1: // FP Flags
+                    x[extract_rd(inst)] = (fcsr & 0x1F);
+                    fcsr &= ~(x[extract_rs1(inst)] & 0x1F);
+                    break;
+                case 0x2: // FP default round mode
+                    x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
+                    fcsr &= ~((x[extract_rs1(inst)] & 0b111) << 5);
+                    break;
+                case 0x3: // whole FCSR
+                    x[extract_rd(inst)] = fcsr;
+                    fcsr &= ~(x[extract_rs1(inst)] & 0xFFFFFFFF);
+                    break;
+                default:
+                    // Unknown CSR
+                    _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", inst);
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
+                }
+            }
+            break;
+        case FUNCT3_CSRRWI:
+            // CSR Read and Write Immediate
+            {
+                uint32_t csr = extract_imm_i(inst);
+                switch (csr)
+                {
+                case 0x1: // FP Flags
+                    x[extract_rd(inst)] = (fcsr & 0x1F);
+                    fcsr &= ~0x1F;
+                    fcsr |= (extract_rs1(inst) & 0x1F);
+                    break;
+                case 0x2: // FP default round mode
+                    x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
+                    fcsr &= ~(0b111 << 5);
+                    fcsr |= ((extract_rs1(inst) & 0b111) << 5);
+                    break;
+                case 0x3: // whole FCSR
+                    x[extract_rd(inst)] = fcsr;
+                    fcsr = extract_rs1(inst) & 0xFFFFFFFF;
+                    break;
+                default:
+                    // Unknown CSR
+                    _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", inst);
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
+                }
+            }
+            break;
+        case FUNCT3_CSRRSI:
+            // CSR Read and Set Immediate
+            {
+                uint32_t csr = extract_imm_i(inst);
+                switch (csr)
+                {
+                case 0x1: // FP Flags
+                    x[extract_rd(inst)] = (fcsr & 0x1F);
+                    fcsr |= (extract_rs1(inst) & 0x1F);
+                    break;
+                case 0x2: // FP default round mode
+                    x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
+                    fcsr |= ((extract_rs1(inst) & 0b111) << 5);
+                    break;
+                case 0x3: // whole FCSR
+                    x[extract_rd(inst)] = fcsr;
+                    fcsr |= (extract_rs1(inst) & 0xFFFFFFFF);
+                    break;
+                default:
+                    // Unknown CSR
+                    _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", inst);
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
+                }
+            }
+            break;
+        case FUNCT3_CSRRCI:
+            // CSR Read and Clear Immediate
+            {
+                uint32_t csr = extract_imm_i(inst);
+                switch (csr)
+                {
+                case 0x1: // FP Flags
+                    x[extract_rd(inst)] = (fcsr & 0x1F);
+                    fcsr &= ~(extract_rs1(inst) & 0x1F);
+                    break;
+                case 0x2: // FP default round mode
+                    x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
+                    fcsr &= ~((extract_rs1(inst) & 0b111) << 5);
+                    break;
+                case 0x3: // whole FCSR
+                    x[extract_rd(inst)] = fcsr;
+                    fcsr &= ~(extract_rs1(inst) & 0xFFFFFFFF);
+                    break;
+                default:
+                    // Unknown CSR
+                    _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", inst);
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = inst;
+                    return result;
+                }
+            }
+            break;
+        default:
+            // Unknown funct3
+            _trace("RiscVEmulator: Unknown funct3 for OP_CSR, instruction: 0x%08x\n", inst);
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = inst;
+            return result;
+        }
+        OPCODE_RETURN;
+    }
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_misc_mem(uint32_t inst)
+    {
+        // FENCE
+        if (extract_funct3(inst) == FUNCT3_FENCE)
+        {
+            // No operation
+        }
+        else if (extract_funct3(inst) == FUNCT3_FENCE_I)
+        {
+            // FENCE.I
+            // No operation
+        }
+        else
+        {
+            // Unknown funct3
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = inst;
+            return result;
+        }
+        OPCODE_RETURN;
+    }
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_atomic(uint32_t inst)
+    {
+        if (extract_funct3(inst) != 0x2)
+        {
+            // Unknown funct3
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = inst;
+            return result;
+        }
+        switch (extract_funct5(inst))
+        {
+        case FUNCT5_LR:
+        {
+            // Load Reserved
+            uint32_t val;
+            if (read32(x[extract_rs1(inst)], val) != 0)
+            {
+                _trace("RiscVEmulator: LR: Load from unreadable address 0x%08x\n", x[extract_rs1(inst)]);
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)];
+                return result;
+            }
+            memory->reserved_mem[x[extract_rs1(inst)]] = reserved_mem_id;
+            x[extract_rd(inst)] = val;
+            break;
+        }
+        case FUNCT5_SC:
+        {
+            // Store Conditional
+            auto it = memory->reserved_mem.find(x[extract_rs1(inst)]);
+            if (it == memory->reserved_mem.end() || it->second != reserved_mem_id)
+            {
+                // Not reserved
+                x[extract_rd(inst)] = 1;
+                break;
+            }
+            uint32_t val = x[extract_rs2(inst)];
+            if (write32(x[extract_rs1(inst)], val) != 0)
+            {
+                _trace("RiscVEmulator: SC: Store to bad address 0x%08x\n", x[extract_rs1(inst)]);
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)];
+                result.illegal_store.value = val;
+                return result;
+            }
+            memory->reserved_mem.erase(it);
+            x[extract_rd(inst)] = 0;
+            break;
+        }
+        case FUNCT5_AMOSWAP:
+        {
+            // Atomic Swap
+            uint32_t old_val;
+            if (read32(x[extract_rs1(inst)], old_val) != 0)
+            {
+                _trace("RiscVEmulator: AMOSWAP: Swap from unreadable address 0x%08x\n", x[extract_rs1(inst)]);
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)];
+                return result;
+            }
+            uint32_t new_val = x[extract_rs2(inst)];
+            if (write32(x[extract_rs1(inst)], new_val) != 0)
+            {
+                _trace("RiscVEmulator: AMOSWAP: Swap to unwritable address 0x%08x\n", x[extract_rs1(inst)]);
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)];
+                result.illegal_store.value = new_val;
+                return result;
+            }
+            x[extract_rd(inst)] = old_val;
+            break;
+        }
+        case FUNCT5_AMOADD:
+        {
+            // Atomic Add
+            uint32_t old_val;
+            if (read32(x[extract_rs1(inst)], old_val) != 0)
+            {
+                _trace("RiscVEmulator: AMOADD: Load from unreadable address 0x%08x\n", x[extract_rs1(inst)]);
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)];
+                return result;
+            }
+            uint32_t new_val = old_val + x[extract_rs2(inst)];
+            if (write32(x[extract_rs1(inst)], new_val) != 0)
+            {
+                _trace("RiscVEmulator: AMOADD: Store to unwritable address 0x%08x\n", x[extract_rs1(inst)]);
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)];
+                result.illegal_store.value = new_val;
+                return result;
+            }
+            x[extract_rd(inst)] = old_val;
+            break;
+        }
+        case FUNCT5_AMOAND:
+        {
+            // Atomic AND
+            uint32_t old_val;
+            if (read32(x[extract_rs1(inst)], old_val) != 0)
+            {
+                _trace("RiscVEmulator: AMOAND: Load from unreadable address 0x%08x\n", x[extract_rs1(inst)]);
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)];
+                return result;
+            }
+            uint32_t new_val = old_val & x[extract_rs2(inst)];
+            if (write32(x[extract_rs1(inst)], new_val) != 0)
+            {
+                _trace("RiscVEmulator: AMOAND: Store to unwritable address 0x%08x\n", x[extract_rs1(inst)]);
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)];
+                result.illegal_store.value = new_val;
+                return result;
+            }
+            x[extract_rd(inst)] = old_val;
+            break;
+        }
+        case FUNCT5_AMOOR:
+        {
+            // Atomic OR
+            uint32_t old_val;
+            if (read32(x[extract_rs1(inst)], old_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)];
+                return result;
+            }
+            uint32_t new_val = old_val | x[extract_rs2(inst)];
+            if (write32(x[extract_rs1(inst)], new_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)];
+                result.illegal_store.value = new_val;
+                return result;
+            }
+            x[extract_rd(inst)] = old_val;
+            break;
+        }
+        case FUNCT5_AMOXOR:
+        {
+            // Atomic XOR
+            uint32_t old_val;
+            if (read32(x[extract_rs1(inst)], old_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)];
+                return result;
+            }
+            uint32_t new_val = old_val ^ x[extract_rs2(inst)];
+            if (write32(x[extract_rs1(inst)], new_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)];
+                result.illegal_store.value = new_val;
+                return result;
+            }
+            x[extract_rd(inst)] = old_val;
+            break;
+        }
+        case FUNCT5_AMOMAX:
+        {
+            // Atomic Max
+            uint32_t old_val;
+            if (read32(x[extract_rs1(inst)], old_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)];
+                return result;
+            }
+            uint32_t new_val = std::max((int32_t)old_val, (int32_t)x[extract_rs2(inst)]);
+            if (write32(x[extract_rs1(inst)], new_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)];
+                result.illegal_store.value = new_val;
+                return result;
+            }
+            x[extract_rd(inst)] = old_val;
+            break;
+        }
+        case FUNCT5_AMOMIN:
+        {
+            // Atomic Min
+            uint32_t old_val;
+            if (read32(x[extract_rs1(inst)], old_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)];
+                return result;
+            }
+            uint32_t new_val = std::min((int32_t)old_val, (int32_t)x[extract_rs2(inst)]);
+            if (write32(x[extract_rs1(inst)], new_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)];
+                result.illegal_store.value = new_val;
+                return result;
+            }
+            x[extract_rd(inst)] = old_val;
+            break;
+        }
+        case FUNCT5_AMOMAXU:
+        {
+            // Atomic Max Unsigned
+            uint32_t old_val;
+            if (read32(x[extract_rs1(inst)], old_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)];
+                return result;
+            }
+            uint32_t new_val = std::max(old_val, x[extract_rs2(inst)]);
+            if (write32(x[extract_rs1(inst)], new_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)];
+                result.illegal_store.value = new_val;
+                return result;
+            }
+            x[extract_rd(inst)] = old_val;
+            break;
+        }
+        case FUNCT5_AMOMINU:
+        {
+            // Atomic Min Unsigned
+            uint32_t old_val;
+            if (read32(x[extract_rs1(inst)], old_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)];
+                return result;
+            }
+            uint32_t new_val = std::min(old_val, x[extract_rs2(inst)]);
+            if (write32(x[extract_rs1(inst)], new_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)];
+                result.illegal_store.value = new_val;
+                return result;
+            }
+            x[extract_rd(inst)] = old_val;
+            break;
+        }
+        default:
+            // Unknown funct5
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = inst;
+            return result;
+        }
+        OPCODE_RETURN;
+    }
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_flw(uint32_t inst)
+    {
+        set_round_mode(ROUND_DYN, fcsr);
+        if (extract_funct3(inst) & 0x1)
+        {
+            // FLD
+            double value;
+            if (readf64(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                return result;
+            }
+            f[extract_rd(inst)] = value;
+        }
+        else
+        {
+            // FLW
+            float value;
+            if (readf32(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
+                return result;
+            }
+            write_float_to_double(value, f[extract_rd(inst)]);
+        }
+        OPCODE_RETURN;
+    }
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_fsw(uint32_t inst)
+    {
+        set_round_mode(ROUND_DYN, fcsr);
+        if (extract_funct3(inst) & 0x1)
+        {
+            // FSD
+            if (writef64(x[extract_rs1(inst)] + extract_imm_s(inst), f[extract_rs2(inst)]) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
+                result.illegal_store.value = f[extract_rs2(inst)];
+                return result;
+            }
+        }
+        else
+        {
+            // FSW
+            float value = read_float_from_double(f[extract_rs2(inst)]);
+            if (writef32(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
+                result.illegal_store.value = value;
+                return result;
+            }
+        }
+        OPCODE_RETURN;
+    }
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_fmadd(uint32_t inst)
+    {
+        // FMADD
+        set_round_mode(extract_funct3(inst), fcsr);
+        if (is_double_precision(inst))
+        {
+            double a = f[extract_rs1(inst)];
+            double b = f[extract_rs2(inst)];
+            double c = f[extract_rs3(inst)];
+            f[extract_rd(inst)] = a * b + c;
+        }
+        else
+        {
+            float a = read_float_from_double(f[extract_rs1(inst)]);
+            float b = read_float_from_double(f[extract_rs2(inst)]);
+            float c = read_float_from_double(f[extract_rs3(inst)]);
+            write_float_to_double(a * b + c, f[extract_rd(inst)]);
+        }
+        OPCODE_RETURN;
+    }
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_fmsub(uint32_t inst)
+    {
+        // FMSUB
+        set_round_mode(extract_funct3(inst), fcsr);
+        if (is_double_precision(inst))
+        {
+            double a = f[extract_rs1(inst)];
+            double b = f[extract_rs2(inst)];
+            double c = f[extract_rs3(inst)];
+            f[extract_rd(inst)] = a * b - c;
+        }
+        else
+        {
+            float a = read_float_from_double(f[extract_rs1(inst)]);
+            float b = read_float_from_double(f[extract_rs2(inst)]);
+            float c = read_float_from_double(f[extract_rs3(inst)]);
+            write_float_to_double(a * b - c, f[extract_rd(inst)]);
+        }
+        OPCODE_RETURN;
+    }
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_fnmadd(uint32_t inst)
+    {
+        // FNMADD
+        set_round_mode(extract_funct3(inst), fcsr);
+        if (is_double_precision(inst))
+        {
+            double a = f[extract_rs1(inst)];
+            double b = f[extract_rs2(inst)];
+            double c = f[extract_rs3(inst)];
+            f[extract_rd(inst)] = -(a * b) - c;
+        }
+        else
+        {
+            float a = read_float_from_double(f[extract_rs1(inst)]);
+            float b = read_float_from_double(f[extract_rs2(inst)]);
+            float c = read_float_from_double(f[extract_rs3(inst)]);
+            write_float_to_double(-(a * b) - c, f[extract_rd(inst)]);
+        }
+        OPCODE_RETURN;
+    }
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_fnmsub(uint32_t inst)
+    {
+        // FNMSUB
+        set_round_mode(extract_funct3(inst), fcsr);
+        if (is_double_precision(inst))
+        {
+            double a = f[extract_rs1(inst)];
+            double b = f[extract_rs2(inst)];
+            double c = f[extract_rs3(inst)];
+            f[extract_rd(inst)] = -(a * b) + c;
+        }
+        else
+        {
+            float a = read_float_from_double(f[extract_rs1(inst)]);
+            float b = read_float_from_double(f[extract_rs2(inst)]);
+            float c = read_float_from_double(f[extract_rs3(inst)]);
+            write_float_to_double(-(a * b) + c, f[extract_rd(inst)]);
+        }
+        OPCODE_RETURN;
+    }
+    RiscVEmulator::ExecuteResult RiscVEmulator::do_op_freg(uint32_t inst)
+    {
+        float a, b;
+        double ad, bd;
+        switch (extract_funct7(inst))
+        {
+        case 0b0000000:
+            // FADD.S
+            set_round_mode(extract_funct3(inst), fcsr);
+            a = read_float_from_double(f[extract_rs1(inst)]);
+            b = read_float_from_double(f[extract_rs2(inst)]);
+            write_float_to_double(a + b, f[extract_rd(inst)]);
+            break;
+        case 0b0000100:
+            // FSUB.S
+            set_round_mode(extract_funct3(inst), fcsr);
+            a = read_float_from_double(f[extract_rs1(inst)]);
+            b = read_float_from_double(f[extract_rs2(inst)]);
+            write_float_to_double(a - b, f[extract_rd(inst)]);
+            break;
+        case 0b0001000:
+            // FMUL.S
+            set_round_mode(extract_funct3(inst), fcsr);
+            a = read_float_from_double(f[extract_rs1(inst)]);
+            b = read_float_from_double(f[extract_rs2(inst)]);
+            write_float_to_double(a * b, f[extract_rd(inst)]);
+            break;
+        case 0b0001100:
+            // FDIV.S
+            set_round_mode(extract_funct3(inst), fcsr);
+            a = read_float_from_double(f[extract_rs1(inst)]);
+            b = read_float_from_double(f[extract_rs2(inst)]);
+            write_float_to_double(a / b, f[extract_rd(inst)]);
+            break;
+        case 0b0101100:
+            // FSQRT.S
+            set_round_mode(extract_funct3(inst), fcsr);
+            a = read_float_from_double(f[extract_rs1(inst)]);
+            write_float_to_double(sqrt(a), f[extract_rd(inst)]);
+            break;
+        case 0b0010000:
+            // FSGN*.S
+            set_round_mode(ROUND_DYN, fcsr);
+            a = read_float_from_double(f[extract_rs1(inst)]);
+            b = read_float_from_double(f[extract_rs2(inst)]);
+            switch (extract_funct3(inst))
+            {
+            case 0b000:
+                // FSGNJ.S
+                write_float_to_double(b < 0 ? -abs(a) : abs(a),
+                                      f[extract_rd(inst)]);
+                break;
+            case 0b001:
+                // FSGNJN.S
+                write_float_to_double(b < 0 ? abs(a) : -abs(a),
+                                      f[extract_rd(inst)]);
+                break;
+            case 0b010:
+                // FSGNJX.S
+                write_float_to_double(b < 0 ? -a : a,
+                                      f[extract_rd(inst)]);
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+            break;
+        case 0b0010100:
+            // F(MIN|MAX).S
+            set_round_mode(ROUND_DYN, fcsr);
+            a = read_float_from_double(f[extract_rs1(inst)]);
+            b = read_float_from_double(f[extract_rs2(inst)]);
+            if (extract_funct3(inst) == 0b000)
+                // FMIN.S
+                write_float_to_double(std::min(a, b), f[extract_rd(inst)]);
+            else if (extract_funct3(inst) == 0b001)
+                // FMAX.S
+                write_float_to_double(std::max(a, b), f[extract_rd(inst)]);
+            else
+            {
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+            break;
+        case 0b1100000:
+            // FCVT.W*.S
+            set_round_mode(extract_funct3(inst), fcsr);
+            switch (extract_rs2(inst))
+            {
+            case 0b00000:
+                // FCVT.W.S
+                a = read_float_from_double(f[extract_rs1(inst)]);
+                if (a > INT32_MAX || a < INT32_MIN)
+                {
+                    // NV
+                    fcsr |= 1 << 4;
+                    break;
+                }
+                x[extract_rd(inst)] = (int32_t)a;
+                break;
+            case 0b00001:
+                // FCVT.WU.S
+                a = read_float_from_double(f[extract_rs1(inst)]);
+                if (a > UINT32_MAX || a < 0)
+                {
+                    // NV
+                    fcsr |= 1 << 4;
+                    break;
+                }
+                x[extract_rd(inst)] = (uint32_t)a;
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+            break;
+        case 0b1110000:
+            // FMV.X.W or FCLASS.S
+            set_round_mode(ROUND_DYN, fcsr);
+            switch (extract_funct3(inst))
+            {
+            case 0b000:
+                // FMV.X.W
+                a = read_float_from_double(f[extract_rs1(inst)]);
+                memcpy(&x[extract_rd(inst)], &a, sizeof(float));
+                break;
+            case 0b001:
+                // FCLASS.S
+                a = read_float_from_double(f[extract_rs1(inst)]);
+                x[extract_rd(inst)] = classify_float(a);
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+            break;
+        case 0b1010000:
+            // FEQ.S or FLT.S or FLE.S
+            set_round_mode(ROUND_DYN, fcsr);
+            a = read_float_from_double(f[extract_rs1(inst)]);
+            b = read_float_from_double(f[extract_rs2(inst)]);
+            switch (extract_funct3(inst))
+            {
+            case 0b000:
+                // FEQ.S
+                x[extract_rd(inst)] = (a == b);
+                break;
+            case 0b001:
+                // FLT.S
+                x[extract_rd(inst)] = (a < b);
+                break;
+            case 0b010:
+                // FLE.S
+                x[extract_rd(inst)] = (a <= b);
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+            break;
+        case 0b1101000:
+            // FCVT.S.W*
+            set_round_mode(extract_funct3(inst), fcsr);
+            switch (extract_rs2(inst))
+            {
+            case 0b00000:
+                // FCVT.S.W
+                a = (float)(int32_t)x[extract_rs1(inst)];
+                write_float_to_double(a, f[extract_rd(inst)]);
+                break;
+            case 0b00001:
+                // FCVT.S.WU
+                a = (float)(uint32_t)x[extract_rs1(inst)];
+                write_float_to_double(a, f[extract_rd(inst)]);
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+            break;
+        case 0b1111000:
+            // FMV.W.X
+            set_round_mode(ROUND_DYN, fcsr);
+            memcpy(&a, &x[extract_rs1(inst)], sizeof(float));
+            write_float_to_double(a, f[extract_rd(inst)]);
+            break;
+        case 0b0000001:
+            // FADD.D
+            set_round_mode(extract_funct3(inst), fcsr);
+            ad = f[extract_rs1(inst)];
+            bd = f[extract_rs2(inst)];
+            f[extract_rd(inst)] = ad + bd;
+            break;
+        case 0b0000101:
+            // FSUB.D
+            set_round_mode(extract_funct3(inst), fcsr);
+            ad = f[extract_rs1(inst)];
+            bd = f[extract_rs2(inst)];
+            f[extract_rd(inst)] = ad - bd;
+            break;
+        case 0b0001001:
+            // FMUL.D
+            set_round_mode(extract_funct3(inst), fcsr);
+            ad = f[extract_rs1(inst)];
+            bd = f[extract_rs2(inst)];
+            f[extract_rd(inst)] = ad * bd;
+            break;
+        case 0b0001101:
+            // FDIV.D
+            set_round_mode(extract_funct3(inst), fcsr);
+            ad = f[extract_rs1(inst)];
+            bd = f[extract_rs2(inst)];
+            f[extract_rd(inst)] = ad / bd;
+            break;
+        case 0b0101101:
+            // FSQRT.D
+            set_round_mode(extract_funct3(inst), fcsr);
+            ad = f[extract_rs1(inst)];
+            f[extract_rd(inst)] = sqrt(ad);
+            break;
+        case 0b0010001:
+            // FSGN*.D
+            set_round_mode(ROUND_DYN, fcsr);
+            ad = f[extract_rs1(inst)];
+            bd = f[extract_rs2(inst)];
+            switch (extract_funct3(inst))
+            {
+            case 0b000:
+                // FSGNJ.D
+                f[extract_rd(inst)] = bd < 0 ? -abs(ad) : abs(ad);
+                break;
+            case 0b001:
+                // FSGNJN.D
+                f[extract_rd(inst)] = bd < 0 ? abs(ad) : -abs(ad);
+                break;
+            case 0b010:
+                // FSGNJX.D
+                f[extract_rd(inst)] = bd < 0 ? -ad : ad;
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+            break;
+        case 0b0010101:
+            // F(MIN|MAX).D
+            set_round_mode(ROUND_DYN, fcsr);
+            ad = f[extract_rs1(inst)];
+            bd = f[extract_rs2(inst)];
+            if (extract_funct3(inst) == 0b000)
+                // FMIN.D
+                f[extract_rd(inst)] = std::min(ad, bd);
+            else if (extract_funct3(inst) == 0b001)
+                // FMAX.D
+                f[extract_rd(inst)] = std::max(ad, bd);
+            else
+            {
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+            break;
+        case 0b0100000:
+            // FCVT.S.D
+            set_round_mode(extract_funct3(inst), fcsr);
+            ad = f[extract_rs1(inst)];
+            write_float_to_double((float)ad, f[extract_rd(inst)]);
+            break;
+        case 0b0100001:
+            // FCVT.D.S
+            set_round_mode(extract_funct3(inst), fcsr);
+            ad = read_float_from_double(f[extract_rs1(inst)]);
+            f[extract_rd(inst)] = ad;
+            break;
+        case 0b1010001:
+            // FEQ.D or FLT.D or FLE.D
+            set_round_mode(ROUND_DYN, fcsr);
+            ad = f[extract_rs1(inst)];
+            bd = f[extract_rs2(inst)];
+            switch (extract_funct3(inst))
+            {
+            case 0b000:
+                // FEQ.D
+                x[extract_rd(inst)] = (ad == bd);
+                break;
+            case 0b001:
+                // FLT.D
+                x[extract_rd(inst)] = (ad < bd);
+                break;
+            case 0b010:
+                // FLE.D
+                x[extract_rd(inst)] = (ad <= bd);
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+            break;
+        case 0b1110001:
+            // FCLASS.D
+            set_round_mode(ROUND_DYN, fcsr);
+            ad = f[extract_rs1(inst)];
+            x[extract_rd(inst)] = classify_double(ad);
+            break;
+        case 0b1100001:
+            // FCVT.W.D or FCVT.WU.D
+            set_round_mode(extract_funct3(inst), fcsr);
+            ad = f[extract_rs1(inst)];
+            switch (extract_rs2(inst))
+            {
+            case 0b00000:
+                // FCVT.W.D
+                if (ad > INT32_MAX || ad < INT32_MIN)
+                {
+                    // NV
+                    fcsr |= 1 << 4;
+                    break;
+                }
+                x[extract_rd(inst)] = (int32_t)std::nearbyint(ad);
+                break;
+            case 0b00001:
+                // FCVT.WU.D
+                if (ad > UINT32_MAX || ad < 0)
+                {
+                    // NV
+                    fcsr |= 1 << 4;
+                    break;
+                }
+                x[extract_rd(inst)] = (uint32_t)std::nearbyint(ad);
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+            break;
+        case 0b1101001:
+            // FCVT.D.W*
+            set_round_mode(extract_funct3(inst), fcsr);
+            switch (extract_rs2(inst))
+            {
+            case 0b00000:
+                // FCVT.D.W
+                ad = (double)(int32_t)x[extract_rs1(inst)];
+                f[extract_rd(inst)] = ad;
+                break;
+            case 0b00001:
+                // FCVT.D.WU
+                ad = (double)(uint32_t)x[extract_rs1(inst)];
+                f[extract_rd(inst)] = ad;
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = inst;
+                return result;
+            }
+        }
+        OPCODE_RETURN;
+    }
+} // namespace Hamster
