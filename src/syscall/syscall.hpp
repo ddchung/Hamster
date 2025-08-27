@@ -180,42 +180,26 @@ namespace Hamster
     int32_t syscall(int32_t (*sys_fn)(SysArgs...))
     {
         static constexpr size_t num_args = sizeof...(SysArgs);
-
-        if (num_args > 6)
-        {
-            // RISC-V Linux ABI only supports up to 6 arguments
-            return -EINVAL;
-        }
+        static_assert(num_args <= 6, "syscall must have 6 or fewer arguments");
 
         Task *current_task = scheduler.get_current_task();
-        if (!current_task)
-        {
-            return -ESRCH;
-        }
+        assert(current_task != nullptr);
 
-        // Prevent zero-size arrays
-        uint32_t args[num_args == 0 ? 1 : num_args];
-        
-        for (size_t i = 0; i < num_args; ++i)
-            args[i] = current_task->emulator.x[10 + i]; // a0-a5 are syscall arguments
-        
         // Enumerator
-
-        static_assert(num_args <= 6, "syscall must have 6 or fewer arguments");
 
         if constexpr (num_args == 0)
             return sys_fn();
         else if constexpr (num_args == 1)
-            return sys_fn(args[0]);
+            return sys_fn(current_task->emulator.x[10]);
         else if constexpr (num_args == 2)
-            return sys_fn(args[0], args[1]);
+            return sys_fn(current_task->emulator.x[10], current_task->emulator.x[11]);
         else if constexpr (num_args == 3)
-            return sys_fn(args[0], args[1], args[2]);
+            return sys_fn(current_task->emulator.x[10], current_task->emulator.x[11], current_task->emulator.x[12]);
         else if constexpr (num_args == 4)
-            return sys_fn(args[0], args[1], args[2], args[3]);
+            return sys_fn(current_task->emulator.x[10], current_task->emulator.x[11], current_task->emulator.x[12], current_task->emulator.x[13]);
         else if constexpr (num_args == 5)
-            return sys_fn(args[0], args[1], args[2], args[3], args[4]);
+            return sys_fn(current_task->emulator.x[10], current_task->emulator.x[11], current_task->emulator.x[12], current_task->emulator.x[13], current_task->emulator.x[14]);
         else if constexpr (num_args == 6)
-            return sys_fn(args[0], args[1], args[2], args[3], args[4], args[5]);
+            return sys_fn(current_task->emulator.x[10], current_task->emulator.x[11], current_task->emulator.x[12], current_task->emulator.x[13], current_task->emulator.x[14], current_task->emulator.x[15]);
     }
 }
