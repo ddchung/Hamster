@@ -39,3 +39,8 @@
 // compatibility
 #define HAMSTER_PAGE_SIZE (1 << HAMSTER_PAGE_SIZE_BITS)
 static_assert((HAMSTER_PAGE_SIZE & (HAMSTER_PAGE_SIZE - 1)) == 0, "Page size must be a power of 2");
+
+// Likely/unlikely
+
+#define HAMSTER_LIKELY(x) (__builtin_expect(!!(x), 1))
+#define HAMSTER_UNLIKELY(x) (__builtin_expect(!!(x), 0))

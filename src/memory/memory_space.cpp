@@ -31,6 +31,35 @@ namespace Hamster
         return *this;
     }
 
+    int MemorySpace::fast_read_aligned(uint32_t addr, void *buf, size_t size)
+    {
+        assert(buf != nullptr);
+        assert((addr % size) == 0);
+        assert(size <= 32);
+        assert((size & (size - 1)) == 0);
+
+        // (size == size) - 1
+        // true - 1
+        // 1 - 1
+        // 0
+        //
+        // (-1 == size) - 1
+        // false - 1
+        // 0 - 1
+        // -1
+        return (do_read(addr, buf, size) == (ssize_t)size) - 1;
+    }
+
+    int MemorySpace::fast_write_aligned(uint32_t addr, const void *buf, size_t size)
+    {
+        assert(buf != nullptr);
+        assert((addr % size) == 0);
+        assert(size <= 32);
+        assert((size & (size - 1)) == 0);
+
+        return (do_write(addr, buf, size) == (ssize_t)size) - 1;
+    }
+
     int MemorySpace::memcpy(void *dest, uint32_t src, uint32_t len)
     {
         assert(dest);
@@ -320,11 +349,11 @@ namespace Hamster
     {
         assert(buf != nullptr);
 
-        if (len == 0)
+        if HAMSTER_UNLIKELY(len == 0)
             return 0;
 
         uint32_t id = page_table.get_page(addr);
-        if (id == PageTable::PAGE_ID_UNUSED)
+        if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
             return -1;
 
         return page_manager.read(id, addr & (HAMSTER_PAGE_SIZE - 1), buf, len);
@@ -334,11 +363,11 @@ namespace Hamster
     {
         assert(buf != nullptr);
 
-        if (len == 0)
+        if HAMSTER_UNLIKELY(len == 0)
             return 0;
 
         uint32_t id = page_table.get_page(addr);
-        if (id == PageTable::PAGE_ID_UNUSED)
+        if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
             return -1;
 
         return page_manager.write(id, addr & (HAMSTER_PAGE_SIZE - 1), buf, len);

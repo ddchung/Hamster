@@ -38,6 +38,10 @@ namespace Hamster
 
         int memset_alloc(uint32_t addr, uint8_t value, uint32_t len);
 
+        // faster read/write that require small, aligned objects
+        int fast_read_aligned(uint32_t addr, void *buf, size_t size);
+        int fast_write_aligned(uint32_t addr, const void *buf, size_t size);
+
         /**
          * @brief Read from a memory region, up until, and including, a zero byte
          * @param addr The address of the memory region to read from

@@ -341,79 +341,70 @@ namespace Hamster
 
     int RiscVEmulator::read32(uint32_t addr, uint32_t &out)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-        return memory->memory.memcpy(&out, addr, sizeof(out));
+        if HAMSTER_UNLIKELY(addr & 0b11)
+            // unaligned, use slower routine
+            return memory->memory.memcpy(&out, addr, sizeof(out));
+        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::read16(uint32_t addr, uint16_t &out)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-        return memory->memory.memcpy(&out, addr, sizeof(out));
+        if HAMSTER_UNLIKELY(addr & 0b1)
+            return memory->memory.memcpy(&out, addr, sizeof(out));
+        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::read8(uint32_t addr, uint8_t &out)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-        return memory->memory.memcpy(&out, addr, sizeof(out));
+        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::write32(uint32_t addr, uint32_t value)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        if HAMSTER_UNLIKELY(addr & 0b11)
+            return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::write16(uint32_t addr, uint16_t value)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
+        if HAMSTER_UNLIKELY(addr & 0b1)
+            return memory->memory.memcpy(addr, &value, sizeof(value));
 
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::write8(uint32_t addr, uint8_t value)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
     }
-
+    
     int RiscVEmulator::readf32(uint32_t addr, float &out)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-        return memory->memory.memcpy(&out, addr, sizeof(out));
+        if HAMSTER_UNLIKELY(addr & 0b11)
+            return memory->memory.memcpy(&out, addr, sizeof(out));
+        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::readf64(uint32_t addr, double &out)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-        return memory->memory.memcpy(&out, addr, sizeof(out));
+        if HAMSTER_UNLIKELY(addr & 0b111)
+            return memory->memory.memcpy(&out, addr, sizeof(out));
+        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::writef32(uint32_t addr, float value)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        // Note that writing to unallocating memory will allocate it
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        if HAMSTER_UNLIKELY(addr & 0b11)
+            return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::writef64(uint32_t addr, double value)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        // Note that writing to unallocating memory will allocate it
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        if HAMSTER_UNLIKELY(addr & 0b111)
+            return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
     }
 
     RiscVEmulator::ExecuteResult RiscVEmulator::run()
