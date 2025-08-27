@@ -424,14 +424,14 @@ namespace Hamster
         uint32_t inst;
         ExecuteResult result;
 
-        if (!memory)
+        if HAMSTER_UNLIKELY(!memory)
         {
             _trace("RiscVEmulator: Memory not initialized!\n");
             result.status = ExecuteResult::Status::Error;
             return result;
         }
 
-        if ((PERM_READ | PERM_EXEC) & ~memory->memory.get_permissions(pc))
+        if HAMSTER_UNLIKELY((PERM_READ | PERM_EXEC) & ~memory->memory.get_permissions(pc))
         {
             _trace("RiscVEmulator: Execute from non-executable address 0x%08x\n", pc);
             result.status = ExecuteResult::Status::IllegalLoad;
@@ -439,7 +439,7 @@ namespace Hamster
             return result;
         }
 
-        if (read32(pc, inst) != 0)
+        if HAMSTER_UNLIKELY(read32(pc, inst) != 0)
         {
             _trace("RiscVEmulator: Failed to read instruction at 0x%08x\n", pc);
             result.status = ExecuteResult::Status::IllegalLoad;
