@@ -6,10 +6,15 @@
 #include <errno/errno.h>
 #include <cstring>
 
+#ifdef NTRACE
+#include <utility>
+#endif
+
 namespace Hamster
 {
     namespace
     {
+#ifndef NTRACE
         const char *error_names[] = {
             "No Error",                                // 0 - No error
             "EPERM - Operation not permitted",         // 1
@@ -47,6 +52,7 @@ namespace Hamster
             "EDOM - Math argument out of domain of func", // 33
             "ERANGE - Math result not representable"   // 34
         };
+#endif
 
         template <typename... Args>
         uint8_t num_args(int32_t (*sys_fn)(Args...))
@@ -68,8 +74,11 @@ namespace Hamster
         int32_t args[6] = {0};
         Task *current_task = scheduler.get_current_task();
         memcpy(args, current_task->emulator.x + 10, sizeof(args));
-
+#ifndef NTRACE
         uint8_t arg_count = 0;
+#else
+        auto &arg_count = std::ignore;
+#endif
 
         int32_t result;
         switch (sys_id)
@@ -441,6 +450,7 @@ namespace Hamster
             break;
         }
 
+#ifndef NTRACE
         _trace("TID %d: syscall(num=%d, args={", current_task->tid, sys_id);
 
         for (uint8_t i = 0; i < arg_count; ++i)
@@ -462,6 +472,7 @@ namespace Hamster
         }
 
         _trace("\n");
+#endif
 
         return result;
     }

@@ -112,9 +112,11 @@ int Hamster::_init_platform()
     Serial.begin(115200);
     while (!Serial)
         ;
+#ifndef NTRACE
     auto trace_millis_start = millis();
     while (!SerialUSB1 && millis() - trace_millis_start < 1000)
         ;
+#endif
 
     // init sd card, if available
     if (SD.begin(254))
@@ -201,6 +203,7 @@ size_t Hamster::_get_free_memory()
     return used;
 }
 
+#ifndef NTRACE
 void Hamster::_trace(const char *fmt, ...)
 {
     va_list args;
@@ -208,5 +211,6 @@ void Hamster::_trace(const char *fmt, ...)
     SerialUSB1.vprintf(fmt, args);
     va_end(args);
 }
+#endif
 
 #endif // TEENSY41

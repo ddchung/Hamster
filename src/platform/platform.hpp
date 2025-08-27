@@ -55,6 +55,7 @@ namespace Hamster
     int _log(const char * msg);
     int _log(char c);
 
+#ifndef NTRACE
     // Trace
     // This is a debug function, by default it does nothing
     // If overridden, it is **VERY IMPORTANT** that it traces to a different
@@ -65,6 +66,9 @@ namespace Hamster
     // because of potential usages of uncommon format specifiers (like "%.*s")
     __attribute__((format(printf, 1, 2)))
     void _trace(const char *fmt, ...);
+#else
+    inline void _trace(const char *fmt, ...) {}
+#endif
 
     // Initialize any allocator
     void _init_allocator();

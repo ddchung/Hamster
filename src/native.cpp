@@ -802,6 +802,7 @@ namespace
 
 namespace
 {
+#ifndef NTRACE
     FILE *trace_file = nullptr;
 
     void trace_atexit_handler()
@@ -812,6 +813,7 @@ namespace
             trace_file = nullptr;
         }
     }
+#endif
 
     // Console device
 
@@ -884,6 +886,7 @@ namespace
 
 int Hamster::_init_platform()
 {
+#ifndef NTRACE
     char trace_file_name[256];
     printf("Enter trace file name (or leave empty to disable tracing): ");
     fgets(trace_file_name, sizeof(trace_file_name), stdin);
@@ -902,11 +905,12 @@ int Hamster::_init_platform()
     {
         trace_file = nullptr;
     }
+#endif
 
     return 0;
 }
 
-
+#ifndef NTRACE
 void Hamster::_trace(const char *fmt, ...)
 {
     if (!trace_file)
@@ -917,6 +921,7 @@ void Hamster::_trace(const char *fmt, ...)
     vfprintf(trace_file, fmt, args);
     va_end(args);
 }
+#endif
 
 int Hamster::_mount_rootfs()
 {
