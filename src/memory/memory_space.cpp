@@ -7,6 +7,7 @@
 #include <errno/errno.h>
 #include <algorithm>
 #include <cassert>
+#include <cstring>
 
 // Helpers
 
@@ -100,10 +101,12 @@ namespace Hamster
 
     int MemorySpace::memset(uint32_t loc, uint8_t byte, uint32_t len)
     {
-        // TODO: better implementation
-        for (uint32_t addr = loc; addr < loc + len; addr += 1)
+        static uint8_t buf[HAMSTER_PAGE_SIZE];
+        ::memset(buf, byte, sizeof(buf));
+        for (uint32_t addr = loc; addr < loc + len; addr += sizeof(buf))
         {
-            if (do_write(addr, &byte, 1) < 0)
+            size_t chunk_size = std::min<uint32_t>(sizeof(buf), loc + len - addr);
+            if (do_write(addr, buf, chunk_size) < 0)
                 return -1;
         }
         return 0;
