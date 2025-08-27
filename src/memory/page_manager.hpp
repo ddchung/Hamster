@@ -36,7 +36,8 @@ namespace Hamster
             uint32_t zero : 1;
         };
     public:
-        PageManager() = default;
+        PageManager()
+        { page_table.reserve(0xFFFF); }
         ~PageManager();
         PageManager(const PageManager &) = delete;
         PageManager &operator=(const PageManager &) = delete;
