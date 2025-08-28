@@ -282,7 +282,7 @@ namespace Hamster
     if (old_pc == pc) \
         pc += 4; \
     old_pc = pc; \
-    if HAMSTER_UNLIKELY(--remaining_timeslice == 0) \
+    if (--remaining_timeslice == 0) \
     { \
         result.status = ExecuteResult::Status::Success; \
         return result; \

@@ -69,7 +69,7 @@ namespace Hamster
         ExecuteResult run();
 
     private:
-        uint8_t remaining_timeslice;
+        uint16_t remaining_timeslice;
     
         ExecuteResult execute();
 
