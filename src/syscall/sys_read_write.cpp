@@ -21,7 +21,7 @@ namespace Hamster
 
             int res = vfs.poll(vfs_fd, 0x1); // Poll for read
 
-            if (res != 1)
+            if (res == 0)
                 return; // not ready
 
             task.emulator.x[10] = blocking_fd;
@@ -39,7 +39,7 @@ namespace Hamster
 
             int res = vfs.poll(vfs_fd, 0x2); // Poll for write
 
-            if (res != 1)
+            if (res == 0)
                 return; // not ready
 
             task.emulator.x[10] = blocking_fd;

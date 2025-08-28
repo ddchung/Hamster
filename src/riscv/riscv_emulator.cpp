@@ -33,8 +33,6 @@ namespace Hamster
             OP_FNMSUB = 0b1001011,
             OP_FNMADD = 0b1001111,
             OP_FREG = 0b1010011,
-
-            OP_CSR = 0b1110011,
         };
 
         uint32_t extract_opcode(uint32_t inst)
@@ -113,14 +111,9 @@ namespace Hamster
 
     RiscVEmulator::ExecuteResult RiscVEmulator::run()
     {
-        ExecuteResult result;
-        for (int i = 0; i < HAMSTER_THREAD_TIME_SLICE; i++)
-        {
-            result = execute();
-            if (result.status != ExecuteResult::Status::Success)
-                break;
-        }
-        return result;
+        remaining_timeslice = HAMSTER_THREAD_TIME_SLICE;
+        old_pc = pc;
+        return execute();
     }
 
     RiscVEmulator::ExecuteResult RiscVEmulator::execute()
@@ -150,8 +143,6 @@ namespace Hamster
             result.illegal_load.address = pc;
             return result;
         }
-
-        uint32_t old_pc = pc;
 
         x[0] = 0;
         switch (extract_opcode(inst))
@@ -219,10 +210,6 @@ namespace Hamster
             result.illegal_instruction.instruction = inst;
             return result;
         }
-
-        // Increment PC if an instruction didn't change it
-        if (old_pc == pc)
-            pc += 4;
 
         return result;
     }
