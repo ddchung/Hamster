@@ -6,7 +6,11 @@
 #define HAMSTER_STACK_TOP (96 * 1024 * 1024)
 
 // The length of each thread's time slice, in # of instructions
-#define HAMSTER_THREAD_TIME_SLICE 65535
+#ifdef ARDUINO
+#define HAMSTER_THREAD_TIME_SLICE 2048
+#else
+#define HAMSTER_THREAD_TIME_SLICE 32768
+#endif
 
 // The maximum overrun time in the kernel scheduler, before the task is considered
 // overdue and is removed from the scheduler, in milliseconds
