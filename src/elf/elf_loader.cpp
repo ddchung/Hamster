@@ -66,11 +66,6 @@ namespace Hamster
             brk = 0;
 
             // Load program headers
-            if (file.seek(ehdr.e_phoff, H_SEEK_SET) < 0)
-            {
-                error = EIO;
-                return -1;
-            }
 
             for (int i = 0; i < ehdr.e_phnum; ++i)
             {
