@@ -81,9 +81,6 @@ namespace Hamster
 
     void PageManager::free_page(uint32_t id)
     {
-        if (id >= page_table.size())
-            return;
-
         // Free the page entry
         PageEntry *&entry = page_table[id];
 
