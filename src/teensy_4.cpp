@@ -11,6 +11,7 @@
 #include <filesystem/device_manager.hpp>
 #include <driver/base_tty.hpp>
 #include <driver/base_romfs.hpp>
+#include <driver/block_device_cache.hpp>
 #include <errno/errno.h>
 #include <o1heap.h>
 
@@ -86,14 +87,47 @@ namespace
             rootfs_file.close();
         }
 
-        ssize_t read(uint32_t loc, void *buf, size_t count)
+        uint64_t get_block_size_log2()
         {
-            rootfs_file.seekSet(loc);
-            return rootfs_file.read(buf, count);
+            return 9; // 512 bytes
+        }
+
+        int read_block(uint32_t loc, void *buf)
+        {
+            rootfs_file.seekSet(loc * 512);
+            int bytes_read = rootfs_file.read(buf, 512);
+
+            if (bytes_read == 512)
+                return 0;
+            else if (bytes_read == -1)
+            {
+                error = EIO;
+                return -1;
+            }
+            else
+            {
+                // Short read
+                memset((uint8_t *)buf + bytes_read, 0, 512 - bytes_read);
+                return 0;
+            }
+        }
+
+        int write_block(uint32_t loc, const void *buf)
+        {
+            // Read-only
+            error = EROFS;
+            return -1;
+        }
+
+        bool is_read_only()
+        {
+            return true;
         }
     private:
         SdFile rootfs_file;
     };
+
+    using ArduinoRomFs = BaseRomFs<BlockDeviceCache<ArduinoRomFsBackend>>;
 
     O1HeapInstance *ext_heap;
     O1HeapInstance *ram2_heap;
@@ -136,7 +170,7 @@ int Hamster::_init_platform()
 
 int Hamster::_mount_rootfs()
 {
-    vfs.mount("/", alloc<BaseRomFs<ArduinoRomFsBackend>>());
+    vfs.mount("/", alloc<ArduinoRomFs>());
     Hamster::vfs.mkdir("/dev", 0755);
     Hamster::vfs.mkdir("/tmp", 0755);
     BaseFilesystem *ramfs = Hamster::alloc<Hamster::RamFs>();

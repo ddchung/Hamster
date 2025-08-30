@@ -21,7 +21,10 @@
 // Ensure it's not too low or too high:
 // - too low: The system will keep too many pages in RAM, possibly causing an out-of-memory situation
 // - too high: The system will swap out too many pages, possibly causing performance issues
-#define HAMSTER_TARGET_FREE_RAM (sizeof(void *) * HAMSTER_PAGE_SIZE)
+#define HAMSTER_TARGET_FREE_RAM (512 * 1024)
+
+// Maximum memory pressure for disk caching
+#define HAMSTER_DISK_FREE_RAM (1 * 1024 * 1024)
 
 // Maximum pipe buffer size, in bytes
 #define HAMSTER_MAX_PIPE_BUFFERED 512
