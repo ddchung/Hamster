@@ -73,6 +73,14 @@ namespace Hamster
         int add_task(BaseKTask *task);
 
         /**
+         * @brief Change an existing task's ID
+         * @param old_id The current ID of the task
+         * @param new_id The new ID to assign to the task
+         * @return 0 on success, -1 on failure and set `error`
+         */
+        int move_task(uint32_t old_id, uint32_t new_id);
+
+        /**
          * @brief Manually remove a task from the kernel scheduler
          * @param id The ID of the task to remove
          * @return 0 on success, -1 on failure and set `error`

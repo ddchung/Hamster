@@ -38,6 +38,27 @@ namespace Hamster
         return 0;
     }
 
+    int KScheduler::move_task(uint32_t old_id, uint32_t new_id)
+    {
+        auto it = tasks.find(old_id);
+        if (it == tasks.end())
+        {
+            error = ESRCH;
+            return -1;
+        }
+
+        if (new_id == 0 || tasks.find(new_id) != tasks.end())
+        {
+            error = EEXIST;
+            return -1;
+        }
+
+        it->second->id = new_id;
+        tasks[new_id] = it->second;
+        tasks.erase(it);
+        return 0;
+    }
+
     int KScheduler::remove_task(uint32_t id)
     {
         auto it = tasks.find(id);
