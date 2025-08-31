@@ -278,37 +278,41 @@ namespace Hamster
         RiscVEmulator::ExecuteResult result;
     } // namespace
 
-#define OPCODE_RETURN do { \
-    if (old_pc == pc) \
-        pc += 4; \
-    old_pc = pc; \
-    if (--remaining_timeslice == 0) \
-    { \
-        result.status = ExecuteResult::Status::Success; \
-        return result; \
-    } \
-    x[0] = 0; \
-    if HAMSTER_UNLIKELY ((PERM_READ | PERM_EXEC) & ~memory->memory.get_permissions(pc)) \
-    { \
-        _trace("RiscVEmulator: Execute from non-executable address 0x%08x\n", pc); \
-        result.status = ExecuteResult::Status::IllegalLoad; \
-        result.illegal_load.address = pc; \
-        return result; \
-    } \
-    if HAMSTER_UNLIKELY (read32(pc, inst) != 0) \
-    { \
-        _trace("RiscVEmulator: Failed to read instruction at 0x%08x\n", pc); \
-        result.status = ExecuteResult::Status::IllegalLoad; \
-        result.illegal_load.address = pc; \
-        return result; \
-    } \
-    uint32_t opc = extract_opcode(inst); \
-    ++total_instructions_executed; \
-    if HAMSTER_LIKELY(opc < opc_jumptab_sz) \
-        [[gnu::musttail]] return (this->*opcode_jumptable[opc])(inst); \
-    else \
-        [[gnu::musttail]] return do_invalid_op(inst); \
-} while (0)
+#define OPCODE_RETURN                                                                       \
+    do                                                                                      \
+    {                                                                                       \
+        if (old_pc == pc)                                                                   \
+            pc += 4;                                                                        \
+        old_pc = pc;                                                                        \
+        if (--remaining_timeslice == 0)                                                     \
+        {                                                                                   \
+            result.status = ExecuteResult::Status::Success;                                 \
+            return result;                                                                  \
+        }                                                                                   \
+        x[0] = 0;                                                                           \
+        if HAMSTER_UNLIKELY ((PERM_READ | PERM_EXEC) & ~memory->memory.get_permissions(pc)) \
+        {                                                                                   \
+            _trace("RiscVEmulator: Execute from non-executable address 0x%08x\n", pc);      \
+            result.status = ExecuteResult::Status::IllegalLoad;                             \
+            result.illegal_load.address = pc;                                               \
+            return result;                                                                  \
+        }                                                                                   \
+        if HAMSTER_UNLIKELY (read32(pc, inst) != 0)                                         \
+        {                                                                                   \
+            _trace("RiscVEmulator: Failed to read instruction at 0x%08x\n", pc);            \
+            result.status = ExecuteResult::Status::IllegalLoad;                             \
+            result.illegal_load.address = pc;                                               \
+            return result;                                                                  \
+        }                                                                                   \
+        uint32_t opc = extract_opcode(inst);                                                \
+        ++total_instructions_executed;                                                      \
+        if HAMSTER_LIKELY (opc < opc_jumptab_sz)                                            \
+            [[gnu::musttail]]                                                               \
+            return (this->*opcode_jumptable[opc])(inst);                                    \
+        else                                                                                \
+            [[gnu::musttail]]                                                               \
+            return do_invalid_op(inst);                                                     \
+    } while (0)
 
     RiscVEmulator::ExecuteResult RiscVEmulator::do_op_reg(uint32_t inst)
     {
@@ -363,6 +367,7 @@ namespace Hamster
                 break;
             default:
                 // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_REG, instruction: 0x%08x\n", inst);
                 result.status = ExecuteResult::Status::IllegalInstruction;
                 result.illegal_instruction.instruction = inst;
                 return result;
@@ -986,6 +991,7 @@ namespace Hamster
         else
         {
             // Unknown funct3
+            _trace("RiscVEmulator: Unknown funct3 for OP_MISC_MEM, instruction: 0x%08x\n", inst);
             result.status = ExecuteResult::Status::IllegalInstruction;
             result.illegal_instruction.instruction = inst;
             return result;
@@ -1445,6 +1451,7 @@ namespace Hamster
                 break;
             default:
                 // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_IMM, instruction: 0x%08x\n", inst);
                 result.status = ExecuteResult::Status::IllegalInstruction;
                 result.illegal_instruction.instruction = inst;
                 return result;
@@ -1464,6 +1471,7 @@ namespace Hamster
             else
             {
                 // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_FREG, instruction: 0x%08x\n", inst);
                 result.status = ExecuteResult::Status::IllegalInstruction;
                 result.illegal_instruction.instruction = inst;
                 return result;
@@ -1498,6 +1506,7 @@ namespace Hamster
                 break;
             default:
                 // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_FREG, instruction: 0x%08x\n", inst);
                 result.status = ExecuteResult::Status::IllegalInstruction;
                 result.illegal_instruction.instruction = inst;
                 return result;
@@ -1520,6 +1529,7 @@ namespace Hamster
                 break;
             default:
                 // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_FREG, instruction: 0x%08x\n", inst);
                 result.status = ExecuteResult::Status::IllegalInstruction;
                 result.illegal_instruction.instruction = inst;
                 return result;

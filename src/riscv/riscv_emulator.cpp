@@ -208,6 +208,7 @@ namespace Hamster
             break;
         default:
             // Unknown opcode
+            _trace("RiscVEmulator: Unknown opcode 0x%02x, instruction: 0x%08x\n", extract_opcode(inst), inst);
             result.status = ExecuteResult::Status::IllegalInstruction;
             result.illegal_instruction.instruction = inst;
             return result;
