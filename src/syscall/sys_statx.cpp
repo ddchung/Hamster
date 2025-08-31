@@ -45,6 +45,9 @@ namespace Hamster
                 case UserFDType::PIPE_WRITE:
                     statbuf.mode = STAT_IFIFO;
                     break;
+                case UserFDType::PID:
+                default:
+                    return -EBADF;
                 }
             }
             else
