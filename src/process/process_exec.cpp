@@ -103,6 +103,8 @@ namespace Hamster
         leader->is_dead = false;
         leader->is_paused = false;
 
+        leader->process->obj.reset_signal_handlers();
+
         MemorySpace &memory_space = leader->memory->obj.memory;
 
         uint64_t entry_point = 0;

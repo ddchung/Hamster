@@ -37,30 +37,50 @@ namespace Hamster
             memcpy(ucontext.context.fpstate.d.f, emulator.f, sizeof(emulator.f));
 
             // Trampoline
-            sp -= sizeof(H_SIGHAND_TRAMPOLINE);
-            if (memory.memcpy_alloc(sp, H_SIGHAND_TRAMPOLINE, sizeof(H_SIGHAND_TRAMPOLINE)) < 0)
-                return;
-            emulator.x[1] = sp; // return address
+            if (action->flags & H_SA_RESTORER)
+                emulator.x[1] = action->restorer; // return address
+            else
+            {
+                sp -= sizeof(H_SIGHAND_TRAMPOLINE);
+                if (memory.memcpy_alloc(sp, H_SIGHAND_TRAMPOLINE, sizeof(H_SIGHAND_TRAMPOLINE)) < 0)
+                    return;
+                emulator.x[1] = sp; // return address
+            }
 
             // signo
             emulator.x[10] = siginfo->signo;
 
-            sp -= sizeof(sys_siginfo);
-            if (memory.memcpy_alloc(sp, siginfo, sizeof(sys_siginfo)) < 0)
-                return;
+            if (action->flags & H_SA_SIGINFO)
+            {
+                sp -= sizeof(sys_siginfo);
+                if (memory.memcpy_alloc(sp, siginfo, sizeof(sys_siginfo)) < 0)
+                    return;
+                
+                // siginfo
+                emulator.x[11] = sp;
+            }
 
-            // siginfo
-            emulator.x[11] = sp;
-
+            // we push the ucontext onto the stack regardless of 
+            // whether SA_SIGINFO is set, so that the return code can correctly pop it
+            // out to restore state
             sp -= sizeof(sys_ucontext);
             if (memory.memcpy_alloc(sp, &ucontext, sizeof(sys_ucontext)) < 0)
                 return;
             
             // ucontext
-            emulator.x[12] = sp;
+            if (action->flags & H_SA_SIGINFO)
+                emulator.x[12] = sp;
 
             // Program counter
             emulator.pc = action->handler;
+
+            if (action->flags & H_SA_RESETHAND)
+            {
+                // Reset to default handler
+                task->process->obj.default_signal(siginfo->signo);
+            }
+
+            _trace("Task %d: Calling userspace signal handler at 0x%08x\n", task->tid, action->handler);
         }
     } // namespace
 

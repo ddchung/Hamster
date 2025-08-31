@@ -33,10 +33,19 @@ namespace Hamster
             dealloc(path_str);
             if (flags & H_AT_EMPTY_PATH)
             {
-                int vfs_fd = task->get_vfs_fd(dirfd);
-                if (vfs_fd < 0)
-                    return cvt_error();
-                ret = vfs.stat(vfs_fd, &statbuf);
+                UserFD *user_fd = task->get_user_fd(dirfd);
+                if (!user_fd)
+                    return -1;
+                switch (user_fd->type)
+                {
+                case UserFDType::VFS:
+                    ret = vfs.stat(user_fd->vfs_fd, &statbuf);
+                    break;
+                case UserFDType::PIPE_READ:
+                case UserFDType::PIPE_WRITE:
+                    statbuf.mode = STAT_IFIFO;
+                    break;
+                }
             }
             else
             {

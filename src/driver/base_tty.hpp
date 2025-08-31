@@ -30,7 +30,7 @@ namespace Hamster
         ssize_t read(void *buf, size_t count);
         ssize_t write(const void *buf, size_t count);
 
-        int get_win_sz(sys_winsize *ws);optional_actions
+        int get_win_sz(sys_winsize *ws);
     };
     */
 
@@ -125,6 +125,7 @@ namespace Hamster
                 void run() override
                 {
                     driver->read_all_pending();
+                    driver->check_winsize();
                 }
             private:
                 BaseTTYDriver *driver;
@@ -264,18 +265,9 @@ namespace Hamster
                 return -1;
             }
 
-            Task *current_task = scheduler.get_current_task();
-
-            sys_siginfo siginfo;
-            siginfo.signo = signo;
-            siginfo.errno_value = 0;
-            siginfo.code = H_SI_USER;
-            siginfo.fields.kill.pid = current_task ? current_task->get_pid() : 0;
-            siginfo.fields.kill.uid = current_task ? current_task->process->obj.uid : 0;
-
             for (Process *proc : fg_pgroup->processes)
             {
-                proc->send_signal(siginfo);
+                proc->send_signal(signo);
             }
             return 0;
         }
@@ -376,6 +368,25 @@ namespace Hamster
             }
         }
 
+        void check_winsize()
+        {
+            // Check if the window size has changed
+            sys_winsize new_size;
+            if (get_win_sz(&new_size) < 0)
+                return;
+
+            if (new_size.col != win_sz.col || new_size.row != win_sz.row ||
+                new_size.xpixel != win_sz.xpixel || new_size.ypixel != win_sz.ypixel)
+            {
+                win_sz = new_size;
+                // Send SIGWINCH to the foreground process group
+                send_sig_to_fg(H_SIGWINCH);
+            }
+
+            // Update the terminal size
+            win_sz = new_size;
+        }
+
         // Ensure they are accessible
 
         using Backend::get_win_sz;
@@ -385,7 +396,7 @@ namespace Hamster
         Session *session = nullptr;
         ProcessGroup *fg_pgroup = nullptr;
         sys_termios termios = {};
-        sys_winsize win_sz = {}; // TODO: Send SIGWINCH on size change
+        sys_winsize win_sz = {};
 
         Deque<char> input_buffer;
         Deque<char> output_buffer;
@@ -551,7 +562,8 @@ namespace Hamster
             driver->termios = *(const sys_termios *)arg.p;
             return 0;
         case H_TIOCGWINSZ:
-            return driver->get_win_sz((sys_winsize *)arg.p);
+            *(sys_winsize *)arg.p = driver->win_sz;
+            return 0;
         case H_TIOCGPGRP:
             *(uint32_t *)arg.p = driver->fg_pgroup ? driver->fg_pgroup->pgid : 0;
             return 0;

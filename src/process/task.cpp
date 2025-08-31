@@ -428,6 +428,19 @@ namespace Hamster
         return 0;
     }
 
+    int Process::reset_signal_handlers()
+    {
+        for (int signo = 1; signo < 64; ++signo)
+        {
+            if (signal_handlers->obj.sig_handlers[signo].action.handler != H_SIG_DFL &&
+                signal_handlers->obj.sig_handlers[signo].action.handler != H_SIG_IGN)
+            {
+                signal_handlers->obj.sig_handlers[signo] = default_signal_handlers[signo];
+            }
+        }
+        return 0;
+    }
+
     int Process::join_process_group(TaskMember<ProcessGroup> *pg)
     {
         // Leave current process group if any

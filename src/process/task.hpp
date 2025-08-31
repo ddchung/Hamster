@@ -326,6 +326,14 @@ namespace Hamster
          * @note This will set it to the default handler, such as terminating for SIGINT, or doing nothing for SIGCHLD
          */
         int default_signal(int signo);
+        
+        /**
+         * @brief Reset all custom signal handlers to the default
+         * @return 0 on success, -1 on failure and set `error`
+         * @note This will only affect signals that have custom handlers set, and
+         *       SIG_DFL and SIG_IGN will remain unchanged
+         */
+        int reset_signal_handlers();
 
         /**
          * @brief Load an ELF executable into the process memory space

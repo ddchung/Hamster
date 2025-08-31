@@ -212,9 +212,9 @@ namespace Hamster
 
     inline constexpr int H_FD_CLOEXEC = 1; // Close-on-exec flag
 
-    inline constexpr int H_AT_FDCWD = -100; // Special value for current working directory
+    inline constexpr int H_AT_FDCWD = -100;      // Special value for current working directory
     inline constexpr int H_AT_REMOVEDIR = 0x200; // unlinkat(2) flag to remove directories instead of files
-    inline constexpr int H_AT_EACCESS = 0x200; // faccessat2(2) flag to use EUID/EGID instead of UID/GID for permission checking
+    inline constexpr int H_AT_EACCESS = 0x200;   // faccessat2(2) flag to use EUID/EGID instead of UID/GID for permission checking
 
     inline constexpr int H_SIGHUP = 1;
     inline constexpr int H_SIGINT = 2;
@@ -377,6 +377,15 @@ namespace Hamster
     inline constexpr int H_SIG_BLOCK = 0;
     inline constexpr int H_SIG_UNBLOCK = 1;
     inline constexpr int H_SIG_SETMASK = 2;
+
+    inline constexpr int H_SA_NOCLDSTOP = 0x00000001; /* Don't send SIGCHLD when children stop.  */
+    inline constexpr int H_SA_NOCLDWAIT = 0x00000002; /* Don't create zombie on child death.  */
+    inline constexpr int H_SA_SIGINFO = 0x00000004;
+    inline constexpr int H_SA_RESTORER = 0x04000000;
+    inline constexpr int H_SA_ONSTACK = 0x08000000; /* Use signal stack by using `sa_restorer'. */
+    inline constexpr int H_SA_RESTART = 0x10000000; /* Restart syscall on signal return.  */
+    inline constexpr int H_SA_NODEFER = 0x40000000; /* Don't automatically block the signal when its handler is being executed.  */
+    inline constexpr int H_SA_RESETHAND = 0x80000000; /* Reset to default handler on signal return. */
 
     inline constexpr int H_PROT_READ = 0x1;             /* page can be read */
     inline constexpr int H_PROT_WRITE = 0x2;            /* page can be written */
