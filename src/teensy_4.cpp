@@ -12,6 +12,7 @@
 #include <driver/base_tty.hpp>
 #include <driver/base_romfs.hpp>
 #include <driver/block_device_cache.hpp>
+#include <driver/base_char_device.hpp>
 #include <errno/errno.h>
 #include <o1heap.h>
 
@@ -127,12 +128,38 @@ namespace
         SdFile rootfs_file;
     };
 
+    struct TeensyLEDDevice {};
+
     using ArduinoRomFs = BaseRomFs<BlockDeviceCache<ArduinoRomFsBackend>>;
 
     O1HeapInstance *ext_heap;
     O1HeapInstance *ram2_heap;
     EXTMEM uint8_t extmem_buffer[16 * 1024 * 1024];
     DMAMEM uint8_t ram2_buffer[450 * 1024];
+} // namespace
+
+namespace Hamster
+{
+    template <>
+    ssize_t CharacterDeviceImpl<TeensyLEDDevice>::write(const void *buffer, size_t size)
+    {
+        uint8_t *data = (uint8_t *)buffer;
+        for (size_t i = 0; i < size; i++)
+        {
+            switch (data[i])
+            {
+            case '1':
+            case 0x1:
+                digitalWrite(LED_BUILTIN, HIGH);
+                break;
+            case '0':
+            case 0x0:
+                digitalWrite(LED_BUILTIN, LOW);
+                break;
+            }
+        }
+        return size;
+    }
 } // namespace
 
 void Hamster::_init_allocator()
@@ -151,6 +178,8 @@ int Hamster::_init_platform()
     while (!SerialUSB1 && millis() - trace_millis_start < 1000)
         ;
 #endif
+
+    pinMode(LED_BUILTIN, OUTPUT);
 
     // init sd card, if available
     if (SD.begin(254))
@@ -182,6 +211,10 @@ int Hamster::_mount_rootfs()
     Hamster::device_manager.register_device({5, 1}, console_device);
     Hamster::vfs.mknod("/dev/console", {5, 1}, 0666);
     Hamster::vfs.symlink("/dev/tty", "/dev/console");
+
+    auto led_device = Hamster::alloc<CharacterDevice<TeensyLEDDevice>>();
+    Hamster::device_manager.register_device({0, 1}, led_device);
+    Hamster::vfs.mknod("/dev/led", {0, 1}, 0666);
 
     return 0;
 }
