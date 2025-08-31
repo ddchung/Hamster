@@ -6,6 +6,7 @@
 #include <memory/allocator.hpp>
 #include <process/scheduler.hpp>
 #include <kscheduler/kscheduler.hpp>
+#include <riscv/riscv_emulator.hpp>
 #include <errno/errno.h>
 #include <cstring>
 
@@ -37,9 +38,7 @@ namespace
         Hamster::_log("]");
         Hamster::_log("\r\n");
     }
-#ifndef NTRACE
-    uint64_t *sched_tick_count = nullptr;
-#endif
+
     class UserSchedulerTickTask : public Hamster::BaseKTask
     {
     public:
@@ -49,17 +48,7 @@ namespace
             interval = 0; // Tick as fast as possible
             id = 1; // Fixed ID
             next_tick = 0;
-#ifndef NTRACE
-            sched_tick_count = &tick_count;
-#endif
         }
-
-#ifndef NTRACE
-        ~UserSchedulerTickTask() override
-        {
-            sched_tick_count = nullptr;
-        }
-#endif
 
         void run() override
         {
@@ -87,8 +76,8 @@ namespace
 
         void run() override
         {
-            uint64_t current_tick_count = *sched_tick_count;
-            Hamster::_trace("Scheduler ticks in the last %llums: %llu\n", (unsigned long long)interval, (unsigned long long)(current_tick_count - last_tick_count));
+            uint64_t current_tick_count = Hamster::total_instructions_executed;
+            Hamster::_trace("Instructions executed in the last %llums: %llu\n", (unsigned long long)interval, (unsigned long long)(current_tick_count - last_tick_count));
             last_tick_count = current_tick_count;
         }
     private:

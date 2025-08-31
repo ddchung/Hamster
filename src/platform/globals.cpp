@@ -47,6 +47,13 @@ namespace Hamster
     int32_t clock_rt_offset{0};
 
     /**
+     * Emulator monitor
+     * requires: none
+     * provides: total_instructions_executed
+     */
+    uint64_t total_instructions_executed{0};
+
+    /**
      * Kernel Scheduler
      * requires: allocator, error
      * provides: kscheduler

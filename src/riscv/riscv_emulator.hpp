@@ -8,6 +8,8 @@
 
 namespace Hamster
 {
+    extern uint64_t total_instructions_executed;
+
     struct EmulatorMemory
     {
         MemorySpace memory;

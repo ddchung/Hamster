@@ -144,6 +144,8 @@ namespace Hamster
             return result;
         }
 
+        ++total_instructions_executed;
+
         x[0] = 0;
         switch (extract_opcode(inst))
         {

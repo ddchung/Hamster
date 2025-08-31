@@ -303,6 +303,7 @@ namespace Hamster
         return result; \
     } \
     uint32_t opc = extract_opcode(inst); \
+    ++total_instructions_executed; \
     if HAMSTER_LIKELY(opc < opc_jumptab_sz) \
         [[gnu::musttail]] return (this->*opcode_jumptable[opc])(inst); \
     else \
