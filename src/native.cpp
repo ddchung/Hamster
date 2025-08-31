@@ -549,7 +549,9 @@ namespace
                 return nullptr;
             }
 
-            int new_fd = openat(fd, name, O_RDWR | O_NONBLOCK | O_NOFOLLOW);
+            int new_fd = openat(fd, name, O_RDWR | O_NONBLOCK | O_NOFOLLOW |
+                                          (flags & OPEN_APPEND ? O_APPEND : 0) |
+                                          (flags & OPEN_TRUNC ? O_TRUNC : 0));
             if (new_fd < 0)
             {
                 if (errno == ENOENT && (flags & OPEN_CREAT))

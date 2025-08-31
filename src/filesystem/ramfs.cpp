@@ -323,6 +323,8 @@ namespace Hamster
             RamFsRegularHandle(RamFsRegularNode *node, int flags)
                 : RamFsNodeHandle(node, flags), offset(0)
             {
+                if (flags & OPEN_TRUNC)
+                    truncate(0);
             }
 
             ~RamFsRegularHandle() override = default;
