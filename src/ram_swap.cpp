@@ -46,16 +46,5 @@ int Hamster::_swap_in(int index, uint8_t *dest)
     return 0;
 }
 
-int Hamster::_swap_rm(int index)
-{
-    return swapped_pages.erase(index) == 1 ? 0 : -1;
-}
-
-int Hamster::_swap_rm_all()
-{
-    swapped_pages.clear();
-    return 0;
-}
-
 #endif
 

@@ -70,45 +70,4 @@ int Hamster::_swap_in(int index, uint8_t *data)
     return 0;
 }
 
-int Hamster::_swap_rm(int index)
-{
-    if (make_swap_name(index) != 0)
-        return -1;
-
-    SdFile file;
-    if (!file.open(name_buffer, O_RDWR))
-    {
-        return -1;
-    }
-    if (!file.remove())
-    {
-        file.close();
-        return -1;
-    }
-    file.close();
-    return 0;
-}
-
-int Hamster::_swap_rm_all()
-{
-    SdFile dir;
-    SdFile entry;
-    if (!dir.open(SDCARD_SWAP_DIR, O_RDONLY))
-    {
-        return -1;
-    }
-    if (!dir.isDir())
-    {
-        dir.close();
-        return -2;
-    }
-    dir.rewindDirectory();
-    while (entry.openNext(&dir, O_RDWR))
-    {
-        entry.remove();
-    }
-    dir.close();
-    return 0;
-}
-
 #endif

@@ -63,42 +63,6 @@ void test_platform()
     assert(i < 0);
     i = Hamster::_swap_in(-1, buffer2);
     assert(i < 0);
-
-    // Test swap remove
-    i = Hamster::_swap_rm(0);
-    assert_eq(i, 0);
-    i = Hamster::_swap_in(0, buffer2);
-    assert(i < 0);
-    i = Hamster::_swap_rm(1);
-    assert_eq(i, 0);
-    i = Hamster::_swap_in(1, buffer2);
-    assert(i < 0);
-
-    // Test swap remove all
-    i = Hamster::_swap_out(0, buffer1);
-    assert_eq(i, 0);
-    i = Hamster::_swap_out(1, buffer1);
-    assert_eq(i, 0);
-    i = Hamster::_swap_out(2, buffer1);
-    assert_eq(i, 0);
-    i = Hamster::_swap_rm_all();
-    assert_eq(i, 0);
-    i = Hamster::_swap_in(0, buffer2);
-    assert(i < 0);
-    i = Hamster::_swap_in(1, buffer2);
-    assert(i < 0);
-    i = Hamster::_swap_in(2, buffer2);
-    assert(i < 0);
-    i = Hamster::_swap_rm_all();
-    assert_eq(i, 0);
-    i = Hamster::_swap_rm_all();
-    assert_eq(i, 0);
-
-    // Test swap remove with invalid index
-    i = Hamster::_swap_rm(-1);
-    assert(i < 0);
-    i = Hamster::_swap_rm_all();
-    assert_eq(i, 0);
 }
 
 #endif // NDEBUG
