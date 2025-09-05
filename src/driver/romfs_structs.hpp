@@ -36,11 +36,16 @@ namespace Hamster
         union
         {
             uint32_t _next_file;
+
+// Workaround for anonymous structs
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
             struct
             {
                 uint32_t file_type : 3;
                 uint32_t is_executable : 1;
             };
+#pragma GCC diagnostic pop
         };
 
         uint32_t info;
