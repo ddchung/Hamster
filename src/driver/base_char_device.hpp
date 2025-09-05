@@ -22,11 +22,13 @@ namespace Hamster
     // This struct is used only as a type identifier
     struct MyDevice {};
 
+    template <>
     ssize_t CharacterDeviceImpl<MyDevice>::write(const void *buffer, size_t size)
     {
         // Implement your device-specific write logic here
     }
 
+    template <>
     ssize_t CharacterDeviceImpl<MyDevice>::read(void *buffer, size_t size)
     {
         // Implement your device-specific read logic here
