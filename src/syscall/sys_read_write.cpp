@@ -17,16 +17,46 @@ namespace Hamster
         {
             int32_t blocking_fd = task.blocking_operation_saved[0];
 
-            int vfs_fd = task.get_vfs_fd(blocking_fd);
+            UserFD *user_fd = task.get_user_fd(blocking_fd);
+            int res;
 
-            int res = vfs.poll(vfs_fd, 0x1); // Poll for read
+            if (!user_fd)
+            {
+                res = cvt_error();
+            }
+            else
+            {
+                switch (user_fd->type)
+                {
+                case UserFDType::VFS:
+                    res = vfs.poll(user_fd->vfs_fd, 0x1); // Poll for read
+                    break;
+                case UserFDType::PIPE_READ:
+                    res = user_fd->pipe->poll(0x1); // Poll for read
+                    break;
+                case UserFDType::PIPE_WRITE:
+                case UserFDType::PID:
+                default:
+                    res = -EINVAL;
+                    break;
+                }
+            }
 
             if (res == 0)
                 return; // not ready
+            else if (res == 1)
+            {
+                task.emulator.x[10] = blocking_fd;
+                task.emulator.x[10] = syscall(sys_read);
+                if ((int32_t)task.emulator.x[10] == -EAGAIN)
+                    return;
+            }
+            else
+            {
+                // error
+                task.emulator.x[10] = res;
+            }
 
-            task.emulator.x[10] = blocking_fd;
-
-            task.emulator.x[10] = syscall(sys_read);
 
             task.blocking_operation = nullptr;
         }
@@ -35,16 +65,46 @@ namespace Hamster
         {
             int32_t blocking_fd = task.blocking_operation_saved[0];
 
-            int vfs_fd = task.get_vfs_fd(blocking_fd);
+            UserFD *user_fd = task.get_user_fd(blocking_fd);
+            int res;
 
-            int res = vfs.poll(vfs_fd, 0x2); // Poll for write
+            if (!user_fd)
+            {
+                res = cvt_error();
+            }
+            else
+            {
+                switch (user_fd->type)
+                {
+                case UserFDType::VFS:
+                    res = vfs.poll(user_fd->vfs_fd, 0x2); // Poll for write
+                    break;
+                case UserFDType::PIPE_WRITE:
+                    res = user_fd->pipe->poll(0x2); // Poll for write
+                    break;
+                case UserFDType::PIPE_READ:
+                case UserFDType::PID:
+                default:
+                    res = -EINVAL;
+                    break;
+                }
+            }
 
             if (res == 0)
                 return; // not ready
+            else if (res == 1)
+            {
+                task.emulator.x[10] = blocking_fd;
+                task.emulator.x[10] = syscall(sys_write);
+                if ((int32_t)task.emulator.x[10] == -EAGAIN)
+                    return;
+            }
+            else
+            {
+                // error
+                task.emulator.x[10] = res;
+            }
 
-            task.emulator.x[10] = blocking_fd;
-
-            task.emulator.x[10] = syscall(sys_write);
 
             task.blocking_operation = nullptr;
         }
