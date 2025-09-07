@@ -292,6 +292,8 @@ namespace Hamster
 
         CacheEntry &entry = cache_map[block_number];
 
+        unload_if_needed();
+
         entry.data = (uint8_t *)_malloc(get_block_size());
         assert(entry.data);
 

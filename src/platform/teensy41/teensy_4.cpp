@@ -124,11 +124,80 @@ namespace
         {
             return true;
         }
+
     private:
         SdFile rootfs_file;
     };
 
-    struct TeensyLEDDevice {};
+    // make speaker buffer volatile because it is accessed from interrupt
+    volatile class
+    {
+    public:
+        void push(uint8_t c) volatile
+        {
+            assert(count < sizeof(buffer)); // ensure we don't overflow
+            buffer[head] = c;
+            head = (head + 1) % sizeof(buffer);
+            count++;
+        }
+
+        uint8_t pop() volatile
+        {
+            assert(count > 0); // ensure we don't underflow
+            uint8_t c = buffer[tail];
+            tail = (tail + 1) % sizeof(buffer);
+            count--;
+            return c;
+        }
+
+        uint32_t size() const volatile
+        {
+            return count;
+        }
+
+        constexpr static uint32_t max_size()
+        {
+            return 65536;
+        }
+
+    private:
+        uint8_t buffer[65536];
+        uint32_t count = 0;
+        uint16_t head = 0;
+        uint16_t tail = 0;
+    } speaker_buffer;
+
+    struct TeensyLEDDevice
+    {
+    };
+    struct TeensySpeakerDevice
+    {
+    };
+
+    IntervalTimer speaker_timer;
+
+    void speaker_write_sample(uint8_t sample)
+    {
+        // Write to pins 14 (LSB) to 21 (MSB)
+        for (int i = 0; i < 8; i++)
+            digitalWriteFast(14 + i, (sample >> i) & 1);
+    }
+
+    void speaker_timer_isr()
+    {
+        if (speaker_buffer.size() > 0)
+        {
+            uint8_t sample = speaker_buffer.pop();
+            speaker_write_sample(sample);
+        }
+        else
+        {
+            speaker_timer.end();
+
+            // No data, output mid-level (128)
+            speaker_write_sample(128);
+        }
+    }
 
     using ArduinoRomFs = BaseRomFs<BlockDeviceCache<ArduinoRomFsBackend>>;
 
@@ -160,6 +229,42 @@ namespace Hamster
         }
         return size;
     }
+
+    template <>
+    ssize_t CharacterDeviceImpl<TeensySpeakerDevice>::write(const void *buffer, size_t size)
+    {
+        uint32_t remaining = speaker_buffer.max_size() - speaker_buffer.size();
+        if (size > remaining)
+            size = remaining;
+        if (remaining == 0)
+        {
+            // Buffer full, block until some space is available
+            error = EAGAIN;
+            return -1;
+        }
+        
+        // Start timer if just starting up
+        if (speaker_buffer.size() == 0)
+            speaker_timer.begin(speaker_timer_isr, 1'000'000 / 48'000);
+        
+        noInterrupts();
+        const uint8_t *data = (const uint8_t *)buffer;
+        for (size_t i = 0; i < size; i++)
+            speaker_buffer.push(data[i]);
+        interrupts();
+        return size;
+    }
+
+    template <>
+    ssize_t CharacterDeviceImpl<TeensySpeakerDevice>::poll(int op)
+    {
+        if (op & 0x2) // write
+        {
+            if (speaker_buffer.size() >= speaker_buffer.max_size())
+                return 0; // not ready
+        }
+        return 1; // ready
+    }
 } // namespace
 
 void Hamster::_init_allocator()
@@ -180,6 +285,14 @@ int Hamster::_init_platform()
 #endif
 
     pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(14, OUTPUT);
+    pinMode(15, OUTPUT);
+    pinMode(16, OUTPUT);
+    pinMode(17, OUTPUT);
+    pinMode(18, OUTPUT);
+    pinMode(19, OUTPUT);
+    pinMode(20, OUTPUT);
+    pinMode(21, OUTPUT);
 
     // init sd card, if available
     if (SD.begin(254))
@@ -215,6 +328,10 @@ int Hamster::_mount_rootfs()
     auto led_device = Hamster::alloc<CharacterDevice<TeensyLEDDevice>>();
     Hamster::device_manager.register_device({0, 1}, led_device);
     Hamster::vfs.mknod("/dev/led", {0, 1}, 0666);
+
+    auto speaker_device = Hamster::alloc<CharacterDevice<TeensySpeakerDevice>>();
+    Hamster::device_manager.register_device({0, 2}, speaker_device);
+    Hamster::vfs.mknod("/dev/speaker", {0, 2}, 0666);
 
     return 0;
 }
@@ -262,12 +379,17 @@ uint64_t Hamster::_get_sys_time()
 
 size_t Hamster::_get_free_memory()
 {
-    size_t used = 0;
-    auto diagnostics = o1heapGetDiagnostics(ram2_heap);
-    used += diagnostics.allocated;
-    diagnostics = o1heapGetDiagnostics(ext_heap);
-    used += diagnostics.allocated;
-    return used;
+    void *ptr = nullptr;
+    for (size_t i = 16 * 1024 * 1024; i; i -= 512 * 1024)
+    {
+        ptr = _malloc(i);
+        if (ptr)
+        {
+            _free(ptr);
+            return i - 1;
+        }
+    }
+    return 0;
 }
 
 #ifndef NTRACE
