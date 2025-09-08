@@ -245,7 +245,7 @@ namespace Hamster
         
         // Start timer if just starting up
         if (speaker_buffer.size() == 0)
-            speaker_timer.begin(speaker_timer_isr, 1'000'000 / 48'000);
+            speaker_timer.begin(speaker_timer_isr, 21);
         
         noInterrupts();
         const uint8_t *data = (const uint8_t *)buffer;
