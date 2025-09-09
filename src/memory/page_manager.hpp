@@ -109,6 +109,10 @@ namespace Hamster
          */
         ssize_t try_write(uint32_t id, size_t addr, const void *buf, size_t size);
 
+        // Fast read of 4 bytes from a page, that checks for both read and exec permissions
+        // Also swaps in the page if necessary
+        int fast_fetch_aligned(uint32_t id, uint32_t addr, uint32_t &out);
+
         // Same thing as try_{read,write} but automatically swaps in
 
         ssize_t read(uint32_t id, size_t addr, void *buf, size_t size)

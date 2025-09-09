@@ -18,12 +18,17 @@ namespace Hamster
 
     class RiscVEmulator
     {
+        struct DecodedInst
+        {
+            void *handler;
+            uint32_t imm_i, imm_s, imm_b, imm_u, imm_j, inst;
+            uint8_t rd, funct3, rs1, rs2, funct7;
+        };
     public:
         uint32_t x[32];
         double f[32];
         uint32_t fcsr;
         uint32_t pc;
-        uint32_t old_pc;
 
         int reserved_mem_id;
 
@@ -71,13 +76,10 @@ namespace Hamster
         ExecuteResult run();
 
     private:
-        uint16_t remaining_timeslice;
-    
-        ExecuteResult execute();
-
         int read8(uint32_t addr, uint8_t &out);
         int read16(uint32_t addr, uint16_t &out);
         int read32(uint32_t addr, uint32_t &out);
+        int fetch(uint32_t addr, uint32_t &out);
         int readf32(uint32_t addr, float &out);
         int readf64(uint32_t addr, double &out);
         int write8(uint32_t addr, uint8_t value);
@@ -86,60 +88,6 @@ namespace Hamster
         int writef32(uint32_t addr, float value);
         int writef64(uint32_t addr, double value);
 
-        ExecuteResult do_op_reg(uint32_t inst);
-        ExecuteResult do_op_imm(uint32_t inst);
-        ExecuteResult do_op_load(uint32_t inst);
-        ExecuteResult do_op_store(uint32_t inst);
-        ExecuteResult do_op_branch(uint32_t inst);
-        ExecuteResult do_op_jal(uint32_t inst);
-        ExecuteResult do_op_jalr(uint32_t inst);
-        ExecuteResult do_op_lui(uint32_t inst);
-        ExecuteResult do_op_auipc(uint32_t inst);
-        ExecuteResult do_op_system(uint32_t inst);
-        ExecuteResult do_op_misc_mem(uint32_t inst);
-        ExecuteResult do_op_atomic(uint32_t inst);
-        ExecuteResult do_op_flw(uint32_t inst);
-        ExecuteResult do_op_fsw(uint32_t inst);
-        ExecuteResult do_op_fmadd(uint32_t inst);
-        ExecuteResult do_op_fmsub(uint32_t inst);
-        ExecuteResult do_op_fnmsub(uint32_t inst);
-        ExecuteResult do_op_fnmadd(uint32_t inst);
-        ExecuteResult do_op_freg(uint32_t inst);
-
-        ExecuteResult do_invalid_op(uint32_t inst);
-
-        static inline constexpr ExecuteResult (RiscVEmulator::*opcode_jumptable[])(uint32_t) = 
-        {
-            &RiscVEmulator::do_op_load,
-            &RiscVEmulator::do_op_flw,
-            &RiscVEmulator::do_invalid_op,
-            &RiscVEmulator::do_op_misc_mem,
-            &RiscVEmulator::do_op_imm,
-            &RiscVEmulator::do_op_auipc,
-            &RiscVEmulator::do_invalid_op,
-            &RiscVEmulator::do_invalid_op,
-            &RiscVEmulator::do_op_store,
-            &RiscVEmulator::do_op_fsw,
-            &RiscVEmulator::do_invalid_op,
-            &RiscVEmulator::do_op_atomic,
-            &RiscVEmulator::do_op_reg,
-            &RiscVEmulator::do_op_lui,
-            &RiscVEmulator::do_invalid_op,
-            &RiscVEmulator::do_invalid_op,
-            &RiscVEmulator::do_op_fmadd,
-            &RiscVEmulator::do_op_fmsub,
-            &RiscVEmulator::do_op_fnmsub,
-            &RiscVEmulator::do_op_fnmadd,
-            &RiscVEmulator::do_op_freg,
-            &RiscVEmulator::do_invalid_op,
-            &RiscVEmulator::do_invalid_op,
-            &RiscVEmulator::do_invalid_op,
-            &RiscVEmulator::do_op_branch,
-            &RiscVEmulator::do_op_jalr,
-            &RiscVEmulator::do_invalid_op,
-            &RiscVEmulator::do_op_jal,
-            &RiscVEmulator::do_op_system
-        };
-        static inline constexpr size_t opc_jumptab_sz = sizeof(opcode_jumptable);
+        uint32_t execute_trace(ExecuteResult &result);
     };
 } // namespace Hamster

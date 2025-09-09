@@ -321,6 +321,16 @@ namespace Hamster
         return perms;
     }
 
+    int MemorySpace::fast_fetch_aligned(uint32_t addr, uint32_t &out)
+    {
+        assert((addr & 0b11) == 0);
+        uint32_t id = page_table.get_page(addr);
+        if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
+            return -1;
+
+        return page_manager.fast_fetch_aligned(id, addr & (HAMSTER_PAGE_SIZE - 1), out);
+    }
+
     void MemorySpace::deallocate(uint32_t addr, uint32_t size)
     {
         assert(addr % HAMSTER_PAGE_SIZE == 0);
