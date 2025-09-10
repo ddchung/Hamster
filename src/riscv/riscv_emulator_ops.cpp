@@ -289,7 +289,6 @@ namespace Hamster
     {                                                                            \
         x[0] = 0;                                                                \
         pc += 4;                                                                 \
-        ++total_instructions_executed;                                           \
         if HAMSTER_UNLIKELY (++current_inst >= predecoded_insts + decoded_count) \
             return current_inst - predecoded_insts;                              \
         goto * current_inst->handler;                                            \
@@ -299,7 +298,6 @@ namespace Hamster
     do                                              \
     {                                               \
         pc += 4;                                    \
-        ++total_instructions_executed;              \
         return current_inst - predecoded_insts + 1; \
     } while (0)
 
@@ -1086,7 +1084,9 @@ namespace Hamster
         else if (current_inst->funct3 == FUNCT3_FENCE_I)
         {
             // FENCE.I
-            // No operation
+            // End the current trace early, to re-fetch instructions next time
+            result.status = ExecuteResult::Status::Success;
+            OPCODE_RETURN_OK();
         }
         else
         {

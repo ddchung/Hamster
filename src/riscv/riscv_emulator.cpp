@@ -125,6 +125,7 @@ namespace Hamster
         result.status = ExecuteResult::Status::Success;
         while (instructions_executed < HAMSTER_THREAD_TIME_SLICE && result.status == ExecuteResult::Status::Success)
             instructions_executed += execute_trace(result);
+        total_instructions_executed += instructions_executed;
         return result;
     }
 } // namespace Hamster
