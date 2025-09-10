@@ -79,7 +79,6 @@ namespace Hamster
         int read8(uint32_t addr, uint8_t &out);
         int read16(uint32_t addr, uint16_t &out);
         int read32(uint32_t addr, uint32_t &out);
-        int fetch(uint32_t addr, uint32_t &out);
         int readf32(uint32_t addr, float &out);
         int readf64(uint32_t addr, double &out);
         int write8(uint32_t addr, uint8_t value);

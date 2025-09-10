@@ -42,8 +42,8 @@ namespace Hamster
         int fast_read_aligned(uint32_t addr, void *buf, size_t size);
         int fast_write_aligned(uint32_t addr, const void *buf, size_t size);
 
-        // fast read of 4 aligned bytes, that checks for both read and exec permissions
-        int fast_fetch_aligned(uint32_t addr, uint32_t &out);
+        // fast read of 4 * HAMSTER_TRACE_SIZE bytes
+        int fast_fetch_trace(uint32_t addr, uint32_t *buf);
 
         /**
          * @brief Read from a memory region, up until, and including, a zero byte

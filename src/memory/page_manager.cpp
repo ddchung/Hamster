@@ -98,30 +98,6 @@ namespace Hamster
         free_pages.push_back(id);
     }
 
-    int PageManager::fast_fetch_aligned(uint32_t id, uint32_t addr, uint32_t &out)
-    {
-        PageEntry *entry = page_table[id];
-        if (entry->swapped)
-        {
-            if (swap_in(id) < 0)
-                return -1;
-            entry = page_table[id];
-        }
-        assert(entry->data != nullptr);
-        assert(addr + 4 <= HAMSTER_PAGE_SIZE);
-
-        // Check readability and executability
-        if ((entry->perms & (PERM_READ | PERM_EXEC)) == 0)
-        {
-            error = EACCES;
-            return -1;
-        }
-
-        // Read from the page
-        out = *(uint32_t *)(entry->data + addr);
-        return 0;
-    }
-
     ssize_t PageManager::try_read(uint32_t id, size_t addr, void *buf, size_t size)
     {
         PageEntry *entry = page_table[id];

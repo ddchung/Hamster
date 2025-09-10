@@ -50,13 +50,6 @@ namespace Hamster
         return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
     }
 
-    int RiscVEmulator::fetch(uint32_t addr, uint32_t &out)
-    {
-        if HAMSTER_UNLIKELY (addr & 0b11)
-            return -1; // Execute from unaligned address not allowed
-        return memory->memory.fast_fetch_aligned(addr, out);
-    }
-
     int RiscVEmulator::read16(uint32_t addr, uint16_t &out)
     {
         if HAMSTER_UNLIKELY (addr & 0b1)

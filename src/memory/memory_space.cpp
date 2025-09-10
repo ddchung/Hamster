@@ -321,14 +321,32 @@ namespace Hamster
         return perms;
     }
 
-    int MemorySpace::fast_fetch_aligned(uint32_t addr, uint32_t &out)
+    int MemorySpace::fast_fetch_trace(uint32_t addr, uint32_t *buf)
     {
-        assert((addr & 0b11) == 0);
+        assert(buf != nullptr);
+        assert((addr % 4) == 0);
+
         uint32_t id = page_table.get_page(addr);
         if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
             return -1;
 
-        return page_manager.fast_fetch_aligned(id, addr & (HAMSTER_PAGE_SIZE - 1), out);
+        uint32_t offset = addr & (HAMSTER_PAGE_SIZE - 1);
+        uint32_t chunk_size = std::min<uint32_t>(HAMSTER_TRACE_SIZE * 4, HAMSTER_PAGE_SIZE - offset);
+        if (page_manager.read(id, offset, buf, chunk_size) != (ssize_t)chunk_size)
+            return -1;
+        if (chunk_size < HAMSTER_TRACE_SIZE * 4)
+        {
+            // Read from second page
+            id = page_table.get_page(addr + chunk_size);
+            if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
+                return -1;
+            buf += chunk_size / 4;
+            chunk_size = HAMSTER_TRACE_SIZE * 4 - chunk_size;
+            if (page_manager.read(id, 0, buf, chunk_size) != (ssize_t)chunk_size)
+                return -1;
+        }
+
+        return 0;
     }
 
     void MemorySpace::deallocate(uint32_t addr, uint32_t size)

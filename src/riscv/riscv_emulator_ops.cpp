@@ -305,81 +305,88 @@ namespace Hamster
     __attribute__((flatten))
     uint32_t RiscVEmulator::execute_trace(ExecuteResult &result)
     {
-        constexpr size_t PREDECODE_COUNT = 128;
-        DecodedInst predecoded_insts[PREDECODE_COUNT];
+        uint32_t prefetched_instructions[HAMSTER_TRACE_SIZE];
+        DecodedInst predecoded_insts[HAMSTER_TRACE_SIZE];
 
         static constexpr void *opcode_jumptable[] =
-            {
-                &&case_op_load,
-                &&case_op_flw,
-                &&case_invalid_op,
-                &&case_op_misc_mem,
-                &&case_op_imm,
-                &&case_op_auipc,
-                &&case_invalid_op,
-                &&case_invalid_op,
-                &&case_op_store,
-                &&case_op_fsw,
-                &&case_invalid_op,
-                &&case_op_atomic,
-                &&case_op_reg,
-                &&case_op_lui,
-                &&case_invalid_op,
-                &&case_invalid_op,
-                &&case_op_fmadd,
-                &&case_op_fmsub,
-                &&case_op_fnmsub,
-                &&case_op_fnmadd,
-                &&case_op_freg,
-                &&case_invalid_op,
-                &&case_invalid_op,
-                &&case_invalid_op,
-                &&case_op_branch,
-                &&case_op_jalr,
-                &&case_invalid_op,
-                &&case_op_jal,
-                &&case_op_system,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
-                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op};
+        {
+            &&case_op_load,
+            &&case_op_flw,
+            &&case_invalid_op,
+            &&case_op_misc_mem,
+            &&case_op_imm,
+            &&case_op_auipc,
+            &&case_invalid_op,
+            &&case_invalid_op,
+            &&case_op_store,
+            &&case_op_fsw,
+            &&case_invalid_op,
+            &&case_op_atomic,
+            &&case_op_reg,
+            &&case_op_lui,
+            &&case_invalid_op,
+            &&case_invalid_op,
+            &&case_op_fmadd,
+            &&case_op_fmsub,
+            &&case_op_fnmsub,
+            &&case_op_fnmadd,
+            &&case_op_freg,
+            &&case_invalid_op,
+            &&case_invalid_op,
+            &&case_invalid_op,
+            &&case_op_branch,
+            &&case_op_jalr,
+            &&case_invalid_op,
+            &&case_op_jal,
+            &&case_op_system,
+            &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+            // &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+        };
+
+        // Fetch instructions
+        if (pc & 0b11)
+        {
+            // Unaligned fetch not allowed
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = pc;
+            return 0;
+        }
+        if (memory->memory.fast_fetch_trace(pc, prefetched_instructions) < 0)
+        {
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = pc;
+            return 0;
+        }
 
         size_t decoded_count = 0;
-        for (uint32_t pc_it = pc; decoded_count < PREDECODE_COUNT;)
+        for (uint32_t *p_inst = prefetched_instructions; p_inst < prefetched_instructions + HAMSTER_TRACE_SIZE; ++p_inst)
         {
-            // Fetch an instruction
-            uint32_t inst;
-            if (fetch(pc_it, inst) != 0)
-            {
-                _trace("RiscVEmulator: Failed to fetch instruction at 0x%08x\n", pc_it);
-                result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = pc_it;
-                return 0;
-            }
-            pc_it += 4;
+            uint32_t inst = *p_inst;
 
-            // Decode fetched instruction
+            // Decode instruction
             DecodedInst &dinst = predecoded_insts[decoded_count];
             dinst.handler = opcode_jumptable[extract_opcode(inst)];
             dinst.imm_i = extract_imm_i(inst);
@@ -392,9 +399,10 @@ namespace Hamster
             dinst.rs1 = extract_rs1(inst);
             dinst.rs2 = extract_rs2(inst);
             dinst.funct7 = extract_funct7(inst);
-            decoded_count++;
+            ++decoded_count;
 
-            if (dinst.handler == &&case_op_branch || dinst.handler == &&case_op_jalr || dinst.handler == &&case_op_jal)
+            if (dinst.handler == &&case_op_branch || dinst.handler == &&case_op_jalr  ||
+                dinst.handler == &&case_op_jal || decoded_count == HAMSTER_TRACE_SIZE)
             {
                 // Control flow change, end of trace
                 break;
