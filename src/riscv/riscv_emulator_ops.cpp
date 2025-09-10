@@ -304,7 +304,7 @@ namespace Hamster
     } while (0)
 
 #define OPCODE_RETURN_FAIL() return current_inst - predecoded_insts
-
+    __attribute__((flatten))
     uint32_t RiscVEmulator::execute_trace(ExecuteResult &result)
     {
         constexpr size_t PREDECODE_COUNT = 128;

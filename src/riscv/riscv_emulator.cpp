@@ -117,6 +117,7 @@ namespace Hamster
         return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
     }
 
+    __attribute__((flatten))
     RiscVEmulator::ExecuteResult RiscVEmulator::run()
     {
         uint32_t instructions_executed = 0;
