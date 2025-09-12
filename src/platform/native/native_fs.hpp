@@ -4,7 +4,7 @@
 
 #include <errno/errno.h>
 
-#if defined(__linux__) && 0
+#if defined(__linux__) && 1
 
 #include <filesystem/base_file.hpp>
 #include <memory/allocator.hpp>

@@ -3,7 +3,6 @@
 #include <riscv/riscv_emulator.hpp>
 #include <platform/config.hpp>
 #include <math.h>
-#include <cfenv>
 #include <cstring>
 
 namespace Hamster
@@ -190,35 +189,6 @@ namespace Hamster
             float f;
             memcpy(&f, buf_float, sizeof(float));
             return f;
-        }
-
-        void set_round_mode(uint8_t round_mode, uint32_t fcsr)
-        {
-            switch (round_mode)
-            {
-            case ROUND_RNE:
-                std::fesetround(FE_TONEAREST);
-                break;
-            case ROUND_RTZ:
-                std::fesetround(FE_TOWARDZERO);
-                break;
-            case ROUND_RDN:
-                std::fesetround(FE_DOWNWARD);
-                break;
-            case ROUND_RUP:
-                std::fesetround(FE_UPWARD);
-                break;
-            case ROUND_RMM:
-                std::fesetround(FE_TOWARDZERO);
-                break;
-            case ROUND_DYN:
-                // Extract rounding mode from FCSR
-                round_mode = (fcsr >> 5) & 0b111;
-                if (round_mode == ROUND_DYN)
-                    return;
-                set_round_mode(round_mode, fcsr);
-                break;
-            }
         }
 
         uint32_t classify_float(float f)
@@ -1356,7 +1326,6 @@ namespace Hamster
         }
         DISPATCH();
     case_op_flw:
-        set_round_mode(ROUND_DYN, fcsr);
         if (current_inst->funct3 & 0x1)
         {
             // FLD
@@ -1383,7 +1352,6 @@ namespace Hamster
         }
         DISPATCH();
     case_op_fsw:
-        set_round_mode(ROUND_DYN, fcsr);
         if (current_inst->funct3 & 0x1)
         {
             // FSD
@@ -1410,7 +1378,6 @@ namespace Hamster
         DISPATCH();
     case_op_fmadd:
         // FMADD
-        set_round_mode(current_inst->funct3, fcsr);
         if (is_double_precision(current_inst->inst))
         {
             double a = f[current_inst->rs1];
@@ -1428,7 +1395,6 @@ namespace Hamster
         DISPATCH();
     case_op_fmsub:
         // FMSUB
-        set_round_mode(current_inst->funct3, fcsr);
         if (is_double_precision(current_inst->inst))
         {
             double a = f[current_inst->rs1];
@@ -1446,7 +1412,6 @@ namespace Hamster
         DISPATCH();
     case_op_fnmadd:
         // FNMADD
-        set_round_mode(current_inst->funct3, fcsr);
         if (is_double_precision(current_inst->inst))
         {
             double a = f[current_inst->rs1];
@@ -1464,7 +1429,6 @@ namespace Hamster
         DISPATCH();
     case_op_fnmsub:
         // FNMSUB
-        set_round_mode(current_inst->funct3, fcsr);
         if (is_double_precision(current_inst->inst))
         {
             double a = f[current_inst->rs1];
@@ -1487,41 +1451,35 @@ namespace Hamster
         {
         case 0b0000000:
             // FADD.S
-            set_round_mode(current_inst->funct3, fcsr);
             a = read_float_from_double(f[current_inst->rs1]);
             b = read_float_from_double(f[current_inst->rs2]);
             write_float_to_double(a + b, f[current_inst->rd]);
             break;
         case 0b0000100:
             // FSUB.S
-            set_round_mode(current_inst->funct3, fcsr);
             a = read_float_from_double(f[current_inst->rs1]);
             b = read_float_from_double(f[current_inst->rs2]);
             write_float_to_double(a - b, f[current_inst->rd]);
             break;
         case 0b0001000:
             // FMUL.S
-            set_round_mode(current_inst->funct3, fcsr);
             a = read_float_from_double(f[current_inst->rs1]);
             b = read_float_from_double(f[current_inst->rs2]);
             write_float_to_double(a * b, f[current_inst->rd]);
             break;
         case 0b0001100:
             // FDIV.S
-            set_round_mode(current_inst->funct3, fcsr);
             a = read_float_from_double(f[current_inst->rs1]);
             b = read_float_from_double(f[current_inst->rs2]);
             write_float_to_double(a / b, f[current_inst->rd]);
             break;
         case 0b0101100:
             // FSQRT.S
-            set_round_mode(current_inst->funct3, fcsr);
             a = read_float_from_double(f[current_inst->rs1]);
             write_float_to_double(sqrt(a), f[current_inst->rd]);
             break;
         case 0b0010000:
             // FSGN*.S
-            set_round_mode(ROUND_DYN, fcsr);
             a = read_float_from_double(f[current_inst->rs1]);
             b = read_float_from_double(f[current_inst->rs2]);
             switch (current_inst->funct3)
@@ -1551,7 +1509,6 @@ namespace Hamster
             break;
         case 0b0010100:
             // F(MIN|MAX).S
-            set_round_mode(ROUND_DYN, fcsr);
             a = read_float_from_double(f[current_inst->rs1]);
             b = read_float_from_double(f[current_inst->rs2]);
             if (current_inst->funct3 == 0b000)
@@ -1571,7 +1528,6 @@ namespace Hamster
             break;
         case 0b1100000:
             // FCVT.W*.S
-            set_round_mode(current_inst->funct3, fcsr);
             switch (current_inst->rs2)
             {
             case 0b00000:
@@ -1606,7 +1562,6 @@ namespace Hamster
             break;
         case 0b1110000:
             // FMV.X.W or FCLASS.S
-            set_round_mode(ROUND_DYN, fcsr);
             switch (current_inst->funct3)
             {
             case 0b000:
@@ -1629,7 +1584,6 @@ namespace Hamster
             break;
         case 0b1010000:
             // FEQ.S or FLT.S or FLE.S
-            set_round_mode(ROUND_DYN, fcsr);
             a = read_float_from_double(f[current_inst->rs1]);
             b = read_float_from_double(f[current_inst->rs2]);
             switch (current_inst->funct3)
@@ -1655,7 +1609,6 @@ namespace Hamster
             break;
         case 0b1101000:
             // FCVT.S.W*
-            set_round_mode(current_inst->funct3, fcsr);
             switch (current_inst->rs2)
             {
             case 0b00000:
@@ -1677,47 +1630,40 @@ namespace Hamster
             break;
         case 0b1111000:
             // FMV.W.X
-            set_round_mode(ROUND_DYN, fcsr);
             memcpy(&a, &x[current_inst->rs1], sizeof(float));
             write_float_to_double(a, f[current_inst->rd]);
             break;
         case 0b0000001:
             // FADD.D
-            set_round_mode(current_inst->funct3, fcsr);
             ad = f[current_inst->rs1];
             bd = f[current_inst->rs2];
             f[current_inst->rd] = ad + bd;
             break;
         case 0b0000101:
             // FSUB.D
-            set_round_mode(current_inst->funct3, fcsr);
             ad = f[current_inst->rs1];
             bd = f[current_inst->rs2];
             f[current_inst->rd] = ad - bd;
             break;
         case 0b0001001:
             // FMUL.D
-            set_round_mode(current_inst->funct3, fcsr);
             ad = f[current_inst->rs1];
             bd = f[current_inst->rs2];
             f[current_inst->rd] = ad * bd;
             break;
         case 0b0001101:
             // FDIV.D
-            set_round_mode(current_inst->funct3, fcsr);
             ad = f[current_inst->rs1];
             bd = f[current_inst->rs2];
             f[current_inst->rd] = ad / bd;
             break;
         case 0b0101101:
             // FSQRT.D
-            set_round_mode(current_inst->funct3, fcsr);
             ad = f[current_inst->rs1];
             f[current_inst->rd] = sqrt(ad);
             break;
         case 0b0010001:
             // FSGN*.D
-            set_round_mode(ROUND_DYN, fcsr);
             ad = f[current_inst->rs1];
             bd = f[current_inst->rs2];
             switch (current_inst->funct3)
@@ -1743,7 +1689,6 @@ namespace Hamster
             break;
         case 0b0010101:
             // F(MIN|MAX).D
-            set_round_mode(ROUND_DYN, fcsr);
             ad = f[current_inst->rs1];
             bd = f[current_inst->rs2];
             if (current_inst->funct3 == 0b000)
@@ -1762,19 +1707,16 @@ namespace Hamster
             break;
         case 0b0100000:
             // FCVT.S.D
-            set_round_mode(current_inst->funct3, fcsr);
             ad = f[current_inst->rs1];
             write_float_to_double((float)ad, f[current_inst->rd]);
             break;
         case 0b0100001:
             // FCVT.D.S
-            set_round_mode(current_inst->funct3, fcsr);
             ad = read_float_from_double(f[current_inst->rs1]);
             f[current_inst->rd] = ad;
             break;
         case 0b1010001:
             // FEQ.D or FLT.D or FLE.D
-            set_round_mode(ROUND_DYN, fcsr);
             ad = f[current_inst->rs1];
             bd = f[current_inst->rs2];
             switch (current_inst->funct3)
@@ -1800,13 +1742,11 @@ namespace Hamster
             break;
         case 0b1110001:
             // FCLASS.D
-            set_round_mode(ROUND_DYN, fcsr);
             ad = f[current_inst->rs1];
             x[current_inst->rd] = classify_double(ad);
             break;
         case 0b1100001:
             // FCVT.W.D or FCVT.WU.D
-            set_round_mode(current_inst->funct3, fcsr);
             ad = f[current_inst->rs1];
             switch (current_inst->rs2)
             {
@@ -1839,7 +1779,6 @@ namespace Hamster
             break;
         case 0b1101001:
             // FCVT.D.W*
-            set_round_mode(current_inst->funct3, fcsr);
             switch (current_inst->rs2)
             {
             case 0b00000:
