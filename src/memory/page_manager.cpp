@@ -98,59 +98,6 @@ namespace Hamster
         free_pages.push_back(id);
     }
 
-    ssize_t PageManager::try_read(uint32_t id, size_t addr, void *buf, size_t size)
-    {
-        PageEntry *entry = page_table[id];
-        if (entry->swapped)
-            return -1;
-        assert(entry->data != nullptr);
-        assert(addr < HAMSTER_PAGE_SIZE);
-
-        // Check readability
-        if ((entry->perms & PERM_READ) == 0)
-        {
-            error = EACCES;
-            return -1;
-        }
-
-        // Read from the page
-        if (addr + size > HAMSTER_PAGE_SIZE)
-            size = HAMSTER_PAGE_SIZE - addr;
-
-        memcpy(buf, entry->data + addr, size);
-        return size;
-    }
-
-    ssize_t PageManager::try_write(uint32_t id, size_t addr, const void *buf, size_t size)
-    {
-        PageEntry *entry = page_table[id];
-        if (entry->swapped)
-            return -1;
-        assert(entry->data != nullptr);
-        assert(addr < HAMSTER_PAGE_SIZE);
-
-        if ((entry->perms & PERM_WRITE) == 0)
-        {
-            error = EACCES;
-            return -1;
-        }
-
-        // Write to the page
-        if (addr + size > HAMSTER_PAGE_SIZE)
-            size = HAMSTER_PAGE_SIZE - addr;
-        
-        if (size > 0)
-        {
-            mark_page_dirty(id);
-            
-            // re-fetch the entry, as `make_page_dirty` may split COW pages
-            entry = page_table[id];
-        }
-
-        memcpy(entry->data + addr, buf, size);
-        return size;
-    }
-
     uint32_t PageManager::copy(uint32_t id)
     {
         PageEntry *entry = page_table[id];

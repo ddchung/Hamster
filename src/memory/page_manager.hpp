@@ -5,9 +5,12 @@
 #include <memory/stl_sequential.hpp>
 #include <memory/stl_map.hpp>
 #include <memory/stl_set.hpp>
+#include <errno/errno.h>
 #include <sys/types.h>
 #include <cstdint>
 #include <cstddef>
+#include <cassert>
+#include <cstring>
 
 namespace Hamster
 {
@@ -95,7 +98,28 @@ namespace Hamster
          * @note It may read less bytes than requested, such as when it is at the end of a page
          * @note This will fail if the page is swapped out
          */
-        ssize_t try_read(uint32_t id, size_t addr, void *buf, size_t size);
+        ssize_t try_read(uint32_t id, size_t addr, void *buf, size_t size)
+        {
+            PageEntry *entry = page_table[id];
+            if (entry->swapped)
+                return -1;
+            assert(entry->data != nullptr);
+            assert(addr < HAMSTER_PAGE_SIZE);
+
+            // Check readability
+            if ((entry->perms & PERM_READ) == 0)
+            {
+                error = EACCES;
+                return -1;
+            }
+
+            // Read from the page
+            if (addr + size > HAMSTER_PAGE_SIZE)
+                size = HAMSTER_PAGE_SIZE - addr;
+
+            memcpy(buf, entry->data + addr, size);
+            return size;
+        }
 
         /**
          * @brief Try writing to a page
@@ -107,7 +131,35 @@ namespace Hamster
          * @note It may write less bytes than requested, such as when it is at the end of a page
          * @note This will fail if the page is swapped out
          */
-        ssize_t try_write(uint32_t id, size_t addr, const void *buf, size_t size);
+        ssize_t try_write(uint32_t id, size_t addr, const void *buf, size_t size)
+        {
+            PageEntry *entry = page_table[id];
+            if (entry->swapped)
+                return -1;
+            assert(entry->data != nullptr);
+            assert(addr < HAMSTER_PAGE_SIZE);
+
+            if ((entry->perms & PERM_WRITE) == 0)
+            {
+                error = EACCES;
+                return -1;
+            }
+
+            // Write to the page
+            if (addr + size > HAMSTER_PAGE_SIZE)
+                size = HAMSTER_PAGE_SIZE - addr;
+            
+            if (size > 0)
+            {
+                mark_page_dirty(id);
+                
+                // re-fetch the entry, as `make_page_dirty` may split COW pages
+                entry = page_table[id];
+            }
+
+            memcpy(entry->data + addr, buf, size);
+            return size;
+        }
 
         // Same thing as try_{read,write} but automatically swaps in
 

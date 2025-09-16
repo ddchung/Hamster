@@ -32,35 +32,6 @@ namespace Hamster
         return *this;
     }
 
-    int MemorySpace::fast_read_aligned(uint32_t addr, void *buf, size_t size)
-    {
-        assert(buf != nullptr);
-        assert((addr % size) == 0);
-        assert(size <= 32);
-        assert((size & (size - 1)) == 0);
-
-        // (size == size) - 1
-        // true - 1
-        // 1 - 1
-        // 0
-        //
-        // (-1 == size) - 1
-        // false - 1
-        // 0 - 1
-        // -1
-        return (do_read(addr, buf, size) == (ssize_t)size) - 1;
-    }
-
-    int MemorySpace::fast_write_aligned(uint32_t addr, const void *buf, size_t size)
-    {
-        assert(buf != nullptr);
-        assert((addr % size) == 0);
-        assert(size <= 32);
-        assert((size & (size - 1)) == 0);
-
-        return (do_write(addr, buf, size) == (ssize_t)size) - 1;
-    }
-
     int MemorySpace::memcpy(void *dest, uint32_t src, uint32_t len)
     {
         assert(dest);
@@ -320,34 +291,7 @@ namespace Hamster
         }
         return perms;
     }
-
-    int MemorySpace::fast_fetch_trace(uint32_t addr, uint32_t *buf)
-    {
-        assert(buf != nullptr);
-        assert((addr % 4) == 0);
-
-        uint32_t id = page_table.get_page(addr);
-        if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
-            return -1;
-
-        uint32_t offset = addr & (HAMSTER_PAGE_SIZE - 1);
-        uint32_t chunk_size = std::min<uint32_t>(HAMSTER_TRACE_SIZE * 4, HAMSTER_PAGE_SIZE - offset);
-        if (page_manager.read(id, offset, buf, chunk_size) != (ssize_t)chunk_size)
-            return -1;
-        if (chunk_size < HAMSTER_TRACE_SIZE * 4)
-        {
-            // Read from second page
-            id = page_table.get_page(addr + chunk_size);
-            if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
-                return -1;
-            buf += chunk_size / 4;
-            chunk_size = HAMSTER_TRACE_SIZE * 4 - chunk_size;
-            if (page_manager.read(id, 0, buf, chunk_size) != (ssize_t)chunk_size)
-                return -1;
-        }
-
-        return 0;
-    }
+    
 
     void MemorySpace::deallocate(uint32_t addr, uint32_t size)
     {
@@ -374,34 +318,6 @@ namespace Hamster
             }
         }
         free_ranges.push(FreeRange{addr, size});
-    }
-
-    ssize_t MemorySpace::do_read(uint32_t addr, void *buf, size_t len)
-    {
-        assert(buf != nullptr);
-
-        if HAMSTER_UNLIKELY(len == 0)
-            return 0;
-
-        uint32_t id = page_table.get_page(addr);
-        if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
-            return -1;
-
-        return page_manager.read(id, addr & (HAMSTER_PAGE_SIZE - 1), buf, len);
-    }
-
-    ssize_t MemorySpace::do_write(uint32_t addr, const void *buf, size_t len)
-    {
-        assert(buf != nullptr);
-
-        if HAMSTER_UNLIKELY(len == 0)
-            return 0;
-
-        uint32_t id = page_table.get_page(addr);
-        if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
-            return -1;
-
-        return page_manager.write(id, addr & (HAMSTER_PAGE_SIZE - 1), buf, len);
     }
 } // namespace Hamster
 
