@@ -31,7 +31,11 @@ namespace
             size_t bytes_read = 0;
             while (bytes_read < size)
             {
-                if (!Serial.available())
+                if (Serial.available())
+                    ((uint8_t *)buf)[bytes_read++] = Serial.read();
+                else if (Serial8.available())
+                    ((uint8_t *)buf)[bytes_read++] = Serial8.read();
+                else
                 {
                     if (bytes_read == 0)
                     {
@@ -40,36 +44,23 @@ namespace
                     }
                     break;
                 }
-                ((uint8_t *)buf)[bytes_read++] = Serial.read();
+                
             }
             return bytes_read;
         }
 
         ssize_t write(const void *buf, size_t size)
         {
-            // Write to serial
-            size_t bytes_written = 0;
-            while (bytes_written < size)
-            {
-                if (!Serial.availableForWrite())
-                {
-                    if (bytes_written == 0)
-                    {
-                        error = EAGAIN;
-                        return -1;
-                    }
-                    break;
-                }
-                Serial.write(((const uint8_t *)buf)[bytes_written++]);
-            }
-            return bytes_written;
+            Serial.write((const char *)buf, size);
+            Serial8.write((const char *)buf, size);
+            return size;
         }
 
         int get_win_sz(sys_winsize *ws)
         {
             // Teensy does not support terminal size, return default
-            ws->row = 24;   // Default rows
-            ws->col = 80;   // Default columns
+            ws->row = 20;   // Default rows
+            ws->col = 40;   // Default columns
             ws->xpixel = 0; // Not applicable
             ws->ypixel = 0; // Not applicable
             return 0;       // Success
@@ -275,14 +266,7 @@ void Hamster::_init_allocator()
 
 int Hamster::_init_platform()
 {
-    Serial.begin(115200);
-    while (!Serial)
-        ;
-#ifndef NTRACE
-    auto trace_millis_start = millis();
-    while (!SerialUSB1 && millis() - trace_millis_start < 1000)
-        ;
-#endif
+    Serial8.begin(115200);
 
     pinMode(LED_BUILTIN, OUTPUT);
     pinMode(14, OUTPUT);
