@@ -316,7 +316,9 @@ namespace Hamster
 
         if (task.blocking_operation)
         {
-            task.blocking_operation(task);
+            // Limit blocking calls to once every millisecond
+            if (_get_sys_time() > task.last_tick)
+                task.blocking_operation(task);
             return 0;
         }
 
