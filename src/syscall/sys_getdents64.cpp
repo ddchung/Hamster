@@ -73,7 +73,31 @@ namespace Hamster
             dirent->ino = st.ino;
             dirent->offset = off + bytes_read;
             dirent->reclen = sizeof(sys_dirent) + name_len;
-            dirent->type = st.mode & STAT_IFMT; // Use the file type from mode
+
+            switch (st.mode & STAT_IFMT)
+            {
+            case STAT_IFREG:
+                dirent->type = H_DT_REG;
+                break;
+            case STAT_IFDIR:
+                dirent->type = H_DT_DIR;
+                break;
+            case STAT_IFBLK:
+                dirent->type = H_DT_BLK;
+                break;
+            case STAT_IFCHR:
+                dirent->type = H_DT_CHR;
+                break;
+            case STAT_IFIFO:
+                dirent->type = H_DT_FIFO;
+                break;
+            case STAT_IFLNK:
+                dirent->type = H_DT_LNK;
+                break;
+            case STAT_IFSOCK:
+                dirent->type = H_DT_SOCK;
+                break;
+            }
             
             strcpy(dirent->name, name); // Copy the name into the dirent
 

@@ -417,6 +417,16 @@ namespace Hamster
 
     inline constexpr int H_TIMER_ABSTIME = 1;
 
+    inline constexpr int H_DT_UNKNOWN = 0;
+    inline constexpr int H_DT_FIFO = 1;
+    inline constexpr int H_DT_CHR = 2;
+    inline constexpr int H_DT_DIR = 4;
+    inline constexpr int H_DT_BLK = 6;
+    inline constexpr int H_DT_REG = 8;
+    inline constexpr int H_DT_LNK = 10;
+    inline constexpr int H_DT_SOCK = 12;
+    inline constexpr int H_DT_WHT = 14;
+
     inline constexpr uint8_t H_SIGHAND_TRAMPOLINE[] = {
         // li a7,139 # SyscallID::RT_SIGRETURN
         0x93, 0x08, 0xb0, 0x08,
