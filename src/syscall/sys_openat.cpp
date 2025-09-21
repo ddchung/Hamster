@@ -16,7 +16,7 @@ namespace Hamster
         char *pathname = current_task->memory->obj.memory.get_string(pathname_loc);
         if (!pathname)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
         
@@ -68,7 +68,7 @@ namespace Hamster
         int new_thread_fd = current_task->get_unused_fd_index();
         if (new_thread_fd < 0)
         {
-            error = EMFILE;
+            error = H_EMFILE;
             vfs.close(new_fd);
             return cvt_error();
         }

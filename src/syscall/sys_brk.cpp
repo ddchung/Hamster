@@ -21,7 +21,7 @@ namespace Hamster
                 // Unmap some pages
                 if (current_task->get_memory().unmap(new_brk + (HAMSTER_PAGE_SIZE - 1), brk - new_brk) < 0)
                 {
-                    error = EFAULT;
+                    error = H_EFAULT;
                     return -1;
                 }
             }
@@ -30,7 +30,7 @@ namespace Hamster
                 // Map more pages
                 if (current_task->get_memory().map_anonymous(brk, new_brk - brk, PERM_READ | PERM_WRITE) < 0)
                 {
-                    error = EFAULT;
+                    error = H_EFAULT;
                     return -1;
                 }
             }

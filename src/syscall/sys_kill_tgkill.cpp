@@ -16,7 +16,7 @@ namespace Hamster
 
         if (sig < 0 || sig >= H_SIGRTMAX)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return cvt_error();
         }
 
@@ -36,13 +36,13 @@ namespace Hamster
             Process *process = scheduler.get_process(pid);
             if (!process)
             {
-                error = ESRCH;
+                error = H_ESRCH;
                 return cvt_error();
             }
 
             if (uid != 0 && uid != process->uid && euid != 0 && euid != process->euid)
             {
-                error = EPERM;
+                error = H_EPERM;
                 return cvt_error();
             }
 
@@ -70,7 +70,7 @@ namespace Hamster
 
             if (!at_least_one_sent)
             {
-                error = EPERM;
+                error = H_EPERM;
                 return cvt_error();
             }
 
@@ -96,7 +96,7 @@ namespace Hamster
 
             if (!at_least_one_sent)
             {
-                error = EPERM;
+                error = H_EPERM;
                 return cvt_error();
             }
 
@@ -122,7 +122,7 @@ namespace Hamster
 
             if (!at_least_one_sent)
             {
-                error = EPERM;
+                error = H_EPERM;
                 return cvt_error();
             }
 
@@ -137,7 +137,7 @@ namespace Hamster
 
         if (sig < 0 || sig >= H_SIGRTMAX)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return cvt_error();
         }
 
@@ -157,12 +157,12 @@ namespace Hamster
             Task *task = scheduler.get_task(tid);
             if (!task)
             {
-                error = ESRCH;
+                error = H_ESRCH;
                 return cvt_error();
             }
             if (uid != 0 && uid != task->process->obj.uid && euid != 0 && euid != task->process->obj.euid)
             {
-                error = EPERM;
+                error = H_EPERM;
                 return cvt_error();
             }
             if (sig && (task->send_signal(siginfo) < 0))
@@ -173,7 +173,7 @@ namespace Hamster
         }
         else
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return cvt_error();
         }
     }

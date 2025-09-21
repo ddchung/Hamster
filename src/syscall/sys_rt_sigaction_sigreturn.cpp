@@ -88,13 +88,13 @@ namespace Hamster
     {
         if (signum < 1 || signum >= H_SIGRTMAX || signum == H_SIGKILL || signum == H_SIGSTOP || signum == H_SIGCONT)
         {
-            errno = EINVAL;
+            errno = H_EINVAL;
             return -1;
         }
 
         if (sigsetsize != sizeof(sys_sigset))
         {
-            errno = EINVAL;
+            errno = H_EINVAL;
             return -1;
         }
 
@@ -112,7 +112,7 @@ namespace Hamster
 
             if (task->copy_to_user(action, oldact_loc) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return -1;
             }
         }
@@ -122,7 +122,7 @@ namespace Hamster
             
             if (task->copy_from_user(action, act_loc) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return -1;
             }
 

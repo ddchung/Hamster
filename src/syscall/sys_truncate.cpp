@@ -15,7 +15,7 @@ namespace Hamster
 
         int64_t length = ((int64_t)length_high << 32) | (int64_t) length_low;
         if (length < 0)
-            return -EINVAL;
+            return -H_EINVAL;
 
         int vfs_fd = current_task->get_vfs_fd(fd);
         if (vfs_fd < 0)
@@ -35,7 +35,7 @@ namespace Hamster
 
         int64_t length = ((int64_t)length_high << 32) | (int64_t) length_low;
         if (length < 0)
-            return -EINVAL;
+            return -H_EINVAL;
 
         char *path = current_task->get_memory().get_string(path_loc);
         if (!path)

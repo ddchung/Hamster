@@ -22,10 +22,10 @@ namespace Hamster
 
         // We only support private mappings for now
         if (flags & H_MAP_SHARED)
-            return -ENOSYS;
+            return -H_ENOSYS;
         
         if (flags & (H_MAP_FIXED | H_MAP_FIXED_NOREPLACE) && addr & (HAMSTER_PAGE_SIZE - 1))
-            return -EINVAL;
+            return -H_EINVAL;
 
         int vfs_fd = 0;
         if (!(flags & H_MAP_ANONYMOUS))
@@ -33,10 +33,10 @@ namespace Hamster
             // file mapping
             vfs_fd = current_task->get_vfs_fd(fd);
             if (vfs_fd < 0 || !vfs.is_valid_fd(vfs_fd))
-                return -EBADF;
+                return -H_EBADF;
             int64_t file_size = vfs.size(vfs_fd);
             if (file_size < 0)
-                return -EIO;
+                return -H_EIO;
         }
 
         uint8_t internal_perms = 0
@@ -51,11 +51,11 @@ namespace Hamster
         {
             // Already mapped
             if (flags & H_MAP_FIXED_NOREPLACE)
-                return -EEXIST;
+                return -H_EEXIST;
             else if (flags & H_MAP_FIXED)
             {
                 if (memory.unmap(internal_addr, length) < 0)
-                    return -EPERM; // Failed to unmap existing mapping
+                    return -H_EPERM; // Failed to unmap existing mapping
             }
             else
             {

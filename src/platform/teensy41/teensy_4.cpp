@@ -39,7 +39,7 @@ namespace
                 {
                     if (bytes_read == 0)
                     {
-                        error = EAGAIN;
+                        error = H_EAGAIN;
                         return -1;
                     }
                     break;
@@ -93,7 +93,7 @@ namespace
                 return 0;
             else if (bytes_read == -1)
             {
-                error = EIO;
+                error = H_EIO;
                 return -1;
             }
             else
@@ -107,7 +107,7 @@ namespace
         int write_block(uint32_t loc, const void *buf)
         {
             // Read-only
-            error = EROFS;
+            error = H_EROFS;
             return -1;
         }
 
@@ -230,7 +230,7 @@ namespace Hamster
         if (remaining == 0)
         {
             // Buffer full, block until some space is available
-            error = EAGAIN;
+            error = H_EAGAIN;
             return -1;
         }
         

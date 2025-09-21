@@ -51,7 +51,7 @@ namespace Hamster
         assert(current_task != nullptr);
 
         if (oldfd == newfd)
-            return -EINVAL;
+            return -H_EINVAL;
 
         UserFD *old_user_fd = current_task->get_user_fd(oldfd);
         if (!old_user_fd)

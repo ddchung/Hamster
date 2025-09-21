@@ -27,7 +27,7 @@ namespace Hamster
         char *path = current_task->memory->obj.memory.get_string(path_loc);
         if (!path)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
 

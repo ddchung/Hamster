@@ -13,6 +13,7 @@
 #include <dirent.h>
 #include <queue>
 #include <cstring>
+#include <errno.h>
 
 #define HAMSTER_NATIVE_FS_ROOT "/home/tin/hamster_rootfs"
 
@@ -49,7 +50,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return -1;
             }
 
@@ -67,7 +68,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return -1;
             }
 
@@ -128,7 +129,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return -1;
             }
 
@@ -165,7 +166,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return -1;
             }
 
@@ -181,7 +182,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return -1;
             }
 
@@ -197,7 +198,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return -1;
             }
 
@@ -383,7 +384,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return nullptr;
             }
 
@@ -404,7 +405,7 @@ namespace Hamster
         int set_target(const char *target) override
         {
             // TODO: change the target of the symlink
-            error = ENOSYS;
+            error = H_ENOSYS;
             return -1; // Not implemented
         }
     };
@@ -440,7 +441,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return nullptr;
             }
 
@@ -499,7 +500,7 @@ namespace Hamster
             case H_SEEK_SET:
                 if (offset < 0)
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return -1; // Invalid offset
                 }
                 pos = offset;
@@ -507,16 +508,16 @@ namespace Hamster
             case H_SEEK_CUR:
                 if (pos + offset < 0)
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return -1; // Invalid offset
                 }
                 pos += offset;
                 break;
             case H_SEEK_END:
-                error = ENOTSUP;
+                error = H_ENOTSUP;
                 return -1; // Not supported for directories
             default:
-                error = EINVAL;
+                error = H_EINVAL;
                 return -1; // Invalid whence
             }
 
@@ -532,7 +533,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return nullptr;
             }
 
@@ -583,7 +584,7 @@ namespace Hamster
 
             if ((flags & OPEN_DIRECTORY) && !S_ISDIR(st.st_mode))
             {
-                error = ENOTDIR;
+                error = H_ENOTDIR;
                 return nullptr;
             }
 
@@ -606,7 +607,7 @@ namespace Hamster
             else
             {
                 close(new_fd);
-                error = ENOSYS; // Unsupported file type
+                error = H_ENOSYS; // Unsupported file type
                 return nullptr;
             }
 
@@ -617,7 +618,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return nullptr;
             }
 
@@ -636,7 +637,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return nullptr;
             }
 
@@ -660,7 +661,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return nullptr;
             }
 
@@ -685,7 +686,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return nullptr;
             }
 
@@ -704,13 +705,13 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return -1;
             }
 
             if (get_filesystem() != file->get_filesystem())
             {
-                error = EXDEV; // Cross-device link not permitted
+                error = H_EXDEV; // Cross-device link not permitted
                 return -1;
             }
 
@@ -730,13 +731,13 @@ namespace Hamster
                 file_fd = ((NativeSpecialFileHandle *)file)->get_fd();
                 break;
             default:
-                error = EBADF; // Invalid file type for linking
+                error = H_EBADF; // Invalid file type for linking
                 return -1;
             }
 
             if (file_fd < 0)
             {
-                error = EBADF; // Bad file descriptor
+                error = H_EBADF; // Bad file descriptor
                 return -1;
             }
 
@@ -755,7 +756,7 @@ namespace Hamster
         {
             if (fd < 0)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return -1;
             }
 

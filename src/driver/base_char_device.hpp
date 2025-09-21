@@ -83,21 +83,21 @@ namespace Hamster
     template <class T>
     ssize_t CharacterDeviceImpl<T>::write(const void *buffer, size_t size)
     {
-        error = EIO;
+        error = H_EIO;
         return -1;
     }
 
     template <class T>
     ssize_t CharacterDeviceImpl<T>::read(void *buffer, size_t size)
     {
-        error = EIO;
+        error = H_EIO;
         return -1;
     }
 
     template <class T>
     int CharacterDeviceImpl<T>::ioctl(int request, IoctlArg arg)
     {
-        error = ENOTTY;
+        error = H_ENOTTY;
         return -1;
     }
 
@@ -116,7 +116,7 @@ namespace Hamster
     {
         if ((flags & OPEN_ACCMODE) == OPEN_RDONLY)
         {
-            error = EACCES;
+            error = H_EACCES;
             return -1;
         }
         return CharacterDeviceImpl<T>::write(buffer, size);
@@ -127,7 +127,7 @@ namespace Hamster
     {
         if ((flags & OPEN_ACCMODE) == OPEN_WRONLY)
         {
-            error = EACCES;
+            error = H_EACCES;
             return -1;
         }
         return CharacterDeviceImpl<T>::read(buffer, size);
@@ -155,14 +155,14 @@ namespace Hamster
     template <class T>
     int64_t CharacterDevice<T>::Handle::seek(int64_t offset, int whence)
     {
-        error = ESPIPE;
+        error = H_ESPIPE;
         return -1;
     }
 
     template <class T>
     int64_t CharacterDevice<T>::Handle::tell()
     {
-        error = ESPIPE;
+        error = H_ESPIPE;
         return -1;
     }
 

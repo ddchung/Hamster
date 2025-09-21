@@ -152,7 +152,7 @@ void test_filesystem()
         {
             if (deque.empty())
             {
-                error = EAGAIN;
+                error = H_EAGAIN;
                 return -1;
             }
             while (count --> 0)
@@ -185,19 +185,19 @@ void test_filesystem()
 
         int ioctl(int flags, IoctlArg arg) override
         {
-            error = ENOTTY;
+            error = H_ENOTTY;
             return -1;
         }
 
         int64_t seek(int64_t offset, int whence) override
         {
-            error = ESPIPE;
+            error = H_ESPIPE;
             return -1;
         }
 
         int64_t tell() override
         {
-            error = ESPIPE;
+            error = H_ESPIPE;
             return -1;
         }
     private:

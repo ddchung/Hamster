@@ -30,7 +30,7 @@ namespace Hamster
 
         // Write to a specific block
         // Returns 0 on success, -1 on failure
-        // NOTE: If you want to have something that is read only, fail with EROFS and return -1
+        // NOTE: If you want to have something that is read only, fail with H_EROFS and return -1
         int write_block(uint64_t block_number, const void* buffer);
 
         // Check if the device is read-only
@@ -232,7 +232,7 @@ namespace Hamster
 
         if (Backend::is_read_only())
         {
-            error = EROFS;
+            error = H_EROFS;
             return -1;
         }
 

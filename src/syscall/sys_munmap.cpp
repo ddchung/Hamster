@@ -19,11 +19,11 @@ namespace Hamster
 
         // Check if the region is mapped
         if (memory.is_mapped(internal_addr, internal_length) <= 0)
-            return -EINVAL;
+            return -H_EINVAL;
 
         // Unmap the region
         if (memory.unmap(internal_addr, internal_length) < 0)
-            return -EIO;
+            return -H_EIO;
 
         return 0;
     }

@@ -29,7 +29,7 @@ namespace Hamster
             // null or empty path
             dealloc(path_str);
             if (!(flags & H_AT_EMPTY_PATH))
-                return -EINVAL;
+                return -H_EINVAL;
             vfs_fd = current_task->get_vfs_fd(dirfd);
             vfs_fd = vfs.dup(vfs_fd);
         }
@@ -39,7 +39,7 @@ namespace Hamster
             if (vfs_rel_fd < 0)
             {
                 dealloc(path_str);
-                return -EBADF;
+                return -H_EBADF;
             }
 
             vfs_fd = vfs.openat(vfs_rel_fd, path_str, OPEN_RDONLY);
@@ -86,7 +86,7 @@ namespace Hamster
         requested &= 07;
 
         if ((requested & ~mode) != 0)
-            return -EACCES;
+            return -H_EACCES;
 
         return 0;
     }

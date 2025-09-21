@@ -37,7 +37,7 @@ namespace Hamster
                 case UserFDType::PIPE_WRITE:
                 case UserFDType::PID:
                 default:
-                    res = -EINVAL;
+                    res = -H_EINVAL;
                     break;
                 }
             }
@@ -48,7 +48,7 @@ namespace Hamster
             {
                 task.emulator.x[10] = blocking_fd;
                 task.emulator.x[10] = syscall(sys_read);
-                if ((int32_t)task.emulator.x[10] == -EAGAIN)
+                if ((int32_t)task.emulator.x[10] == -H_EAGAIN)
                     return;
             }
             else
@@ -85,7 +85,7 @@ namespace Hamster
                 case UserFDType::PIPE_READ:
                 case UserFDType::PID:
                 default:
-                    res = -EINVAL;
+                    res = -H_EINVAL;
                     break;
                 }
             }
@@ -96,7 +96,7 @@ namespace Hamster
             {
                 task.emulator.x[10] = blocking_fd;
                 task.emulator.x[10] = syscall(sys_write);
-                if ((int32_t)task.emulator.x[10] == -EAGAIN)
+                if ((int32_t)task.emulator.x[10] == -H_EAGAIN)
                     return;
             }
             else
@@ -141,7 +141,7 @@ namespace Hamster
                 is_open_nonblock = user_fd->flags & USER_FD_PIPE_NONBLOCK;
                 break;
             default:
-                return -EPERM;
+                return -H_EPERM;
             }
 
             if (bytes_read < 0)
@@ -152,7 +152,7 @@ namespace Hamster
                     return total_read;
                 }
 
-                if (error == EAGAIN)
+                if (error == H_EAGAIN)
                 {
                     // Blocking read
                     if (!is_open_nonblock)
@@ -164,7 +164,7 @@ namespace Hamster
                         current_task->blocking_operation_saved[0] = fd;
                     }
 
-                    return -EAGAIN;
+                    return -H_EAGAIN;
                 }
                 return cvt_error(); // Return error if no bytes read
             }
@@ -175,7 +175,7 @@ namespace Hamster
             // Copy to user memory
             if (current_task->memory->obj.memory.memcpy_alloc(buf_loc + total_read, IO_BUFFER, bytes_read) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
             total_read += bytes_read;
@@ -203,7 +203,7 @@ namespace Hamster
             size_t to_write = std::min(count, (uint32_t)sizeof(IO_BUFFER));
             if (current_task->memory->obj.memory.memcpy(IO_BUFFER, buf_loc + total_written, to_write) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
 
@@ -221,7 +221,7 @@ namespace Hamster
                 is_open_nonblock = user_fd->flags & USER_FD_PIPE_NONBLOCK;
                 break;
             default:
-                return -EPERM;
+                return -H_EPERM;
             }
 
             if (bytes_written < 0)
@@ -232,7 +232,7 @@ namespace Hamster
                     return total_written;
                 }
 
-                if (error == EAGAIN)
+                if (error == H_EAGAIN)
                 {
                     // Blocking write
                     if (!current_task->blocking_operation && !is_open_nonblock)
@@ -243,7 +243,7 @@ namespace Hamster
                         current_task->blocking_operation_saved[0] = fd;
                     }
 
-                    return -EAGAIN;
+                    return -H_EAGAIN;
                 }
                 return cvt_error(); // Return error if no bytes written
             }

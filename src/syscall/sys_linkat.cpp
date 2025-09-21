@@ -15,13 +15,13 @@ namespace Hamster
 
         // We don't support any flags right now
         if (flags != 0)
-            return -EINVAL;
+            return -H_EINVAL;
 
         // Get the old path
         char *old_path_str = current_task->get_memory().get_string(oldpath_loc);
         if (old_path_str == nullptr)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
 
@@ -30,7 +30,7 @@ namespace Hamster
         if (new_path_str == nullptr)
         {
             dealloc(old_path_str);
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
 

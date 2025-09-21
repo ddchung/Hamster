@@ -29,10 +29,10 @@ namespace Hamster
             break;
         case UserFDType::PIPE_READ:
         case UserFDType::PIPE_WRITE:
-            return -EINVAL;
+            return -H_EINVAL;
         case UserFDType::PID:
         default:
-            return -EBADF;
+            return -H_EBADF;
         }
 
         // Copy a potential pointer into the buffer

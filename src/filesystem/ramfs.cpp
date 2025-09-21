@@ -160,7 +160,7 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return nullptr;
                 }
 
@@ -171,7 +171,7 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return -1;
                 }
 
@@ -183,7 +183,7 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return -1;
                 }
 
@@ -219,7 +219,7 @@ namespace Hamster
                 }
                 else
                 {
-                    error = ENOTSUP;
+                    error = H_ENOTSUP;
                     return -1;
                 }
 
@@ -230,7 +230,7 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return -1;
                 }
 
@@ -241,7 +241,7 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return -1;
                 }
 
@@ -252,7 +252,7 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return -1;
                 }
 
@@ -263,7 +263,7 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return -1;
                 }
 
@@ -274,7 +274,7 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return -1;
                 }
 
@@ -286,7 +286,7 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return -1;
                 }
 
@@ -298,7 +298,7 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return -1;
                 }
 
@@ -358,7 +358,7 @@ namespace Hamster
                     return -1;
                 if (offset >= reg_node->size)
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return 0;
                 }
                 if (offset + (int64_t)size > reg_node->size)
@@ -370,7 +370,7 @@ namespace Hamster
                 {
                     if (reg_node->data.memcpy(buf + (addr - offset), addr, 1) < 0)
                     {
-                        error = EIO;
+                        error = H_EIO;
                         return -1;
                     }
                 }
@@ -397,13 +397,13 @@ namespace Hamster
                 // See: the comment on the seek function
                 if (offset > reg_node->size && reg_node->data.memset_alloc(reg_node->size, 0, offset - reg_node->size) < 0)
                 {
-                    error = EIO;
+                    error = H_EIO;
                     return -1;
                 }
                 
                 if (reg_node->data.memcpy_alloc(offset, buf, size) < 0)
                 {
-                    error = EIO;
+                    error = H_EIO;
                     return -1;
                 }
                 offset += size;
@@ -431,7 +431,7 @@ namespace Hamster
                 case H_SEEK_SET:
                     if (offset < 0)
                     {
-                        error = EINVAL;
+                        error = H_EINVAL;
                         return -1;
                     }
                     this->offset = offset;
@@ -439,7 +439,7 @@ namespace Hamster
                 case H_SEEK_CUR:
                     if (this->offset + offset < 0)
                     {
-                        error = EINVAL;
+                        error = H_EINVAL;
                         return -1;
                     }
                     this->offset += offset;
@@ -447,13 +447,13 @@ namespace Hamster
                 case H_SEEK_END:
                     if (reg_node->size + offset < 0)
                     {
-                        error = EINVAL;
+                        error = H_EINVAL;
                         return -1;
                     }
                     this->offset = reg_node->size + offset;
                     break;
                 default:
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return -1;
                 }
 
@@ -473,7 +473,7 @@ namespace Hamster
 
                 if (size < 0)
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return -1;
                 }
 
@@ -487,7 +487,7 @@ namespace Hamster
                     // Deallocate all unused pages starting from `size`
                     if (reg_node->data.unmap(size, reg_node->size - size) < 0)
                     {
-                        error = EIO;
+                        error = H_EIO;
                         return -1;
                     }
                 }
@@ -512,12 +512,12 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return nullptr;
                 }
                 if (node->type() != FileType::Regular)
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return nullptr;
                 }
                 return static_cast<RamFsRegularNode *>(node);
@@ -568,12 +568,12 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return nullptr;
                 }
                 if (node->type() != FileType::Special)
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return nullptr;
                 }
                 return static_cast<RamFsSpecialNode *>(node);
@@ -636,12 +636,12 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return nullptr;
                 }
                 if (node->type() != FileType::Symlink)
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return nullptr;
                 }
                 return static_cast<RamFsSymlinkNode *>(node);
@@ -688,7 +688,7 @@ namespace Hamster
                 
                 if (offset < 0)
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return nullptr;
                 }
 
@@ -730,7 +730,7 @@ namespace Hamster
                 case H_SEEK_SET:
                     if (offset < 0)
                     {
-                        error = EINVAL;
+                        error = H_EINVAL;
                         return -1;
                     }
                     this->offset = offset;
@@ -738,7 +738,7 @@ namespace Hamster
                 case H_SEEK_CUR:
                     if (this->offset + offset < 0)
                     {
-                        error = EINVAL;
+                        error = H_EINVAL;
                         return -1;
                     }
                     this->offset += offset;
@@ -746,13 +746,13 @@ namespace Hamster
                 case H_SEEK_END:
                     if ((int64_t)node->children.size() + offset < 0)
                     {
-                        error = EINVAL;
+                        error = H_EINVAL;
                         return -1;
                     }
                     this->offset = node->children.size() + offset;
                     break;
                 default:
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return -1;
                 }
 
@@ -772,7 +772,7 @@ namespace Hamster
 
                 if (strchr(name, '/'))
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return nullptr;
                 }
 
@@ -781,7 +781,7 @@ namespace Hamster
                 {
                     if (flags & OPEN_EXCL)
                     {
-                        error = EEXIST;
+                        error = H_EEXIST;
                         return nullptr;
                     }
 
@@ -789,7 +789,7 @@ namespace Hamster
 
                     if (flags & OPEN_DIRECTORY && node->type() != FileType::Directory)
                     {
-                        error = ENOTDIR;
+                        error = H_ENOTDIR;
                         return nullptr;
                     }
 
@@ -804,7 +804,7 @@ namespace Hamster
                     case FileType::Directory:
                         return alloc<RamFsDirectoryHandle>(1, static_cast<RamFsDirectoryNode *>(node), flags);
                     default:
-                        error = EIO;
+                        error = H_EIO;
                         return nullptr;
                     }
                 }
@@ -812,7 +812,7 @@ namespace Hamster
                 {
                     if (!(flags & OPEN_CREAT))
                     {
-                        error = ENOENT;
+                        error = H_ENOENT;
                         return nullptr;
                     }
 
@@ -835,14 +835,14 @@ namespace Hamster
 
                 if (strchr(name, '/'))
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return nullptr;
                 }
 
                 auto it = dir_node->children.find(name);
                 if (it != dir_node->children.end())
                 {
-                    error = EEXIST;
+                    error = H_EEXIST;
                     return nullptr;
                 }
 
@@ -861,14 +861,14 @@ namespace Hamster
 
                 if (strchr(name, '/'))
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return nullptr;
                 }
 
                 auto it = dir_node->children.find(name);
                 if (it != dir_node->children.end())
                 {
-                    error = EEXIST;
+                    error = H_EEXIST;
                     return nullptr;
                 }
 
@@ -892,14 +892,14 @@ namespace Hamster
 
                 if (strchr(name, '/'))
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return nullptr;
                 }
 
                 auto it = dir_node->children.find(name);
                 if (it != dir_node->children.end())
                 {
-                    error = EEXIST;
+                    error = H_EEXIST;
                     return nullptr;
                 }
 
@@ -919,14 +919,14 @@ namespace Hamster
 
                 if (strchr(name, '/'))
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return nullptr;
                 }
 
                 auto it = dir_node->children.find(name);
                 if (it != dir_node->children.end())
                 {
-                    error = EEXIST;
+                    error = H_EEXIST;
                     return nullptr;
                 }
 
@@ -942,19 +942,19 @@ namespace Hamster
             {
                 if (!file)
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return -1;
                 }
 
                 if (!name || strchr(name, '/') != nullptr)
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return -1;
                 }
 
                 if (file->get_filesystem() != this->get_filesystem())
                 {
-                    error = EXDEV;
+                    error = H_EXDEV;
                     return -1;
                 }
 
@@ -965,7 +965,7 @@ namespace Hamster
                     handle = (RamFsRegularHandle*)file;
                     break;
                 case FileType::Directory:
-                    error = EISDIR;
+                    error = H_EISDIR;
                     return -1;
                 case FileType::Special:
                     handle = (RamFsSpecialHandle*)file;
@@ -975,7 +975,7 @@ namespace Hamster
                     break;
                 default:
                     // shouldn't get here
-                    error = EBADF;
+                    error = H_EBADF;
                     return -1;
                 }
 
@@ -990,13 +990,13 @@ namespace Hamster
 
                 if (!target)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return -1;
                 }
 
                 if (dir_node->children.find(name) != dir_node->children.end())
                 {
-                    error = EEXIST;
+                    error = H_EEXIST;
                     return -1;
                 }
 
@@ -1014,14 +1014,14 @@ namespace Hamster
 
                 if (strchr(name, '/'))
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return -1;
                 }
 
                 auto it = dir_node->children.find(name);
                 if (it == dir_node->children.end())
                 {
-                    error = ENOENT;
+                    error = H_ENOENT;
                     return -1;
                 }
 
@@ -1031,7 +1031,7 @@ namespace Hamster
                 {
                     if (((RamFsDirectoryNode *)node)->children.size() > 2)
                     {
-                        error = ENOTEMPTY;
+                        error = H_ENOTEMPTY;
                         return -1;
                     }
                     ((RamFsDirectoryNode *)node)->remove_dir_hardlinks();
@@ -1052,12 +1052,12 @@ namespace Hamster
             {
                 if (!node)
                 {
-                    error = EBADF;
+                    error = H_EBADF;
                     return nullptr;
                 }
                 if (node->type() != FileType::Directory)
                 {
-                    error = EINVAL;
+                    error = H_EINVAL;
                     return nullptr;
                 }
                 return static_cast<RamFsDirectoryNode *>(node);
@@ -1115,7 +1115,7 @@ namespace Hamster
     {
         if (!data)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return nullptr;
         }
 

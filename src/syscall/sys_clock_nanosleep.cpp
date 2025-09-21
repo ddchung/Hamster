@@ -19,7 +19,7 @@ namespace Hamster
             task.emulator.x[10] = clock_id;
 
             int32_t res = syscall(sys_clock_nanosleep_time64);
-            if (res == -EAGAIN)
+            if (res == -H_EAGAIN)
                 // Continue sleeping
                 return;
             
@@ -38,7 +38,7 @@ namespace Hamster
         sys_timespec req;
 
         if (!req_loc)
-            return -EINVAL;
+            return -H_EINVAL;
 
         if (current_task->copy_from_user(req, req_loc) < 0)
             return cvt_error();
@@ -58,7 +58,7 @@ namespace Hamster
                     return 0; // passed requested timepoint
                 break;
             default:
-                return -EINVAL;
+                return -H_EINVAL;
             }
         }
         else if (current_task->last_tick + req_ms <= now)
@@ -68,8 +68,8 @@ namespace Hamster
         current_task->blocking_operation = poll_sleep;
         current_task->blocking_operation_saved[0] = clock_id;
 
-        // note: poll_sleep intercepts this EAGAIN, so it will never reach userspace
-        return -EAGAIN;
+        // note: poll_sleep intercepts this H_EAGAIN, so it will never reach userspace
+        return -H_EAGAIN;
     }
 } // namespace Hamster
 

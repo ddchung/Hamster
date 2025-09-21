@@ -16,7 +16,7 @@ namespace Hamster
 
             if (file.seek(0, H_SEEK_SET) < 0)
             {
-                error = EIO;
+                error = H_EIO;
                 return -1;
             }
 
@@ -25,39 +25,39 @@ namespace Hamster
 
             if (file.read(&ehdr, sizeof(ehdr)) != sizeof(ehdr))
             {
-                error = EIO;
+                error = H_EIO;
                 return -1;
             }
 
             // Check ELF header
             if (memcmp(ehdr.e_ident, ELFMAG, SELFMAG) != 0)
             {
-                error = ENOEXEC;
+                error = H_ENOEXEC;
                 return -1;
             }
 
             if (ehdr.e_ident[EI_CLASS] != ELFCLASS32)
             {
-                error = ENOEXEC;
+                error = H_ENOEXEC;
                 return -1;
             }
 
             if (ehdr.e_ident[EI_DATA] != ELFDATA2LSB)
             {
-                error = ENOEXEC;
+                error = H_ENOEXEC;
                 return -1;
             }
 
             if (ehdr.e_type != ET_EXEC)
             {
                 // TODO: Dynamic linking is not supported yet
-                error = ENOEXEC;
+                error = H_ENOEXEC;
                 return -1;
             }
 
             if (ehdr.e_machine != EM_RISCV)
             {
-                error = ENOEXEC;
+                error = H_ENOEXEC;
                 return -1;
             }
 
@@ -73,13 +73,13 @@ namespace Hamster
 
                 if (file.seek(ehdr.e_phoff + i * ehdr.e_phentsize, H_SEEK_SET) < 0)
                 {
-                    error = EIO;
+                    error = H_EIO;
                     return -1;
                 }
 
                 if (file.read(&phdr, sizeof(phdr)) != sizeof(phdr))
                 {
-                    error = EIO;
+                    error = H_EIO;
                     return -1;
                 }
 
@@ -88,7 +88,7 @@ namespace Hamster
                     // Load segment
                     if (file.seek(phdr.p_offset, H_SEEK_SET) < 0)
                     {
-                        error = EIO;
+                        error = H_EIO;
                         return -1;
                     }
 
@@ -108,7 +108,7 @@ namespace Hamster
                         // Zero out rest
                         if (mem_space.memset_alloc(phdr.p_vaddr + phdr.p_filesz, 0, phdr.p_memsz - phdr.p_filesz) < 0)
                         {
-                            error = EIO;
+                            error = H_EIO;
                             return -1;
                         }
                     }
@@ -128,7 +128,7 @@ namespace Hamster
         // Prepare file
         if (file.seek(0, H_SEEK_SET) < 0)
         {
-            error = EIO;
+            error = H_EIO;
             return -1;
         }
 
@@ -137,14 +137,14 @@ namespace Hamster
 
         if (file.read(e_ident, EI_NIDENT) != EI_NIDENT)
         {
-            error = EIO;
+            error = H_EIO;
             return -1;
         }
 
         // Check ELF magic number
         if (memcmp(e_ident, ELFMAG, SELFMAG) != 0)
         {
-            error = ENOEXEC;
+            error = H_ENOEXEC;
             return -1;
         }
 
@@ -154,7 +154,7 @@ namespace Hamster
         }
         else
         {
-            error = ENOEXEC;
+            error = H_ENOEXEC;
             return -1;
         }
     }

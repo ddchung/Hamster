@@ -24,11 +24,11 @@ namespace Hamster
     };
     */
 
-    // simple stub that errors with EROFS
+    // simple stub that errors with H_EROFS
     template <typename T = int, T return_val = -1>
     inline T error_rofs()
     {
-        error = EROFS;
+        error = H_EROFS;
         return return_val;
     }
 
@@ -269,7 +269,7 @@ namespace Hamster
     {
         if (!buf)
         {
-            error = -EINVAL;
+            error = -H_EINVAL;
             return -1;
         }
 
@@ -325,7 +325,7 @@ namespace Hamster
         case H_SEEK_SET:
             if (offset < 0 || offset > 0xFFFFFFFF)
             {
-                error = EINVAL;
+                error = H_EINVAL;
                 return -1;
             }
             this->offset = offset;
@@ -333,7 +333,7 @@ namespace Hamster
         case H_SEEK_CUR:
             if (this->offset + offset < 0 || this->offset + offset > 0xFFFFFFFF)
             {
-                error = EINVAL;
+                error = H_EINVAL;
                 return -1;
             }
             this->offset += offset;
@@ -341,13 +341,13 @@ namespace Hamster
         case H_SEEK_END:
             if (this->file_struct.size + offset < 0 || this->file_struct.size + offset > 0xFFFFFFFF)
             {
-                error = EINVAL;
+                error = H_EINVAL;
                 return -1;
             }
             this->offset = this->file_struct.size + offset;
             break;
         default:
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
         return this->offset;
@@ -424,7 +424,7 @@ namespace Hamster
         case H_SEEK_SET:
             if (offset < 0 || offset > 0xFF)
             {
-                error = EINVAL;
+                error = H_EINVAL;
                 return -1;
             }
             this->offset = offset;
@@ -432,7 +432,7 @@ namespace Hamster
         case H_SEEK_CUR:
             if (this->offset + offset < 0 || this->offset + offset > 0xFF)
             {
-                error = EINVAL;
+                error = H_EINVAL;
                 return -1;
             }
             this->offset += offset;
@@ -440,13 +440,13 @@ namespace Hamster
         case H_SEEK_END:
             if (this->file_struct.size + offset < 0 || this->file_struct.size + offset > 0xFF)
             {
-                error = EINVAL;
+                error = H_EINVAL;
                 return -1;
             }
             this->offset = this->file_struct.size + offset;
             break;
         default:
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
         return this->offset;
@@ -470,7 +470,7 @@ namespace Hamster
             next_loc = entry.next_file();
         }
 
-        error = flags & OPEN_CREAT ? EROFS : ENOENT;
+        error = flags & OPEN_CREAT ? H_EROFS : H_ENOENT;
         return nullptr;
     }
 
@@ -523,7 +523,7 @@ namespace Hamster
         if ((flags & OPEN_DIRECTORY) && file.file_type != romfs_type_directory
             && file.file_type != romfs_type_hardlink)
         {
-            error = ENOTDIR;
+            error = H_ENOTDIR;
             return nullptr;
         }
 
@@ -532,7 +532,7 @@ namespace Hamster
         case romfs_type_hardlink:
             if (file.info == loc)
             {
-                error = ELOOP;
+                error = H_ELOOP;
                 return nullptr;
             }
             return get_file(file.info, flags);

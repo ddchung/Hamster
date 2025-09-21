@@ -16,7 +16,7 @@ namespace Hamster
         sys_timespec res;
 
         if (!res_loc)
-            return -EFAULT;
+            return -H_EFAULT;
 
         switch (clock_id)
         {
@@ -26,7 +26,7 @@ namespace Hamster
             res.sec = 0;
             break;
         default:
-            return -EINVAL;
+            return -H_EINVAL;
         }
 
         if (current_task->copy_to_user(res, res_loc) < 0)

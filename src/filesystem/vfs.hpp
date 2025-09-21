@@ -510,7 +510,7 @@ namespace Hamster
          * @brief Check if a special file is a TTY
          * @param fd The file descriptor of the special file
          * @return 1 if it is, 0 if it's not, and on error return -1 and set `error`
-         * @note On a non-special file, this will return -1 and set `error` to ENOTTY
+         * @note On a non-special file, this will return -1 and set `error` to H_ENOTTY
          */
         int is_tty(int fd);
 

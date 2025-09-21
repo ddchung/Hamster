@@ -17,7 +17,7 @@ namespace Hamster
         char *pathname = current_task->memory->obj.memory.get_string(pathname_loc);
         if (!pathname)
         {
-            error = EFAULT; // Bad address
+            error = H_EFAULT; // Bad address
             return cvt_error();
         }
 
@@ -44,7 +44,7 @@ namespace Hamster
         dealloc(target);
         if (res < 0)
         {
-            error = EFAULT; // Bad address
+            error = H_EFAULT; // Bad address
             return cvt_error();
         }
 

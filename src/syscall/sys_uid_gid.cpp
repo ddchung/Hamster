@@ -112,11 +112,11 @@ namespace Hamster
         if (ruid != (uint32_t)-1)
         {
             // If the process isn't privileged, and new new real UID is not the same as either
-            // the old real UID or effective UID, fail with EPERM
+            // the old real UID or effective UID, fail with H_EPERM
             if (current_task->process->obj.uid != 0 && ruid != current_task->process->obj.uid &&
                 ruid != current_task->process->obj.euid)
             {
-                return -EPERM;
+                return -H_EPERM;
             }
 
             current_task->process->obj.uid = ruid;
@@ -128,11 +128,11 @@ namespace Hamster
             // - The old real UID
             // - The effective UID
             // - The saved set-user ID
-            // Then fail with EPERM
+            // Then fail with H_EPERM
             if (current_task->process->obj.uid != 0 && euid != current_task->process->obj.uid &&
                 euid != current_task->process->obj.euid && euid != current_task->process->obj.suid)
             {
-                return -EPERM;
+                return -H_EPERM;
             }
             current_task->process->obj.euid = euid;
         }
@@ -148,11 +148,11 @@ namespace Hamster
         if (rgid != (uint32_t)-1)
         {
             // If the process isn't privileged, and new real GID is not the same as either
-            // the old real GID or effective GID, fail with EPERM
+            // the old real GID or effective GID, fail with H_EPERM
             if (current_task->process->obj.gid != 0 && rgid != current_task->process->obj.gid &&
                 rgid != current_task->process->obj.egid)
             {
-                return -EPERM;
+                return -H_EPERM;
             }
 
             current_task->process->obj.gid = rgid;
@@ -164,11 +164,11 @@ namespace Hamster
             // - The old real GID
             // - The effective GID
             // - The saved set-group ID
-            // Then fail with EPERM
+            // Then fail with H_EPERM
             if (current_task->process->obj.gid != 0 && egid != current_task->process->obj.gid &&
                 egid != current_task->process->obj.egid && egid != current_task->process->obj.sgid)
             {
-                return -EPERM;
+                return -H_EPERM;
             }
             current_task->process->obj.egid = egid;
         }
@@ -191,7 +191,7 @@ namespace Hamster
             if (current_task->process->obj.uid != 0 && ruid != current_task->process->obj.uid &&
                 ruid != current_task->process->obj.euid && ruid != current_task->process->obj.suid)
             {
-                return -EPERM;
+                return -H_EPERM;
             }
             current_task->process->obj.uid = ruid;
         }
@@ -201,7 +201,7 @@ namespace Hamster
             if (current_task->process->obj.uid != 0 && euid != current_task->process->obj.uid &&
                 euid != current_task->process->obj.euid && euid != current_task->process->obj.suid)
             {
-                return -EPERM;
+                return -H_EPERM;
             }
             current_task->process->obj.euid = euid;
         }
@@ -211,7 +211,7 @@ namespace Hamster
             if (current_task->process->obj.uid != 0 && suid != current_task->process->obj.uid &&
                 suid != current_task->process->obj.euid && suid != current_task->process->obj.suid)
             {
-                return -EPERM;
+                return -H_EPERM;
             }
             current_task->process->obj.suid = suid;
         }
@@ -231,7 +231,7 @@ namespace Hamster
             if (current_task->process->obj.gid != 0 && rgid != current_task->process->obj.gid &&
                 rgid != current_task->process->obj.egid && rgid != current_task->process->obj.sgid)
             {
-                return -EPERM;
+                return -H_EPERM;
             }
             current_task->process->obj.gid = rgid;
         }
@@ -241,7 +241,7 @@ namespace Hamster
             if (current_task->process->obj.gid != 0 && egid != current_task->process->obj.gid &&
                 egid != current_task->process->obj.egid && egid != current_task->process->obj.sgid)
             {
-                return -EPERM;
+                return -H_EPERM;
             }
             current_task->process->obj.egid = egid;
         }
@@ -251,7 +251,7 @@ namespace Hamster
             if (current_task->process->obj.gid != 0 && sgid != current_task->process->obj.gid &&
                 sgid != current_task->process->obj.egid && sgid != current_task->process->obj.sgid)
             {
-                return -EPERM;
+                return -H_EPERM;
             }
             current_task->process->obj.sgid = sgid;
         }
@@ -274,19 +274,19 @@ namespace Hamster
 
         if (list_loc == 0)
         {
-            return -EFAULT;
+            return -H_EFAULT;
         }
 
         if (size < groups.size())
         {
             // Buffer too small
-            return -EINVAL;
+            return -H_EINVAL;
         }
 
         // Copy the group IDs to the user space
         if (current_task->memory->obj.memory.memcpy_alloc(list_loc, groups.data(), groups.size() * sizeof(uint32_t)) < 0)
         {
-            return -EFAULT;
+            return -H_EFAULT;
         }
 
         return groups.size();
@@ -302,7 +302,7 @@ namespace Hamster
         if (current_task->process->obj.euid != 0)
         {
             // Only root can set groups
-            return -EPERM;
+            return -H_EPERM;
         }
 
         if (size == 0)
@@ -314,14 +314,14 @@ namespace Hamster
 
         if (list_loc == 0)
         {
-            return -EFAULT;
+            return -H_EFAULT;
         }
 
         groups.resize(size);
 
         if (current_task->memory->obj.memory.memcpy(groups.data(), list_loc, size * sizeof(uint32_t)) < 0)
         {
-            return -EFAULT;
+            return -H_EFAULT;
         }
 
         return 0;

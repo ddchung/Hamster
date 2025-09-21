@@ -352,7 +352,7 @@ namespace Hamster
     {
         if (siginfo.signo < 0 || siginfo.signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 
@@ -387,14 +387,14 @@ namespace Hamster
     {
         if (signo < 0 || signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 
         // Check for unblockable signals
         if (signo == H_SIGKILL || signo == H_SIGSTOP || signo == H_SIGCONT)
         {
-            error = EPERM; // Cannot set handler for unblockable signals
+            error = H_EPERM; // Cannot set handler for unblockable signals
             return -1;
         }
 
@@ -406,7 +406,7 @@ namespace Hamster
     {
         if (signo < 0 || signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 
@@ -419,7 +419,7 @@ namespace Hamster
     {
         if (signo < 0 || signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 
@@ -553,7 +553,7 @@ namespace Hamster
         assert(fd_table);
         if (fd < 0 || fd >= (int)fd_table->obj.fds.size())
         {
-            error = EBADF; // Invalid file descriptor
+            error = H_EBADF; // Invalid file descriptor
             return -1;
         }
 
@@ -561,13 +561,13 @@ namespace Hamster
 
         if (user_fd.type != UserFDType::VFS)
         {
-            error = EBADF; // Not a VFS file descriptor
+            error = H_EBADF; // Not a VFS file descriptor
             return -1;
         }
 
         if (user_fd.vfs_fd < 0)
         {
-            error = EBADF; // Closed or invalid file descriptor
+            error = H_EBADF; // Closed or invalid file descriptor
             return -1;
         }
 
@@ -596,7 +596,7 @@ namespace Hamster
         assert(fd_table);
         if (fd < 0 || fd >= (int)fd_table->obj.fds.size())
         {
-            error = EBADF; // Invalid file descriptor
+            error = H_EBADF; // Invalid file descriptor
             return nullptr;
         }
 
@@ -711,7 +711,7 @@ namespace Hamster
     {
         if (!path || path[0] == '\0')
         {
-            error = EINVAL; // Invalid path
+            error = H_EINVAL; // Invalid path
             return -1;
         }
 
@@ -731,7 +731,7 @@ namespace Hamster
         {
             if (thread_at_fd < 0 || thread_at_fd >= (int)fd_table->obj.fds.size())
             {
-                error = EBADF; // Invalid file descriptor
+                error = H_EBADF; // Invalid file descriptor
                 return -1;
             }
 
@@ -739,7 +739,7 @@ namespace Hamster
 
             if (user_fd.type != UserFDType::VFS || user_fd.vfs_fd < 0)
             {
-                error = EBADF; // Not a valid VFS file descriptor
+                error = H_EBADF; // Not a valid VFS file descriptor
                 return -1;
             }
 
@@ -755,7 +755,7 @@ namespace Hamster
         if (!user_path || user_path[0] == '\0')
         {
             dealloc(user_path);
-            error = EINVAL; // Invalid path
+            error = H_EINVAL; // Invalid path
             return nullptr;
         }
 
@@ -786,7 +786,7 @@ namespace Hamster
     {
         if (siginfo.signo < 1 || siginfo.signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 
@@ -872,7 +872,7 @@ namespace Hamster
     {
         if (signo < 1 || signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 
@@ -889,7 +889,7 @@ namespace Hamster
     {
         if (signo < 1 || signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 

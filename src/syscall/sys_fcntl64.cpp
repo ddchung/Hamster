@@ -41,7 +41,7 @@ namespace Hamster
             {
                 int vfs_fd = user_fd->vfs_fd;
                 if (vfs_fd < 0)
-                    return -EBADF; // Closed or invalid file descriptor
+                    return -H_EBADF; // Closed or invalid file descriptor
                 flags = vfs.get_flags(vfs_fd);
                 if (flags < 0)
                     return cvt_error();
@@ -57,7 +57,7 @@ namespace Hamster
                     flags |= OPEN_NONBLOCK;
                 return flags;
             default:
-                return -EBADF;
+                return -H_EBADF;
             }
         }
         case FILE_SETFL:
@@ -69,7 +69,7 @@ namespace Hamster
             {
                 int vfs_fd = user_fd->vfs_fd;
                 if (vfs_fd < 0)
-                    return -EBADF; // Closed or invalid file descriptor
+                    return -H_EBADF; // Closed or invalid file descriptor
                 int old_flags = vfs.get_flags(vfs_fd);
                 if (old_flags < 0)
                     return cvt_error();
@@ -86,12 +86,12 @@ namespace Hamster
                     user_fd->flags &= ~USER_FD_PIPE_NONBLOCK;
                 return 0;
             default:
-                return -EBADF;
+                return -H_EBADF;
             }
         }
         default:
             // Unsupported command
-            error = ENOSYS;
+            error = H_ENOSYS;
             return -1;
         }
     }

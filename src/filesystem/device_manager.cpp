@@ -34,7 +34,7 @@ namespace Hamster
     {
         if (drivers.contains(id))
         {
-            error = EEXIST;
+            error = H_EEXIST;
             return -1;
         }
 
@@ -48,7 +48,7 @@ namespace Hamster
         auto it = drivers.find(id);
         if (it == drivers.end())
         {
-            error = EBADF;
+            error = H_EBADF;
             return nullptr;
         }
 

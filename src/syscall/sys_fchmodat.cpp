@@ -13,17 +13,17 @@ namespace Hamster
         assert(current_task != nullptr);
 
         if (path_loc == 0)
-            return -EFAULT; // Invalid path location
+            return -H_EFAULT; // Invalid path location
         
         if (flags & H_AT_SYMLINK_NOFOLLOW)
-            return -ENOTSUP; // Cannot change mode of symlinks directly
+            return -H_ENOTSUP; // Cannot change mode of symlinks directly
         else if (flags != 0)
-            return -EINVAL; // Unsupported flags
+            return -H_EINVAL; // Unsupported flags
         
         char *path = current_task->get_memory().get_string(path_loc);
         if (!path)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
 

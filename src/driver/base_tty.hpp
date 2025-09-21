@@ -59,12 +59,12 @@ namespace Hamster
 
         int64_t seek(int64_t offset, int whence) override
         {
-            error = ESPIPE; // TTYs do not support seeking
+            error = H_ESPIPE; // TTYs do not support seeking
             return -1;
         }
         int64_t tell() override
         {
-            error = ESPIPE;
+            error = H_ESPIPE;
             return -1;
         }
         int poll(int op) override;
@@ -162,7 +162,7 @@ namespace Hamster
             if (&pg->session->obj != session)
             {
                 // Not in the same session, so we can't read
-                error = ENOTTY;
+                error = H_ENOTTY;
                 return -1;
             }
 
@@ -194,7 +194,7 @@ namespace Hamster
             if (&pg->session->obj != session)
             {
                 // Not in the same session, so we can't write
-                error = ENOTTY;
+                error = H_ENOTTY;
                 return -1;
             }
 
@@ -261,7 +261,7 @@ namespace Hamster
         {
             if (!fg_pgroup)
             {
-                error = ENOTTY; // No foreground process group
+                error = H_ENOTTY; // No foreground process group
                 return -1;
             }
 
@@ -449,7 +449,7 @@ namespace Hamster
 
         if (to_read == -1)
         {
-            error = EAGAIN;
+            error = H_EAGAIN;
             return -1;
         }
 
@@ -479,7 +479,7 @@ namespace Hamster
         // Check if output is stopped and flow control is enabled
         if (driver->output_stopped && (driver->termios.iflag & H_IXON))
         {
-            error = EAGAIN;
+            error = H_EAGAIN;
             return -1;
         }
 
@@ -572,13 +572,13 @@ namespace Hamster
             // Set the controlling TTY
             if (driver->session && arg.i == 0)
             {
-                error = EPERM;
+                error = H_EPERM;
                 return -1;
             }
             Task *current_task = scheduler.get_current_task();
             if (!current_task)
             {
-                error = EINVAL;
+                error = H_EINVAL;
                 return -1; // No current task
             }
             if (driver->session)
@@ -596,13 +596,13 @@ namespace Hamster
             if (!pg)
             {
                 _trace("base_tty: cannot set foreground to nonexistent process group\n");
-                error = EPERM;
+                error = H_EPERM;
                 return -1;
             }
             if (&pg->session->obj != driver->session)
             {
                 _trace("base_tty: cannot set foreground to process group in different session\n");
-                error = EPERM;
+                error = H_EPERM;
                 return -1;
             }
             driver->fg_pgroup = pg;
@@ -611,7 +611,7 @@ namespace Hamster
         }
         case H_TIOCSWINSZ:
         default:
-            error = ENOSYS;
+            error = H_ENOSYS;
             return -1;
         }
     }

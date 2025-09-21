@@ -23,14 +23,14 @@ namespace Hamster
             Task *current_task = scheduler.get_current_task();
             if (current_task)
                 current_task->process->obj.send_signal(H_SIGPIPE);
-            error = EPIPE;
+            error = H_EPIPE;
             return -1;
         }
 
         if (buffer.size() + size > HAMSTER_MAX_PIPE_BUFFERED)
         {
             // Block until space is available
-            error = EAGAIN;
+            error = H_EAGAIN;
             return -1;
         }
 
@@ -50,7 +50,7 @@ namespace Hamster
                 return 0; // EOF
 
             // Block
-            error = EAGAIN;
+            error = H_EAGAIN;
             return -1;
         }
 

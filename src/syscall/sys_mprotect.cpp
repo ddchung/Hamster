@@ -14,12 +14,12 @@ namespace Hamster
         MemorySpace &memory = current_task->get_memory();
 
         if (!memory.is_mapped(addr, size))
-            return -ENOMEM;
+            return -H_ENOMEM;
         
         if (prot & (H_PROT_GROWSUP | H_PROT_GROWSDOWN))
         {
             // We don't support these
-            return -ENOTSUP;
+            return -H_ENOTSUP;
         }
 
         return memory.mprotect(addr, size, prot & 07);

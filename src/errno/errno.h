@@ -3,7 +3,7 @@
 #pragma once
 
 // include all the macros
-#include <errno.h>
+#include <abi/values.hpp>
 
 namespace Hamster
 {

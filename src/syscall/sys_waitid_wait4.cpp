@@ -33,11 +33,11 @@ namespace Hamster
                 result = syscall(sys_wait4);
                 break;
             default:
-                result = -ENOSYS;
+                result = -H_ENOSYS;
                 break;
             }
 
-            if (result < 0 && result == -EAGAIN)
+            if (result < 0 && result == -H_EAGAIN)
             {
                 // Still blocking, do nothing and check again next time
                 return;
@@ -73,12 +73,12 @@ namespace Hamster
         {
             if (id < 0 || (size_t)id >= current_task->fd_table->obj.fds.size())
             {
-                return -EINVAL; // Invalid PIDFD
+                return -H_EINVAL; // Invalid PIDFD
             }
             UserFD &fd = current_task->fd_table->obj.fds[id];
             if (fd.type != UserFDType::PID)
             {
-                return -EINVAL; // Not a PIDFD
+                return -H_EINVAL; // Not a PIDFD
             }
             pid = fd.pid; // Get PID from PIDFD
         }
@@ -87,7 +87,7 @@ namespace Hamster
             pid = 0; // Wait for any child process
             break;
         default:
-            return -EINVAL; // Invalid idtype
+            return -H_EINVAL; // Invalid idtype
         }
 
         Map<uint32_t, ProcessStateChange> &state_changes = current_process.children_state_changes;
@@ -172,7 +172,7 @@ namespace Hamster
             if (!found)
             {
                 // No child processes to wait for
-                return -ECHILD;
+                return -H_ECHILD;
             }
 
             if (options & H_WNOHANG)
@@ -192,7 +192,7 @@ namespace Hamster
             current_task->blocking_operation_saved[0] = idtype;
 
 
-            return -EAGAIN;
+            return -H_EAGAIN;
         }
 
         // We have a matching process state change
@@ -229,7 +229,7 @@ namespace Hamster
 
             if (current_task->memory->obj.memory.memcpy_alloc(infop_loc, &info, sizeof(sys_siginfo)) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
         }
@@ -239,7 +239,7 @@ namespace Hamster
             // Not implemented, set to 0
             if (current_task->memory->obj.memory.memset_alloc(ru_loc, 0, sizeof(sys_rusage)) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
         }

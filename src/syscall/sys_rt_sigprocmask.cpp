@@ -13,13 +13,13 @@ namespace Hamster
         Task *current_task = scheduler.get_current_task();
         if (!current_task)
         {
-            error = ESRCH; // No current task
+            error = H_ESRCH; // No current task
             return -1;
         }
 
         if (sigsetsize != sizeof(sys_sigset))
         {
-            error = EINVAL; // Invalid sigset size
+            error = H_EINVAL; // Invalid sigset size
             return -1;
         }
 
@@ -30,7 +30,7 @@ namespace Hamster
             sigset.sig[1] = (~current_task->sig_mask >> 32) & 0xFFFFFFFF;
             if (current_task->copy_to_user(sigset, oldset_loc) < 0)
             {
-                error = EFAULT; // Bad address
+                error = H_EFAULT; // Bad address
                 return -1;
             }
         }
@@ -40,7 +40,7 @@ namespace Hamster
             uint64_t new_mask = 0;
             if (current_task->copy_from_user(new_mask, set_loc) < 0)
             {
-                error = EFAULT; // Bad address
+                error = H_EFAULT; // Bad address
                 return -1;
             }
 
@@ -56,7 +56,7 @@ namespace Hamster
                 current_task->sig_mask = ~new_mask;
                 break;
             default:
-                return -EINVAL;
+                return -H_EINVAL;
             }
         }
 

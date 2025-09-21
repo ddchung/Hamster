@@ -22,7 +22,7 @@ namespace Hamster
             current_task.emulator.x[10] = current_task.blocking_operation_saved[0]; // Restore nfds
             int32_t result = syscall(sys_pselect6_time64);
 
-            if (result == -EAGAIN)
+            if (result == -H_EAGAIN)
                 // Still blocking, do nothing and check again next time
                 return;
             _trace("sys_pselect6: completed pselect6 operation, result %d\n", result);
@@ -51,7 +51,7 @@ namespace Hamster
         {
             if (current_task->copy_from_user(*read_fds, readfds_loc, fdset_size * sizeof(uint32_t)) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
         }
@@ -59,7 +59,7 @@ namespace Hamster
         {
             if (current_task->copy_from_user(*write_fds, writefds_loc, fdset_size * sizeof(uint32_t)) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
         }
@@ -68,7 +68,7 @@ namespace Hamster
             // Mark all of them as not ready
             if (current_task->get_memory().memset_alloc(exceptfds_loc, 0, fdset_size * sizeof(uint32_t)) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
         }
@@ -79,7 +79,7 @@ namespace Hamster
             sys_timespec timeout = {};
             if (current_task->copy_from_user(timeout, timeout_loc) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
 
@@ -93,7 +93,7 @@ namespace Hamster
                     || (writefds_loc != 0 &&
                     current_task->get_memory().memset_alloc(writefds_loc, 0, fdset_size * sizeof(uint32_t)) < 0))
                 {
-                    error = EFAULT;
+                    error = H_EFAULT;
                     return cvt_error();
                 }
                 return 0; // No file descriptors ready, return 0
@@ -127,7 +127,7 @@ namespace Hamster
                 ready |= (user_fd->pipe->poll(0x2) == 1) ? READY_WRITE : 0;
                 break;
             default:
-                return -EPERM;
+                return -H_EPERM;
             }
 
             if (ready == 0)
@@ -150,13 +150,13 @@ namespace Hamster
             if (readfds_loc != 0 &&
                 current_task->copy_to_user(*read_fds, readfds_loc, fdset_size * sizeof(uint32_t)) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
             if (writefds_loc != 0 &&
                 current_task->copy_to_user(*write_fds, writefds_loc, fdset_size * sizeof(uint32_t)) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
 
@@ -174,7 +174,7 @@ namespace Hamster
 
         // mark as blocked
         // This is intercepted by the blocking operation handler (poll_pselect6)
-        return -EAGAIN;
+        return -H_EAGAIN;
     }
 } // namespace Hamster
 

@@ -16,7 +16,7 @@ namespace Hamster
         char *path_str = current_task->get_memory().get_string(path_loc);
         if (path_str == nullptr)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
 
@@ -34,9 +34,9 @@ namespace Hamster
         {
             int err = 0;
             if (is_directory(statbuf.mode) && (flags & H_AT_REMOVEDIR) == 0)
-                err = EISDIR;
+                err = H_EISDIR;
             else if (!is_directory(statbuf.mode) && (flags & H_AT_REMOVEDIR) != 0)
-                err = ENOTDIR;
+                err = H_ENOTDIR;
             
             if (err)
             {

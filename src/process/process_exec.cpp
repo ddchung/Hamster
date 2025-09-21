@@ -69,7 +69,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -285,7 +285,7 @@ namespace Hamster
             bool has_arg = !arg.empty();
             if (interpreter.empty())
             {
-                error = ENOEXEC;
+                error = H_ENOEXEC;
                 return -1;
             }
 
@@ -310,7 +310,7 @@ namespace Hamster
         else
         {
             // Not a script or ELF file
-            error = ENOEXEC;
+            error = H_ENOEXEC;
             return -1;
         }
     }

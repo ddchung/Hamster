@@ -18,7 +18,7 @@ namespace Hamster
         sys_timespec ts = {};
 
         if (!tp_loc)
-            return -EFAULT;
+            return -H_EFAULT;
 
         uint64_t now = _get_sys_time();
 
@@ -33,7 +33,7 @@ namespace Hamster
             ts.sec += now / 1000;
             break;
         default:
-            return -EINVAL;
+            return -H_EINVAL;
         }
 
         if (current_task->copy_to_user(ts, tp_loc) < 0)

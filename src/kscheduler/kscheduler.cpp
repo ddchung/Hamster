@@ -23,14 +23,14 @@ namespace Hamster
     {
         if (!task || task->id == 0)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
         auto it = tasks.find(task->id);
         if (it != tasks.end())
         {
-            error = EEXIST;
+            error = H_EEXIST;
             return -1;
         }
 
@@ -43,13 +43,13 @@ namespace Hamster
         auto it = tasks.find(old_id);
         if (it == tasks.end())
         {
-            error = ESRCH;
+            error = H_ESRCH;
             return -1;
         }
 
         if (new_id == 0 || tasks.find(new_id) != tasks.end())
         {
-            error = EEXIST;
+            error = H_EEXIST;
             return -1;
         }
 
@@ -64,7 +64,7 @@ namespace Hamster
         auto it = tasks.find(id);
         if (it == tasks.end())
         {
-            error = ESRCH;
+            error = H_ESRCH;
             return -1;
         }
 

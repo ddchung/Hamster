@@ -82,7 +82,7 @@ namespace Hamster
         MountPoint &mount = it->second;
         if (!mount.fs)
         {
-            error = ENOENT;
+            error = H_ENOENT;
             dealloc(file);
             return nullptr;
         }
@@ -96,7 +96,7 @@ namespace Hamster
     {
         if (!link)
         {
-            error = EBADF;
+            error = H_EBADF;
             return nullptr;
         }
         char *target = link->get_target();
@@ -121,7 +121,7 @@ namespace Hamster
         if (file_id != -1 && link_id != -1 && file_id == link_id)
         {
             // Self-targeting symlink
-            error = ELOOP;
+            error = H_ELOOP;
             dealloc(file);
             return nullptr;
         }
@@ -131,7 +131,7 @@ namespace Hamster
 
         if (file->type() != FileType::Directory && (flags & OPEN_DIRECTORY))
         {
-            error = ENOTDIR;
+            error = H_ENOTDIR;
             dealloc(file);
             return nullptr;
         }
@@ -142,7 +142,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             dealloc(dir);
             return nullptr;
         }
@@ -150,7 +150,7 @@ namespace Hamster
         {
             if (!root_mount)
             {
-                error = ENOENT;
+                error = H_ENOENT;
                 return nullptr;
             }
             dir = root_mount->fs->open_root(flags);
@@ -185,7 +185,7 @@ namespace Hamster
             if (file->type() != FileType::Directory && (flags & OPEN_DIRECTORY))
             {
                 dealloc(file);
-                error = ENOTDIR;
+                error = H_ENOTDIR;
                 return nullptr;
             }
             return file->type() == FileType::Directory ? resolve_mount(file) : file;
@@ -218,7 +218,7 @@ namespace Hamster
                 if (!next_dir)
                 {
                     dealloc(next_file);
-                    error = ENOENT;
+                    error = H_ENOENT;
                     return nullptr;
                 }
                 BaseFile *file = lopen(next, flags, mode, next_dir);
@@ -230,7 +230,7 @@ namespace Hamster
             // non-directory in middle of path
             dealloc(next_file);
             dealloc(dir);
-            error = ENOTDIR;
+            error = H_ENOTDIR;
             return nullptr;
         }
     }
@@ -239,12 +239,12 @@ namespace Hamster
     {
         if (!path || !fs)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
         if (mounts.size() >= 0xFFFF)
         {
-            error = ENOSPC;
+            error = H_ENOSPC;
             return -1;
         }
         BaseFile *file = lopen(path, OPEN_RDONLY | OPEN_DIRECTORY, 0);
@@ -262,7 +262,7 @@ namespace Hamster
         auto it = mounts.find(id);
         if (it != mounts.end())
         {
-            error = EBUSY;
+            error = H_EBUSY;
             dealloc(file);
             return -1;
         }
@@ -300,12 +300,12 @@ namespace Hamster
     {
         if (!fs)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
         if (root_mount)
         {
-            error = EBUSY;
+            error = H_EBUSY;
             return -1;
         }
         mounts.clear();
@@ -317,7 +317,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
         BaseFile *file = lopen(path, OPEN_RDONLY | OPEN_DIRECTORY, 0);
@@ -334,13 +334,13 @@ namespace Hamster
         auto it = mounts.find(id);
         if (it == mounts.end())
         {
-            error = ENOENT;
+            error = H_ENOENT;
             return -1;
         }
 
         if (it->second.children > 0)
         {
-            error = EBUSY;
+            error = H_EBUSY;
             return -1;
         }
 
@@ -355,13 +355,13 @@ namespace Hamster
     {
         if (!root_mount)
         {
-            error = ENOENT;
+            error = H_ENOENT;
             return -1;
         }
 
         if (root_mount->children > 0)
         {
-            error = EBUSY;
+            error = H_EBUSY;
             return -1;
         }
 

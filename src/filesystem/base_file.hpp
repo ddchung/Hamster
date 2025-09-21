@@ -345,7 +345,7 @@ namespace Hamster
          * @param file The target file
          * @param name The name of the hard link
          * @return 0 on success, -1 on error and set `error`
-         * @note If the file is not part of this filesystem, set `errno` to `EXDEV`
+         * @note If the file is not part of this filesystem, set `errno` to `H_EXDEV`
          */
         virtual int link(BaseFile *file, const char *name) = 0;
 

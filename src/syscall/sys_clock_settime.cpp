@@ -17,7 +17,7 @@ namespace Hamster
         sys_timespec ts;
 
         if (!ts_loc)
-            return -EFAULT;
+            return -H_EFAULT;
 
         if (current_task->copy_from_user(ts, ts_loc) < 0)
             return cvt_error();
@@ -31,9 +31,9 @@ namespace Hamster
             clock_rt_offset = now - ts_ms;
             break;
         case H_CLOCK_MONOTONIC:
-            return -EPERM;
+            return -H_EPERM;
         default:
-            return -EINVAL;
+            return -H_EINVAL;
         }
 
         return 0;

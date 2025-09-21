@@ -160,7 +160,7 @@ namespace Hamster
     /**
      * @brief Call a system call
      * @param sys_id The system call ID to call, one of `Hamster::SyscallID::*`
-     * @return Whatever the sys_* function returns, or -ENOSYS if the ID is not recognized 
+     * @return Whatever the sys_* function returns, or -H_ENOSYS if the ID is not recognized 
      */
     int32_t syscall(int32_t sys_id);
 

@@ -18,7 +18,7 @@ namespace Hamster
         char *path_str = current_task->get_memory().get_string(path_loc);
         if (path_str == nullptr)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
 

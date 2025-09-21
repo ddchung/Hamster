@@ -10,10 +10,10 @@ namespace Hamster
     int32_t sys_pipe2(uint32_t pipefd_loc, int32_t flags)
     {
         if (flags & ~(OPEN_NONBLOCK | OPEN_CLOEXEC))
-            return -ENOTSUP;
+            return -H_ENOTSUP;
 
         if (!pipefd_loc)
-            return -EFAULT;
+            return -H_EFAULT;
         
         Task *current_task = scheduler.get_current_task();
         assert(current_task != nullptr);
@@ -51,7 +51,7 @@ namespace Hamster
         // Copy to user
 
         if (current_task->copy_to_user(unused_slots, pipefd_loc))
-            return -EFAULT;
+            return -H_EFAULT;
 
         return 0;
     }

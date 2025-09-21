@@ -17,13 +17,13 @@ namespace Hamster
         int vfs_fd = task->get_vfs_fd(fd);
         if (vfs_fd < 0)
         {
-            error = EBADF;
+            error = H_EBADF;
             return cvt_error();
         }
 
         if (!dirent_loc)
         {
-            error = EFAULT; // Bad address
+            error = H_EFAULT; // Bad address
             return cvt_error();
         }
         vfs.seek(vfs_fd, 0, H_SEEK_SET);
@@ -105,7 +105,7 @@ namespace Hamster
             if (task->memory->obj.memory.memcpy_alloc(dirent_loc + bytes_read, dirent, sizeof(sys_dirent) + name_len) < 0)
             {
                 _free(dirent);
-                error = EFAULT;
+                error = H_EFAULT;
                 ok = false;
                 break;
             }

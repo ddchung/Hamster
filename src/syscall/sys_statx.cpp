@@ -17,7 +17,7 @@ namespace Hamster
         // Check if we support the things in `mask`
         if (mask & ~H_STATX_BASIC_STATS)
         {
-            error = ENOSYS; // Not implemented
+            error = H_ENOSYS; // Not implemented
             return cvt_error();
         }
 
@@ -47,12 +47,12 @@ namespace Hamster
                     break;
                 case UserFDType::PID:
                 default:
-                    return -EBADF;
+                    return -H_EBADF;
                 }
             }
             else
             {
-                error = path_str ? ENOENT : EINVAL;
+                error = path_str ? H_ENOENT : H_EINVAL;
                 return cvt_error();
             }
         }
@@ -104,7 +104,7 @@ namespace Hamster
         // Copy to user memory
         if (task->memory->obj.memory.memcpy_alloc(statxbuf_loc, &statxbuf, sizeof(statxbuf)) < 0)
         {
-            error = EFAULT; // Bad address
+            error = H_EFAULT; // Bad address
             return cvt_error();
         }
 

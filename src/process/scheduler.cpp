@@ -72,7 +72,7 @@ namespace Hamster
     {
         if (!task)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return 0;
         }
 
@@ -89,7 +89,7 @@ namespace Hamster
         {
             return it->second;
         }
-        error = ESRCH;
+        error = H_ESRCH;
         return nullptr;
     }
 
@@ -143,7 +143,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
 
@@ -235,7 +235,7 @@ namespace Hamster
         }
 
         // Still not found, no process with that PID
-        error = ESRCH;
+        error = H_ESRCH;
         return nullptr;
     }
 
@@ -261,7 +261,7 @@ namespace Hamster
         }
 
         // Still not found, no process group with that PGID
-        error = ESRCH;
+        error = H_ESRCH;
         return nullptr;
     }
 
@@ -287,7 +287,7 @@ namespace Hamster
         }
 
         // Still not found, no session with that SID
-        error = ESRCH;
+        error = H_ESRCH;
         return nullptr;
     }
 

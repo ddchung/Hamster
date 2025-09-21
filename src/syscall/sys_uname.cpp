@@ -22,12 +22,12 @@ namespace Hamster
 
         if (!buf_loc)
         {
-            return -EFAULT;
+            return -H_EFAULT;
         }
 
         if (current_task->copy_to_user(default_uname, buf_loc) < 0)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
 
