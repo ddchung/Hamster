@@ -74,7 +74,7 @@ namespace Hamster
             // Program counter
             emulator.pc = action->handler;
 
-            if (action->flags & H_SA_RESETHAND)
+            if (action->flags & H_SA_RESETHAND || siginfo->signo == H_SIGSEGV || siginfo->signo == H_SIGILL)
             {
                 // Reset to default handler
                 task->process->obj.default_signal(siginfo->signo);
