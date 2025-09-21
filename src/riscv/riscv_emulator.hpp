@@ -28,7 +28,7 @@ namespace Hamster
         struct DecodedTrace
         {
             uint32_t pc;
-            DecodedInst decoded_insts[HAMSTER_TRACE_SIZE];
+            DecodedInst decoded_insts[HAMSTER_TRACE_SIZE + 1];
             size_t decoded_count;
         };
     public:
