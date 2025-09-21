@@ -24,6 +24,13 @@ namespace Hamster
             uint32_t imm_i, imm_s, imm_b, imm_u, imm_j, inst;
             uint8_t rd, funct3, rs1, rs2, funct7;
         };
+
+        struct DecodedTrace
+        {
+            uint32_t pc;
+            DecodedInst decoded_insts[HAMSTER_TRACE_SIZE];
+            size_t decoded_count;
+        };
     public:
         uint32_t x[32];
         double f[32];

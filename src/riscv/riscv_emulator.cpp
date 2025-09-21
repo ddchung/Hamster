@@ -356,83 +356,111 @@ namespace Hamster
     uint32_t RiscVEmulator::execute_trace(ExecuteResult &result)
     {
         uint32_t prefetched_instructions[HAMSTER_TRACE_SIZE];
-        DecodedInst predecoded_insts[HAMSTER_TRACE_SIZE];
 
-        static constexpr void *opcode_jumptable[] =
-        {
-            &&case_op_load,
-            &&case_op_flw,
-            &&case_invalid_op,
-            &&case_op_misc_mem,
-            &&case_op_imm,
-            &&case_op_auipc,
-            &&case_invalid_op,
-            &&case_invalid_op,
-            &&case_op_store,
-            &&case_op_fsw,
-            &&case_invalid_op,
-            &&case_op_atomic,
-            &&case_op_reg,
-            &&case_op_lui,
-            &&case_invalid_op,
-            &&case_invalid_op,
-            &&case_op_fmadd,
-            &&case_op_fmsub,
-            &&case_op_fnmsub,
-            &&case_op_fnmadd,
-            &&case_op_freg,
-            &&case_invalid_op,
-            &&case_invalid_op,
-            &&case_invalid_op,
-            &&case_op_branch,
-            &&case_op_jalr,
-            &&case_invalid_op,
-            &&case_op_jal,
-            &&case_op_system,
-            &&case_invalid_op, &&case_invalid_op, &&case_invalid_op
-        };
+        static DecodedTrace traces[3];
+        static uint32_t last_trace_slot = 0;
 
-        // Fetch instructions
-        if (pc & 0b11)
-        {
-            // Unaligned fetch not allowed
-            result.status = ExecuteResult::Status::IllegalLoad;
-            result.illegal_load.address = pc;
-            return 0;
-        }
-        if (memory->memory.fast_fetch_trace(pc, prefetched_instructions) < 0)
-        {
-            result.status = ExecuteResult::Status::IllegalLoad;
-            result.illegal_load.address = pc;
-            return 0;
-        }
-
+        DecodedInst *predecoded_insts = nullptr;
         size_t decoded_count = 0;
-        for (uint32_t *p_inst = prefetched_instructions; p_inst < prefetched_instructions + HAMSTER_TRACE_SIZE; ++p_inst)
+
+        if (pc == traces[0].pc)
         {
-            uint32_t inst = *p_inst;
+            predecoded_insts = traces[0].decoded_insts;
+            decoded_count = traces[0].decoded_count;
+        }
+        else if (pc == traces[1].pc)
+        {
+            predecoded_insts = traces[1].decoded_insts;
+            decoded_count = traces[1].decoded_count;
+        }
+        else if (pc == traces[2].pc)
+        {
+            predecoded_insts = traces[2].decoded_insts;
+            decoded_count = traces[2].decoded_count;
+        }
+        else
+        {
+            last_trace_slot = (last_trace_slot + 1) % 3;
+            predecoded_insts = traces[last_trace_slot].decoded_insts;
+            traces[last_trace_slot].pc = pc;
 
-            // Decode instruction
-            DecodedInst &dinst = predecoded_insts[decoded_count];
-            dinst.handler = opcode_jumptable[extract_opcode(inst)];
-            dinst.imm_i = extract_imm_i(inst);
-            dinst.imm_s = extract_imm_s(inst);
-            dinst.imm_b = extract_imm_b(inst);
-            dinst.imm_u = extract_imm_u(inst);
-            dinst.imm_j = extract_imm_j(inst);
-            dinst.rd = extract_rd(inst);
-            dinst.funct3 = extract_funct3(inst);
-            dinst.rs1 = extract_rs1(inst);
-            dinst.rs2 = extract_rs2(inst);
-            dinst.funct7 = extract_funct7(inst);
-            ++decoded_count;
-
-            if (dinst.handler == &&case_op_branch || dinst.handler == &&case_op_jalr  ||
-                dinst.handler == &&case_op_jal || decoded_count == HAMSTER_TRACE_SIZE)
+            static constexpr void *opcode_jumptable[] =
             {
-                // Control flow change, end of trace
-                break;
+                &&case_op_load,
+                &&case_op_flw,
+                &&case_invalid_op,
+                &&case_op_misc_mem,
+                &&case_op_imm,
+                &&case_op_auipc,
+                &&case_invalid_op,
+                &&case_invalid_op,
+                &&case_op_store,
+                &&case_op_fsw,
+                &&case_invalid_op,
+                &&case_op_atomic,
+                &&case_op_reg,
+                &&case_op_lui,
+                &&case_invalid_op,
+                &&case_invalid_op,
+                &&case_op_fmadd,
+                &&case_op_fmsub,
+                &&case_op_fnmsub,
+                &&case_op_fnmadd,
+                &&case_op_freg,
+                &&case_invalid_op,
+                &&case_invalid_op,
+                &&case_invalid_op,
+                &&case_op_branch,
+                &&case_op_jalr,
+                &&case_invalid_op,
+                &&case_op_jal,
+                &&case_op_system,
+                &&case_invalid_op, &&case_invalid_op, &&case_invalid_op
+            };
+
+            // Fetch instructions
+            if (pc & 0b11)
+            {
+                // Unaligned fetch not allowed
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = pc;
+                return 0;
             }
+            if (memory->memory.fast_fetch_trace(pc, prefetched_instructions) < 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = pc;
+                return 0;
+            }
+
+            for (uint32_t *p_inst = prefetched_instructions; p_inst < prefetched_instructions + HAMSTER_TRACE_SIZE; ++p_inst)
+            {
+                uint32_t inst = *p_inst;
+
+                // Decode instruction
+                DecodedInst &dinst = predecoded_insts[decoded_count];
+                dinst.handler = opcode_jumptable[extract_opcode(inst)];
+                dinst.imm_i = extract_imm_i(inst);
+                dinst.imm_s = extract_imm_s(inst);
+                dinst.imm_b = extract_imm_b(inst);
+                dinst.imm_u = extract_imm_u(inst);
+                dinst.imm_j = extract_imm_j(inst);
+                dinst.rd = extract_rd(inst);
+                dinst.funct3 = extract_funct3(inst);
+                dinst.rs1 = extract_rs1(inst);
+                dinst.rs2 = extract_rs2(inst);
+                dinst.funct7 = extract_funct7(inst);
+                ++decoded_count;
+
+                if (dinst.handler == &&case_op_branch || dinst.handler == &&case_op_jalr  ||
+                    dinst.handler == &&case_op_jal || decoded_count == HAMSTER_TRACE_SIZE)
+                {
+                    // Control flow change, end of trace
+                    break;
+                }
+            }
+
+            traces[last_trace_slot].decoded_count = decoded_count;
         }
 
         DecodedInst *current_inst = predecoded_insts;
