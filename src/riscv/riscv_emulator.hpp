@@ -22,7 +22,7 @@ namespace Hamster
         {
             void *handler;
             uint32_t imm_i, imm_s, imm_b, imm_u, imm_j, inst;
-            uint8_t rd, funct3, rs1, rs2, funct7;
+            uint8_t rd, rs1, rs2;
         };
 
         struct DecodedTrace
