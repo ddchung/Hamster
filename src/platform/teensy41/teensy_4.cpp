@@ -10,7 +10,7 @@
 #include <memory/allocator.hpp>
 #include <filesystem/device_manager.hpp>
 #include <driver/base_tty.hpp>
-#include <driver/base_romfs.hpp>
+#include <filesystem/base_romfs.hpp>
 #include <driver/block_device_cache.hpp>
 #include <driver/base_char_device.hpp>
 #include <errno/errno.h>

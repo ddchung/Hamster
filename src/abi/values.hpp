@@ -1,4 +1,11 @@
-// ABI values
+/**
+ * This file contains constants from the RISC-V linux headers
+ * 
+ * The values here were transformed from marcos from linux's include/asm and include/asm-generic into
+ * `inline constexpr int`s
+ * 
+ * The names were also altered, as to not conflict with any host C library
+ */
 
 #pragma once
 
