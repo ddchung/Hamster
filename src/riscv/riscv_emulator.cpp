@@ -355,9 +355,6 @@ namespace Hamster
     uint32_t
     RiscVEmulator::execute_trace(ExecuteResult &result)
     {
-        static DecodedTrace traces[3];
-        static uint32_t last_trace_slot = 0;
-
         DecodedInst *predecoded_insts = nullptr;
         size_t decoded_count = 0;
 
@@ -897,6 +894,16 @@ namespace Hamster
                  &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
                  &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op};
 
+
+            static constexpr uint_fast8_t should_break[32] = {
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                1, // branch
+                1, // jalr
+                0, 1 // jal
+            };
+
             // Fetch instructions
             if (pc & 0b11)
             {
@@ -931,8 +938,7 @@ namespace Hamster
                 dinst.handler = opcode_jumptable[(inst & 0x7000) | ((inst >> 20) & 0xFE0) | opcode];
                 ++decoded_count;
 
-                if (dinst.handler == &&case_op_branch || dinst.handler == &&case_op_jalr ||
-                    dinst.handler == &&case_op_jal || decoded_count == HAMSTER_TRACE_SIZE)
+                if (should_break[opcode] || decoded_count == HAMSTER_TRACE_SIZE)
                 {
                     // Control flow change, end of trace
                     break;
