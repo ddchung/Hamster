@@ -21,8 +21,7 @@ namespace Hamster
         struct DecodedInst
         {
             void *handler;
-            uint32_t imm_i, imm_s, imm_b, imm_u, imm_j, inst;
-            uint8_t rd, rs1, rs2;
+            uint32_t inst;
         };
 
         struct DecodedTrace

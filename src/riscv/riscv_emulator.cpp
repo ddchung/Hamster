@@ -379,8 +379,7 @@ namespace Hamster
             predecoded_insts = traces[last_trace_slot].decoded_insts;
             traces[last_trace_slot].pc = pc;
 
-            static constexpr void *opcode_jumptable[] =
-                {&&case_lb,
+            static constexpr void *opcode_jumptable[] = {&&case_lb,
                  &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
                  &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
                  &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
@@ -925,15 +924,7 @@ namespace Hamster
 
                 // Decode instruction
                 DecodedInst &dinst = predecoded_insts[decoded_count];
-                dinst.imm_i = extract_imm_i(inst);
-                dinst.imm_s = extract_imm_s(inst);
-                dinst.imm_b = extract_imm_b(inst);
-                dinst.imm_u = extract_imm_u(inst);
-                dinst.imm_j = extract_imm_j(inst);
                 dinst.inst = inst;
-                dinst.rd = extract_rd(inst);
-                dinst.rs1 = extract_rs1(inst);
-                dinst.rs2 = extract_rs2(inst);
                 uint32_t opcode = (inst >> 2) & 0x1F;
                 dinst.handler = opcode_jumptable[(inst & 0x7000) | ((inst >> 20) & 0xFE0) | opcode];
                 ++decoded_count;
@@ -960,201 +951,175 @@ namespace Hamster
 
     case_add:
         // ADD
-        x[current_inst->rd] =
-            x[current_inst->rs1] + x[current_inst->rs2];
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] + x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_sub:
         // SUB
-        x[current_inst->rd] =
-            x[current_inst->rs1] - x[current_inst->rs2];
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] - x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_xor:
-        x[current_inst->rd] =
-            x[current_inst->rs1] ^ x[current_inst->rs2];
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] ^ x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_or:
-        x[current_inst->rd] =
-            x[current_inst->rs1] | x[current_inst->rs2];
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] | x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_and:
-        x[current_inst->rd] =
-            x[current_inst->rs1] & x[current_inst->rs2];
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] & x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_sll:
-        x[current_inst->rd] =
-            x[current_inst->rs1] << (x[current_inst->rs2] & 0x1F);
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] << (x[extract_rs2(current_inst->inst)] & 0x1F);
         DISPATCH();
     case_srl:
-        x[current_inst->rd] =
-            x[current_inst->rs1] >> (x[current_inst->rs2] & 0x1F);
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] >> (x[extract_rs2(current_inst->inst)] & 0x1F);
         DISPATCH();
     case_sra:
-        x[current_inst->rd] = (int32_t)x[current_inst->rs1] >> (x[current_inst->rs2] & 0x1F);
+        x[extract_rd(current_inst->inst)] = (int32_t)x[extract_rs1(current_inst->inst)] >> (x[extract_rs2(current_inst->inst)] & 0x1F);
         DISPATCH();
     case_slt:
-        x[current_inst->rd] =
-            (int32_t)x[current_inst->rs1] < (int32_t)x[current_inst->rs2];
+        x[extract_rd(current_inst->inst)] = (int32_t)x[extract_rs1(current_inst->inst)] < (int32_t)x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_sltu:
-        x[current_inst->rd] =
-            x[current_inst->rs1] < x[current_inst->rs2];
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] < x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_mul:
-        x[current_inst->rd] =
-            (int64_t)x[current_inst->rs1] * (int64_t)x[current_inst->rs2];
+        x[extract_rd(current_inst->inst)] = (int64_t)x[extract_rs1(current_inst->inst)] * (int64_t)x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_mulh:
-        x[current_inst->rd] =
-            ((int64_t)x[current_inst->rs1] * (int64_t)x[current_inst->rs2]) >> 32;
+        x[extract_rd(current_inst->inst)] = ((int64_t)x[extract_rs1(current_inst->inst)] * (int64_t)x[extract_rs2(current_inst->inst)]) >> 32;
         DISPATCH();
     case_mulhsu:
-        x[current_inst->rd] =
-            ((int64_t)x[current_inst->rs1] * (uint64_t)x[current_inst->rs2]) >> 32;
+        x[extract_rd(current_inst->inst)] = ((int64_t)x[extract_rs1(current_inst->inst)] * (uint64_t)x[extract_rs2(current_inst->inst)]) >> 32;
         DISPATCH();
     case_mulhu:
-        x[current_inst->rd] =
-            ((uint64_t)x[current_inst->rs1] * (uint64_t)x[current_inst->rs2]) >> 32;
+        x[extract_rd(current_inst->inst)] = ((uint64_t)x[extract_rs1(current_inst->inst)] * (uint64_t)x[extract_rs2(current_inst->inst)]) >> 32;
         DISPATCH();
     case_div:
-        if (x[current_inst->rs2] == 0)
-            x[current_inst->rd] = 0xFFFFFFFF;
+        if (x[extract_rs2(current_inst->inst)] == 0)
+            x[extract_rd(current_inst->inst)] = 0xFFFFFFFF;
         else
-            x[current_inst->rd] =
-                (int32_t)x[current_inst->rs1] /
-                (int32_t)x[current_inst->rs2];
+            x[extract_rd(current_inst->inst)] = (int32_t)x[extract_rs1(current_inst->inst)] /
+                (int32_t)x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_divu:
-        if (x[current_inst->rs2] == 0)
-            x[current_inst->rd] = 0xFFFFFFFF;
+        if (x[extract_rs2(current_inst->inst)] == 0)
+            x[extract_rd(current_inst->inst)] = 0xFFFFFFFF;
         else
-            x[current_inst->rd] =
-                x[current_inst->rs1] / x[current_inst->rs2];
+            x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] / x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_rem:
-        if (x[current_inst->rs2] == 0)
-            x[current_inst->rd] = x[current_inst->rs1];
+        if (x[extract_rs2(current_inst->inst)] == 0)
+            x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)];
         else
-            x[current_inst->rd] =
-                (int32_t)x[current_inst->rs1] %
-                (int32_t)x[current_inst->rs2];
+            x[extract_rd(current_inst->inst)] = (int32_t)x[extract_rs1(current_inst->inst)] %
+                (int32_t)x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_remu:
-        if (x[current_inst->rs2] == 0)
-            x[current_inst->rd] = x[current_inst->rs1];
+        if (x[extract_rs2(current_inst->inst)] == 0)
+            x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)];
         else
-            x[current_inst->rd] =
-                x[current_inst->rs1] % x[current_inst->rs2];
+            x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] % x[extract_rs2(current_inst->inst)];
 
         DISPATCH();
     case_addi:
-        x[current_inst->rd] =
-            x[current_inst->rs1] + current_inst->imm_i;
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
         DISPATCH();
     case_xori:
-        x[current_inst->rd] =
-            x[current_inst->rs1] ^ current_inst->imm_i;
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] ^ extract_imm_i(current_inst->inst);
         DISPATCH();
     case_ori:
-        x[current_inst->rd] =
-            x[current_inst->rs1] | current_inst->imm_i;
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] | extract_imm_i(current_inst->inst);
         DISPATCH();
     case_andi:
-        x[current_inst->rd] =
-            x[current_inst->rs1] & current_inst->imm_i;
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] & extract_imm_i(current_inst->inst);
         DISPATCH();
     case_slli:
-        x[current_inst->rd] =
-            x[current_inst->rs1] << (current_inst->imm_i & 0x1F);
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] << (extract_imm_i(current_inst->inst) & 0x1F);
         DISPATCH();
     case_srli:
-        x[current_inst->rd] =
-            x[current_inst->rs1] >> (current_inst->imm_i & 0x1F);
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] >> (extract_imm_i(current_inst->inst) & 0x1F);
         DISPATCH();
     case_srai:
-        x[current_inst->rd] =
-            (int32_t)x[current_inst->rs1] >> (current_inst->imm_i & 0x1F);
+        x[extract_rd(current_inst->inst)] = (int32_t)x[extract_rs1(current_inst->inst)] >> (extract_imm_i(current_inst->inst) & 0x1F);
         DISPATCH();
     case_slti:
-        x[current_inst->rd] =
-            (int32_t)x[current_inst->rs1] < (int32_t)current_inst->imm_i;
+        x[extract_rd(current_inst->inst)] = (int32_t)x[extract_rs1(current_inst->inst)] < (int32_t)extract_imm_i(current_inst->inst);
         DISPATCH();
     case_sltui:
-        x[current_inst->rd] =
-            x[current_inst->rs1] < current_inst->imm_i;
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] < extract_imm_i(current_inst->inst);
         DISPATCH();
     case_lb:
     {
         uint8_t value;
-        if (read8(x[current_inst->rs1] + current_inst->imm_i, value) != 0)
+        if (read8(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
         {
-            _trace("RiscVEmulator: LB: Failed to load 8-bit value at 0x%08x\n", x[current_inst->rs1] + current_inst->imm_i);
+            _trace("RiscVEmulator: LB: Failed to load 8-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst));
             result.status = ExecuteResult::Status::IllegalLoad;
-            result.illegal_load.address = x[current_inst->rs1] + current_inst->imm_i;
+            result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
             OPCODE_RETURN_FAIL();
         }
-        x[current_inst->rd] = sign_extend(value, 8);
+        x[extract_rd(current_inst->inst)] = sign_extend(value, 8);
         DISPATCH();
     }
     case_lh:
     {
         uint16_t value;
-        if (read16(x[current_inst->rs1] + current_inst->imm_i, value) != 0)
+        if (read16(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
         {
-            _trace("RiscVEmulator: LH: Failed to load 16-bit value at 0x%08x\n", x[current_inst->rs1] + current_inst->imm_i);
+            _trace("RiscVEmulator: LH: Failed to load 16-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst));
             result.status = ExecuteResult::Status::IllegalLoad;
-            result.illegal_load.address = x[current_inst->rs1] + current_inst->imm_i;
+            result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
             OPCODE_RETURN_FAIL();
         }
-        x[current_inst->rd] = sign_extend(value, 16);
+        x[extract_rd(current_inst->inst)] = sign_extend(value, 16);
         DISPATCH();
     }
     case_lw:
     {
         uint32_t value;
-        if (read32(x[current_inst->rs1] + current_inst->imm_i, value) != 0)
+        if (read32(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
         {
-            _trace("RiscVEmulator: LW: Failed to load 32-bit value at 0x%08x\n", x[current_inst->rs1] + current_inst->imm_i);
+            _trace("RiscVEmulator: LW: Failed to load 32-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst));
             result.status = ExecuteResult::Status::IllegalLoad;
-            result.illegal_load.address = x[current_inst->rs1] + current_inst->imm_i;
+            result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
             OPCODE_RETURN_FAIL();
         }
-        x[current_inst->rd] = value;
+        x[extract_rd(current_inst->inst)] = value;
         DISPATCH();
     }
     case_lbu:
     {
         uint8_t value;
-        if (read8(x[current_inst->rs1] + current_inst->imm_i, value) != 0)
+        if (read8(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
         {
-            _trace("RiscVEmulator: LBU: Failed to load 8-bit value at 0x%08x\n", x[current_inst->rs1] + current_inst->imm_i);
+            _trace("RiscVEmulator: LBU: Failed to load 8-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst));
             result.status = ExecuteResult::Status::IllegalLoad;
-            result.illegal_load.address = x[current_inst->rs1] + current_inst->imm_i;
+            result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
             OPCODE_RETURN_FAIL();
         }
-        x[current_inst->rd] = value;
+        x[extract_rd(current_inst->inst)] = value;
         DISPATCH();
     }
     case_lhu:
     {
         uint16_t value;
-        if (read16(x[current_inst->rs1] + current_inst->imm_i, value) != 0)
+        if (read16(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
         {
-            _trace("RiscVEmulator: LHU: Failed to load 16-bit value at 0x%08x\n", x[current_inst->rs1] + current_inst->imm_i);
+            _trace("RiscVEmulator: LHU: Failed to load 16-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst));
             result.status = ExecuteResult::Status::IllegalLoad;
-            result.illegal_load.address = x[current_inst->rs1] + current_inst->imm_i;
+            result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
             OPCODE_RETURN_FAIL();
         }
-        x[current_inst->rd] = value;
+        x[extract_rd(current_inst->inst)] = value;
         DISPATCH();
     }
     case_sb:
     {
-        uint8_t value = x[current_inst->rs2] & 0xFF;
-        if (write8(x[current_inst->rs1] + current_inst->imm_s, value) != 0)
+        uint8_t value = x[extract_rs2(current_inst->inst)] & 0xFF;
+        if (write8(x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst), value) != 0)
         {
-            _trace("RiscVEmulator: SB: Failed to store 8-bit value at 0x%08x\n", x[current_inst->rs1] + current_inst->imm_s);
+            _trace("RiscVEmulator: SB: Failed to store 8-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst));
             result.status = ExecuteResult::Status::IllegalStore;
-            result.illegal_store.address = x[current_inst->rs1] + current_inst->imm_s;
+            result.illegal_store.address = x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst);
             result.illegal_store.value = value;
             OPCODE_RETURN_FAIL();
         }
@@ -1162,12 +1127,12 @@ namespace Hamster
     }
     case_sh:
     {
-        uint16_t value = x[current_inst->rs2] & 0xFFFF;
-        if (write16(x[current_inst->rs1] + current_inst->imm_s, value) != 0)
+        uint16_t value = x[extract_rs2(current_inst->inst)] & 0xFFFF;
+        if (write16(x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst), value) != 0)
         {
-            _trace("RiscVEmulator: SH: Failed to store 16-bit value at 0x%08x\n", x[current_inst->rs1] + current_inst->imm_s);
+            _trace("RiscVEmulator: SH: Failed to store 16-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst));
             result.status = ExecuteResult::Status::IllegalStore;
-            result.illegal_store.address = x[current_inst->rs1] + current_inst->imm_s;
+            result.illegal_store.address = x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst);
             result.illegal_store.value = value;
             OPCODE_RETURN_FAIL();
         }
@@ -1175,12 +1140,12 @@ namespace Hamster
     }
     case_sw:
     {
-        uint32_t value = x[current_inst->rs2];
-        if (write32(x[current_inst->rs1] + current_inst->imm_s, value) != 0)
+        uint32_t value = x[extract_rs2(current_inst->inst)];
+        if (write32(x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst), value) != 0)
         {
-            _trace("RiscVEmulator: SW: Failed to store 32-bit value at 0x%08x\n", x[current_inst->rs1] + current_inst->imm_s);
+            _trace("RiscVEmulator: SW: Failed to store 32-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst));
             result.status = ExecuteResult::Status::IllegalStore;
-            result.illegal_store.address = x[current_inst->rs1] + current_inst->imm_s;
+            result.illegal_store.address = x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst);
             result.illegal_store.value = value;
             OPCODE_RETURN_FAIL();
         }
@@ -1192,9 +1157,9 @@ namespace Hamster
         {
             // Base branch instructions
         case FUNCT3_BEQ:
-            if (x[current_inst->rs1] == x[current_inst->rs2])
+            if (x[extract_rs1(current_inst->inst)] == x[extract_rs2(current_inst->inst)])
             {
-                auto new_pc = pc + current_inst->imm_b;
+                auto new_pc = pc + extract_imm_b(current_inst->inst);
                 // Ensure that it is readable
                 if (read32(new_pc, dummy) != 0)
                 {
@@ -1211,9 +1176,9 @@ namespace Hamster
             }
             break;
         case FUNCT3_BNE:
-            if (x[current_inst->rs1] != x[current_inst->rs2])
+            if (x[extract_rs1(current_inst->inst)] != x[extract_rs2(current_inst->inst)])
             {
-                auto new_pc = pc + current_inst->imm_b;
+                auto new_pc = pc + extract_imm_b(current_inst->inst);
                 // Ensure that it is readable
                 if (read32(new_pc, dummy) != 0)
                 {
@@ -1230,9 +1195,9 @@ namespace Hamster
             }
             break;
         case FUNCT3_BLT:
-            if ((int32_t)x[current_inst->rs1] < (int32_t)x[current_inst->rs2])
+            if ((int32_t)x[extract_rs1(current_inst->inst)] < (int32_t)x[extract_rs2(current_inst->inst)])
             {
-                auto new_pc = pc + current_inst->imm_b;
+                auto new_pc = pc + extract_imm_b(current_inst->inst);
                 // Ensure that it is readable
                 if (read32(new_pc, dummy) != 0)
                 {
@@ -1249,9 +1214,9 @@ namespace Hamster
             }
             break;
         case FUNCT3_BGE:
-            if ((int32_t)x[current_inst->rs1] >= (int32_t)x[current_inst->rs2])
+            if ((int32_t)x[extract_rs1(current_inst->inst)] >= (int32_t)x[extract_rs2(current_inst->inst)])
             {
-                auto new_pc = pc + current_inst->imm_b;
+                auto new_pc = pc + extract_imm_b(current_inst->inst);
                 // Ensure that it is readable
                 if (read32(new_pc, dummy) != 0)
                 {
@@ -1268,9 +1233,9 @@ namespace Hamster
             }
             break;
         case FUNCT3_BLTU:
-            if (x[current_inst->rs1] < x[current_inst->rs2])
+            if (x[extract_rs1(current_inst->inst)] < x[extract_rs2(current_inst->inst)])
             {
-                auto new_pc = pc + current_inst->imm_b;
+                auto new_pc = pc + extract_imm_b(current_inst->inst);
                 // Ensure that it is readable
                 if (read32(new_pc, dummy) != 0)
                 {
@@ -1287,9 +1252,9 @@ namespace Hamster
             }
             break;
         case FUNCT3_BGEU:
-            if (x[current_inst->rs1] >= x[current_inst->rs2])
+            if (x[extract_rs1(current_inst->inst)] >= x[extract_rs2(current_inst->inst)])
             {
-                auto new_pc = pc + current_inst->imm_b;
+                auto new_pc = pc + extract_imm_b(current_inst->inst);
                 // Ensure that it is readable
                 if (read32(new_pc, dummy) != 0)
                 {
@@ -1320,7 +1285,7 @@ namespace Hamster
     case_op_jal:
         // JAL
         pc += decoded_count * 4 - 4;
-        new_pc = pc + current_inst->imm_j;
+        new_pc = pc + extract_imm_j(current_inst->inst);
         // Ensure that it is readable
         if (read32(new_pc, dummy) != 0)
         {
@@ -1329,7 +1294,7 @@ namespace Hamster
             result.illegal_load.address = new_pc;
             OPCODE_RETURN_FAIL();
         }
-        x[current_inst->rd] = pc + 4;
+        x[extract_rd(current_inst->inst)] = pc + 4;
         pc = new_pc;
 
         assert(current_inst == predecoded_insts + decoded_count - 1);
@@ -1339,7 +1304,7 @@ namespace Hamster
     case_op_jalr:
         // JALR
         pc += decoded_count * 4 - 4;
-        new_pc = (x[current_inst->rs1] + current_inst->imm_i) & ~0x1;
+        new_pc = (x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst)) & ~0x1;
         // Ensure that it is readable
         if (read32(new_pc, dummy) != 0)
         {
@@ -1348,7 +1313,7 @@ namespace Hamster
             result.illegal_load.address = new_pc;
             OPCODE_RETURN_FAIL();
         }
-        x[current_inst->rd] = pc + 4;
+        x[extract_rd(current_inst->inst)] = pc + 4;
         pc = new_pc;
         assert(current_inst == predecoded_insts + decoded_count - 1);
         ++total_instructions_executed;
@@ -1356,18 +1321,18 @@ namespace Hamster
 
     case_op_lui:
         // LUI
-        x[current_inst->rd] = current_inst->imm_u;
+        x[extract_rd(current_inst->inst)] = extract_imm_u(current_inst->inst);
         DISPATCH();
     case_op_auipc:
         // AUIPC
-        x[current_inst->rd] = (current_inst - predecoded_insts) * 4 + pc + current_inst->imm_u;
+        x[extract_rd(current_inst->inst)] = (current_inst - predecoded_insts) * 4 + pc + extract_imm_u(current_inst->inst);
         DISPATCH();
     case_op_system:
         // System instructions
         switch (extract_funct3(current_inst->inst))
         {
         case FUNCT3_ECALL_EBREAK:
-            if ((current_inst->imm_i & 0x1) == 0)
+            if ((extract_imm_i(current_inst->inst) & 0x1) == 0)
             {
                 // ECALL
                 result.status = ExecuteResult::Status::ECALL;
@@ -1383,22 +1348,22 @@ namespace Hamster
         case FUNCT3_CSRRW:
             // CSR Read and Write
             {
-                uint32_t csr = current_inst->imm_i;
+                uint32_t csr = extract_imm_i(current_inst->inst);
                 switch (csr)
                 {
                 case 0x1: // FP Flags
-                    x[current_inst->rd] = (fcsr & 0x1F);
+                    x[extract_rd(current_inst->inst)] = (fcsr & 0x1F);
                     fcsr &= ~0x1F;
-                    fcsr |= (x[current_inst->rs1] & 0x1F);
+                    fcsr |= (x[extract_rs1(current_inst->inst)] & 0x1F);
                     break;
                 case 0x2: // FP default round mode
-                    x[current_inst->rd] = (fcsr >> 5) & 0b111;
+                    x[extract_rd(current_inst->inst)] = (fcsr >> 5) & 0b111;
                     fcsr &= ~(0b111 << 5);
-                    fcsr |= ((x[current_inst->rs1] & 0b111) << 5);
+                    fcsr |= ((x[extract_rs1(current_inst->inst)] & 0b111) << 5);
                     break;
                 case 0x3: // whole FCSR
-                    x[current_inst->rd] = fcsr;
-                    fcsr = x[current_inst->rs1] & 0xFFFFFFFF;
+                    x[extract_rd(current_inst->inst)] = fcsr;
+                    fcsr = x[extract_rs1(current_inst->inst)] & 0xFFFFFFFF;
                     break;
                 default:
                     // Unknown CSR
@@ -1412,20 +1377,20 @@ namespace Hamster
         case FUNCT3_CSRRS:
             // CSR Read and Set
             {
-                uint32_t csr = current_inst->imm_i;
+                uint32_t csr = extract_imm_i(current_inst->inst);
                 switch (csr)
                 {
                 case 0x1: // FP Flags
-                    x[current_inst->rd] = (fcsr & 0x1F);
-                    fcsr |= (x[current_inst->rs1] & 0x1F);
+                    x[extract_rd(current_inst->inst)] = (fcsr & 0x1F);
+                    fcsr |= (x[extract_rs1(current_inst->inst)] & 0x1F);
                     break;
                 case 0x2: // FP default round mode
-                    x[current_inst->rd] = (fcsr >> 5) & 0b111;
-                    fcsr |= ((x[current_inst->rs1] & 0b111) << 5);
+                    x[extract_rd(current_inst->inst)] = (fcsr >> 5) & 0b111;
+                    fcsr |= ((x[extract_rs1(current_inst->inst)] & 0b111) << 5);
                     break;
                 case 0x3: // whole FCSR
-                    x[current_inst->rd] = fcsr;
-                    fcsr |= (x[current_inst->rs1] & 0xFFFFFFFF);
+                    x[extract_rd(current_inst->inst)] = fcsr;
+                    fcsr |= (x[extract_rs1(current_inst->inst)] & 0xFFFFFFFF);
                     break;
                 default:
                     // Unknown CSR
@@ -1439,20 +1404,20 @@ namespace Hamster
         case FUNCT3_CSRRC:
             // CSR Read and Clear
             {
-                uint32_t csr = current_inst->imm_i;
+                uint32_t csr = extract_imm_i(current_inst->inst);
                 switch (csr)
                 {
                 case 0x1: // FP Flags
-                    x[current_inst->rd] = (fcsr & 0x1F);
-                    fcsr &= ~(x[current_inst->rs1] & 0x1F);
+                    x[extract_rd(current_inst->inst)] = (fcsr & 0x1F);
+                    fcsr &= ~(x[extract_rs1(current_inst->inst)] & 0x1F);
                     break;
                 case 0x2: // FP default round mode
-                    x[current_inst->rd] = (fcsr >> 5) & 0b111;
-                    fcsr &= ~((x[current_inst->rs1] & 0b111) << 5);
+                    x[extract_rd(current_inst->inst)] = (fcsr >> 5) & 0b111;
+                    fcsr &= ~((x[extract_rs1(current_inst->inst)] & 0b111) << 5);
                     break;
                 case 0x3: // whole FCSR
-                    x[current_inst->rd] = fcsr;
-                    fcsr &= ~(x[current_inst->rs1] & 0xFFFFFFFF);
+                    x[extract_rd(current_inst->inst)] = fcsr;
+                    fcsr &= ~(x[extract_rs1(current_inst->inst)] & 0xFFFFFFFF);
                     break;
                 default:
                     // Unknown CSR
@@ -1466,22 +1431,22 @@ namespace Hamster
         case FUNCT3_CSRRWI:
             // CSR Read and Write Immediate
             {
-                uint32_t csr = current_inst->imm_i;
+                uint32_t csr = extract_imm_i(current_inst->inst);
                 switch (csr)
                 {
                 case 0x1: // FP Flags
-                    x[current_inst->rd] = (fcsr & 0x1F);
+                    x[extract_rd(current_inst->inst)] = (fcsr & 0x1F);
                     fcsr &= ~0x1F;
-                    fcsr |= (current_inst->rs1 & 0x1F);
+                    fcsr |= (extract_rs1(current_inst->inst) & 0x1F);
                     break;
                 case 0x2: // FP default round mode
-                    x[current_inst->rd] = (fcsr >> 5) & 0b111;
+                    x[extract_rd(current_inst->inst)] = (fcsr >> 5) & 0b111;
                     fcsr &= ~(0b111 << 5);
-                    fcsr |= ((current_inst->rs1 & 0b111) << 5);
+                    fcsr |= ((extract_rs1(current_inst->inst) & 0b111) << 5);
                     break;
                 case 0x3: // whole FCSR
-                    x[current_inst->rd] = fcsr;
-                    fcsr = current_inst->rs1 & 0xFFFFFFFF;
+                    x[extract_rd(current_inst->inst)] = fcsr;
+                    fcsr = extract_rs1(current_inst->inst) & 0xFFFFFFFF;
                     break;
                 default:
                     // Unknown CSR
@@ -1495,20 +1460,20 @@ namespace Hamster
         case FUNCT3_CSRRSI:
             // CSR Read and Set Immediate
             {
-                uint32_t csr = current_inst->imm_i;
+                uint32_t csr = extract_imm_i(current_inst->inst);
                 switch (csr)
                 {
                 case 0x1: // FP Flags
-                    x[current_inst->rd] = (fcsr & 0x1F);
-                    fcsr |= (current_inst->rs1 & 0x1F);
+                    x[extract_rd(current_inst->inst)] = (fcsr & 0x1F);
+                    fcsr |= (extract_rs1(current_inst->inst) & 0x1F);
                     break;
                 case 0x2: // FP default round mode
-                    x[current_inst->rd] = (fcsr >> 5) & 0b111;
-                    fcsr |= ((current_inst->rs1 & 0b111) << 5);
+                    x[extract_rd(current_inst->inst)] = (fcsr >> 5) & 0b111;
+                    fcsr |= ((extract_rs1(current_inst->inst) & 0b111) << 5);
                     break;
                 case 0x3: // whole FCSR
-                    x[current_inst->rd] = fcsr;
-                    fcsr |= (current_inst->rs1 & 0xFFFFFFFF);
+                    x[extract_rd(current_inst->inst)] = fcsr;
+                    fcsr |= (extract_rs1(current_inst->inst) & 0xFFFFFFFF);
                     break;
                 default:
                     // Unknown CSR
@@ -1522,20 +1487,20 @@ namespace Hamster
         case FUNCT3_CSRRCI:
             // CSR Read and Clear Immediate
             {
-                uint32_t csr = current_inst->imm_i;
+                uint32_t csr = extract_imm_i(current_inst->inst);
                 switch (csr)
                 {
                 case 0x1: // FP Flags
-                    x[current_inst->rd] = (fcsr & 0x1F);
-                    fcsr &= ~(current_inst->rs1 & 0x1F);
+                    x[extract_rd(current_inst->inst)] = (fcsr & 0x1F);
+                    fcsr &= ~(extract_rs1(current_inst->inst) & 0x1F);
                     break;
                 case 0x2: // FP default round mode
-                    x[current_inst->rd] = (fcsr >> 5) & 0b111;
-                    fcsr &= ~((current_inst->rs1 & 0b111) << 5);
+                    x[extract_rd(current_inst->inst)] = (fcsr >> 5) & 0b111;
+                    fcsr &= ~((extract_rs1(current_inst->inst) & 0b111) << 5);
                     break;
                 case 0x3: // whole FCSR
-                    x[current_inst->rd] = fcsr;
-                    fcsr &= ~(current_inst->rs1 & 0xFFFFFFFF);
+                    x[extract_rd(current_inst->inst)] = fcsr;
+                    fcsr &= ~(extract_rs1(current_inst->inst) & 0xFFFFFFFF);
                     break;
                 default:
                     // Unknown CSR
@@ -1594,233 +1559,233 @@ namespace Hamster
         {
             // Load Reserved
             uint32_t val;
-            if (read32(x[current_inst->rs1], val) != 0)
+            if (read32(x[extract_rs1(current_inst->inst)], val) != 0)
             {
-                _trace("RiscVEmulator: LR: Load from unreadable address 0x%08x\n", x[current_inst->rs1]);
+                _trace("RiscVEmulator: LR: Load from unreadable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = x[current_inst->rs1];
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
-            memory->reserved_mem[x[current_inst->rs1]] = reserved_mem_id;
-            x[current_inst->rd] = val;
+            memory->reserved_mem[x[extract_rs1(current_inst->inst)]] = reserved_mem_id;
+            x[extract_rd(current_inst->inst)] = val;
             break;
         }
         case FUNCT5_SC:
         {
             // Store Conditional
-            auto it = memory->reserved_mem.find(x[current_inst->rs1]);
+            auto it = memory->reserved_mem.find(x[extract_rs1(current_inst->inst)]);
             if (it == memory->reserved_mem.end() || it->second != reserved_mem_id)
             {
                 // Not reserved
-                x[current_inst->rd] = 1;
+                x[extract_rd(current_inst->inst)] = 1;
                 break;
             }
-            uint32_t val = x[current_inst->rs2];
-            if (write32(x[current_inst->rs1], val) != 0)
+            uint32_t val = x[extract_rs2(current_inst->inst)];
+            if (write32(x[extract_rs1(current_inst->inst)], val) != 0)
             {
-                _trace("RiscVEmulator: SC: Store to bad address 0x%08x\n", x[current_inst->rs1]);
+                _trace("RiscVEmulator: SC: Store to bad address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
                 result.status = ExecuteResult::Status::IllegalStore;
-                result.illegal_store.address = x[current_inst->rs1];
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
                 result.illegal_store.value = val;
                 OPCODE_RETURN_FAIL();
             }
             memory->reserved_mem.erase(it);
-            x[current_inst->rd] = 0;
+            x[extract_rd(current_inst->inst)] = 0;
             break;
         }
         case FUNCT5_AMOSWAP:
         {
             // Atomic Swap
             uint32_t old_val;
-            if (read32(x[current_inst->rs1], old_val) != 0)
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
-                _trace("RiscVEmulator: AMOSWAP: Swap from unreadable address 0x%08x\n", x[current_inst->rs1]);
+                _trace("RiscVEmulator: AMOSWAP: Swap from unreadable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = x[current_inst->rs1];
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
-            uint32_t new_val = x[current_inst->rs2];
-            if (write32(x[current_inst->rs1], new_val) != 0)
+            uint32_t new_val = x[extract_rs2(current_inst->inst)];
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
             {
-                _trace("RiscVEmulator: AMOSWAP: Swap to unwritable address 0x%08x\n", x[current_inst->rs1]);
+                _trace("RiscVEmulator: AMOSWAP: Swap to unwritable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
                 result.status = ExecuteResult::Status::IllegalStore;
-                result.illegal_store.address = x[current_inst->rs1];
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
                 result.illegal_store.value = new_val;
                 OPCODE_RETURN_FAIL();
             }
-            x[current_inst->rd] = old_val;
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
         case FUNCT5_AMOADD:
         {
             // Atomic Add
             uint32_t old_val;
-            if (read32(x[current_inst->rs1], old_val) != 0)
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
-                _trace("RiscVEmulator: AMOADD: Load from unreadable address 0x%08x\n", x[current_inst->rs1]);
+                _trace("RiscVEmulator: AMOADD: Load from unreadable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = x[current_inst->rs1];
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
-            uint32_t new_val = old_val + x[current_inst->rs2];
-            if (write32(x[current_inst->rs1], new_val) != 0)
+            uint32_t new_val = old_val + x[extract_rs2(current_inst->inst)];
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
             {
-                _trace("RiscVEmulator: AMOADD: Store to unwritable address 0x%08x\n", x[current_inst->rs1]);
+                _trace("RiscVEmulator: AMOADD: Store to unwritable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
                 result.status = ExecuteResult::Status::IllegalStore;
-                result.illegal_store.address = x[current_inst->rs1];
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
                 result.illegal_store.value = new_val;
                 OPCODE_RETURN_FAIL();
             }
-            x[current_inst->rd] = old_val;
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
         case FUNCT5_AMOAND:
         {
             // Atomic AND
             uint32_t old_val;
-            if (read32(x[current_inst->rs1], old_val) != 0)
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
-                _trace("RiscVEmulator: AMOAND: Load from unreadable address 0x%08x\n", x[current_inst->rs1]);
+                _trace("RiscVEmulator: AMOAND: Load from unreadable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = x[current_inst->rs1];
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
-            uint32_t new_val = old_val & x[current_inst->rs2];
-            if (write32(x[current_inst->rs1], new_val) != 0)
+            uint32_t new_val = old_val & x[extract_rs2(current_inst->inst)];
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
             {
-                _trace("RiscVEmulator: AMOAND: Store to unwritable address 0x%08x\n", x[current_inst->rs1]);
+                _trace("RiscVEmulator: AMOAND: Store to unwritable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
                 result.status = ExecuteResult::Status::IllegalStore;
-                result.illegal_store.address = x[current_inst->rs1];
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
                 result.illegal_store.value = new_val;
                 OPCODE_RETURN_FAIL();
             }
-            x[current_inst->rd] = old_val;
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
         case FUNCT5_AMOOR:
         {
             // Atomic OR
             uint32_t old_val;
-            if (read32(x[current_inst->rs1], old_val) != 0)
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = x[current_inst->rs1];
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
-            uint32_t new_val = old_val | x[current_inst->rs2];
-            if (write32(x[current_inst->rs1], new_val) != 0)
+            uint32_t new_val = old_val | x[extract_rs2(current_inst->inst)];
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalStore;
-                result.illegal_store.address = x[current_inst->rs1];
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
                 result.illegal_store.value = new_val;
                 OPCODE_RETURN_FAIL();
             }
-            x[current_inst->rd] = old_val;
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
         case FUNCT5_AMOXOR:
         {
             // Atomic XOR
             uint32_t old_val;
-            if (read32(x[current_inst->rs1], old_val) != 0)
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = x[current_inst->rs1];
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
-            uint32_t new_val = old_val ^ x[current_inst->rs2];
-            if (write32(x[current_inst->rs1], new_val) != 0)
+            uint32_t new_val = old_val ^ x[extract_rs2(current_inst->inst)];
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalStore;
-                result.illegal_store.address = x[current_inst->rs1];
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
                 result.illegal_store.value = new_val;
                 OPCODE_RETURN_FAIL();
             }
-            x[current_inst->rd] = old_val;
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
         case FUNCT5_AMOMAX:
         {
             // Atomic Max
             uint32_t old_val;
-            if (read32(x[current_inst->rs1], old_val) != 0)
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = x[current_inst->rs1];
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
-            uint32_t new_val = std::max((int32_t)old_val, (int32_t)x[current_inst->rs2]);
-            if (write32(x[current_inst->rs1], new_val) != 0)
+            uint32_t new_val = std::max((int32_t)old_val, (int32_t)x[extract_rs2(current_inst->inst)]);
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalStore;
-                result.illegal_store.address = x[current_inst->rs1];
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
                 result.illegal_store.value = new_val;
                 OPCODE_RETURN_FAIL();
             }
-            x[current_inst->rd] = old_val;
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
         case FUNCT5_AMOMIN:
         {
             // Atomic Min
             uint32_t old_val;
-            if (read32(x[current_inst->rs1], old_val) != 0)
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = x[current_inst->rs1];
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
-            uint32_t new_val = std::min((int32_t)old_val, (int32_t)x[current_inst->rs2]);
-            if (write32(x[current_inst->rs1], new_val) != 0)
+            uint32_t new_val = std::min((int32_t)old_val, (int32_t)x[extract_rs2(current_inst->inst)]);
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalStore;
-                result.illegal_store.address = x[current_inst->rs1];
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
                 result.illegal_store.value = new_val;
                 OPCODE_RETURN_FAIL();
             }
-            x[current_inst->rd] = old_val;
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
         case FUNCT5_AMOMAXU:
         {
             // Atomic Max Unsigned
             uint32_t old_val;
-            if (read32(x[current_inst->rs1], old_val) != 0)
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = x[current_inst->rs1];
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
-            uint32_t new_val = std::max(old_val, x[current_inst->rs2]);
-            if (write32(x[current_inst->rs1], new_val) != 0)
+            uint32_t new_val = std::max(old_val, x[extract_rs2(current_inst->inst)]);
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalStore;
-                result.illegal_store.address = x[current_inst->rs1];
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
                 result.illegal_store.value = new_val;
                 OPCODE_RETURN_FAIL();
             }
-            x[current_inst->rd] = old_val;
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
         case FUNCT5_AMOMINU:
         {
             // Atomic Min Unsigned
             uint32_t old_val;
-            if (read32(x[current_inst->rs1], old_val) != 0)
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = x[current_inst->rs1];
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
-            uint32_t new_val = std::min(old_val, x[current_inst->rs2]);
-            if (write32(x[current_inst->rs1], new_val) != 0)
+            uint32_t new_val = std::min(old_val, x[extract_rs2(current_inst->inst)]);
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalStore;
-                result.illegal_store.address = x[current_inst->rs1];
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
                 result.illegal_store.value = new_val;
                 OPCODE_RETURN_FAIL();
             }
-            x[current_inst->rd] = old_val;
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
         default:
@@ -1835,47 +1800,47 @@ namespace Hamster
         {
             // FLD
             double value;
-            if (readf64(x[current_inst->rs1] + current_inst->imm_i, value) != 0)
+            if (readf64(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = x[current_inst->rs1] + current_inst->imm_i;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
                 OPCODE_RETURN_FAIL();
             }
-            f[current_inst->rd] = value;
+            f[extract_rd(current_inst->inst)] = value;
         }
         else
         {
             // FLW
             float value;
-            if (readf32(x[current_inst->rs1] + current_inst->imm_i, value) != 0)
+            if (readf32(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = x[current_inst->rs1] + current_inst->imm_i;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
                 OPCODE_RETURN_FAIL();
             }
-            write_float_to_double(value, f[current_inst->rd]);
+            write_float_to_double(value, f[extract_rd(current_inst->inst)]);
         }
         DISPATCH();
     case_op_fsw:
         if (extract_funct3(current_inst->inst) & 0x1)
         {
             // FSD
-            if (writef64(x[current_inst->rs1] + current_inst->imm_s, f[current_inst->rs2]) != 0)
+            if (writef64(x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst), f[extract_rs2(current_inst->inst)]) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalStore;
-                result.illegal_store.address = x[current_inst->rs1] + current_inst->imm_s;
-                result.illegal_store.value = f[current_inst->rs2];
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst);
+                result.illegal_store.value = f[extract_rs2(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
         }
         else
         {
             // FSW
-            float value = read_float_from_double(f[current_inst->rs2]);
-            if (writef32(x[current_inst->rs1] + current_inst->imm_s, value) != 0)
+            float value = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            if (writef32(x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst), value) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalStore;
-                result.illegal_store.address = x[current_inst->rs1] + current_inst->imm_s;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst);
                 result.illegal_store.value = value;
                 OPCODE_RETURN_FAIL();
             }
@@ -1885,68 +1850,68 @@ namespace Hamster
         // FMADD
         if (is_double_precision(current_inst->inst))
         {
-            double a = f[current_inst->rs1];
-            double b = f[current_inst->rs2];
+            double a = f[extract_rs1(current_inst->inst)];
+            double b = f[extract_rs2(current_inst->inst)];
             double c = f[extract_rs3(current_inst->inst)];
-            f[current_inst->rd] = a * b + c;
+            f[extract_rd(current_inst->inst)] = a * b + c;
         }
         else
         {
-            float a = read_float_from_double(f[current_inst->rs1]);
-            float b = read_float_from_double(f[current_inst->rs2]);
+            float a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            float b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
             float c = read_float_from_double(f[extract_rs3(current_inst->inst)]);
-            write_float_to_double(a * b + c, f[current_inst->rd]);
+            write_float_to_double(a * b + c, f[extract_rd(current_inst->inst)]);
         }
         DISPATCH();
     case_op_fmsub:
         // FMSUB
         if (is_double_precision(current_inst->inst))
         {
-            double a = f[current_inst->rs1];
-            double b = f[current_inst->rs2];
+            double a = f[extract_rs1(current_inst->inst)];
+            double b = f[extract_rs2(current_inst->inst)];
             double c = f[extract_rs3(current_inst->inst)];
-            f[current_inst->rd] = a * b - c;
+            f[extract_rd(current_inst->inst)] = a * b - c;
         }
         else
         {
-            float a = read_float_from_double(f[current_inst->rs1]);
-            float b = read_float_from_double(f[current_inst->rs2]);
+            float a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            float b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
             float c = read_float_from_double(f[extract_rs3(current_inst->inst)]);
-            write_float_to_double(a * b - c, f[current_inst->rd]);
+            write_float_to_double(a * b - c, f[extract_rd(current_inst->inst)]);
         }
         DISPATCH();
     case_op_fnmadd:
         // FNMADD
         if (is_double_precision(current_inst->inst))
         {
-            double a = f[current_inst->rs1];
-            double b = f[current_inst->rs2];
+            double a = f[extract_rs1(current_inst->inst)];
+            double b = f[extract_rs2(current_inst->inst)];
             double c = f[extract_rs3(current_inst->inst)];
-            f[current_inst->rd] = -(a * b) - c;
+            f[extract_rd(current_inst->inst)] = -(a * b) - c;
         }
         else
         {
-            float a = read_float_from_double(f[current_inst->rs1]);
-            float b = read_float_from_double(f[current_inst->rs2]);
+            float a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            float b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
             float c = read_float_from_double(f[extract_rs3(current_inst->inst)]);
-            write_float_to_double(-(a * b) - c, f[current_inst->rd]);
+            write_float_to_double(-(a * b) - c, f[extract_rd(current_inst->inst)]);
         }
         DISPATCH();
     case_op_fnmsub:
         // FNMSUB
         if (is_double_precision(current_inst->inst))
         {
-            double a = f[current_inst->rs1];
-            double b = f[current_inst->rs2];
+            double a = f[extract_rs1(current_inst->inst)];
+            double b = f[extract_rs2(current_inst->inst)];
             double c = f[extract_rs3(current_inst->inst)];
-            f[current_inst->rd] = -(a * b) + c;
+            f[extract_rd(current_inst->inst)] = -(a * b) + c;
         }
         else
         {
-            float a = read_float_from_double(f[current_inst->rs1]);
-            float b = read_float_from_double(f[current_inst->rs2]);
+            float a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            float b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
             float c = read_float_from_double(f[extract_rs3(current_inst->inst)]);
-            write_float_to_double(-(a * b) + c, f[current_inst->rd]);
+            write_float_to_double(-(a * b) + c, f[extract_rd(current_inst->inst)]);
         }
         DISPATCH();
     case_op_freg:
@@ -1956,53 +1921,53 @@ namespace Hamster
         {
         case 0b0000000:
             // FADD.S
-            a = read_float_from_double(f[current_inst->rs1]);
-            b = read_float_from_double(f[current_inst->rs2]);
-            write_float_to_double(a + b, f[current_inst->rd]);
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            write_float_to_double(a + b, f[extract_rd(current_inst->inst)]);
             break;
         case 0b0000100:
             // FSUB.S
-            a = read_float_from_double(f[current_inst->rs1]);
-            b = read_float_from_double(f[current_inst->rs2]);
-            write_float_to_double(a - b, f[current_inst->rd]);
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            write_float_to_double(a - b, f[extract_rd(current_inst->inst)]);
             break;
         case 0b0001000:
             // FMUL.S
-            a = read_float_from_double(f[current_inst->rs1]);
-            b = read_float_from_double(f[current_inst->rs2]);
-            write_float_to_double(a * b, f[current_inst->rd]);
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            write_float_to_double(a * b, f[extract_rd(current_inst->inst)]);
             break;
         case 0b0001100:
             // FDIV.S
-            a = read_float_from_double(f[current_inst->rs1]);
-            b = read_float_from_double(f[current_inst->rs2]);
-            write_float_to_double(a / b, f[current_inst->rd]);
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            write_float_to_double(a / b, f[extract_rd(current_inst->inst)]);
             break;
         case 0b0101100:
             // FSQRT.S
-            a = read_float_from_double(f[current_inst->rs1]);
-            write_float_to_double(sqrt(a), f[current_inst->rd]);
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            write_float_to_double(sqrt(a), f[extract_rd(current_inst->inst)]);
             break;
         case 0b0010000:
             // FSGN*.S
-            a = read_float_from_double(f[current_inst->rs1]);
-            b = read_float_from_double(f[current_inst->rs2]);
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
             switch (extract_funct3(current_inst->inst))
             {
             case 0b000:
                 // FSGNJ.S
                 write_float_to_double(b < 0 ? -abs(a) : abs(a),
-                                      f[current_inst->rd]);
+                                      f[extract_rd(current_inst->inst)]);
                 break;
             case 0b001:
                 // FSGNJN.S
                 write_float_to_double(b < 0 ? abs(a) : -abs(a),
-                                      f[current_inst->rd]);
+                                      f[extract_rd(current_inst->inst)]);
                 break;
             case 0b010:
                 // FSGNJX.S
                 write_float_to_double(b < 0 ? -a : a,
-                                      f[current_inst->rd]);
+                                      f[extract_rd(current_inst->inst)]);
                 break;
             default:
                 // Unknown funct3
@@ -2014,14 +1979,14 @@ namespace Hamster
             break;
         case 0b0010100:
             // F(MIN|MAX).S
-            a = read_float_from_double(f[current_inst->rs1]);
-            b = read_float_from_double(f[current_inst->rs2]);
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
             if (extract_funct3(current_inst->inst) == 0b000)
                 // FMIN.S
-                write_float_to_double(std::min(a, b), f[current_inst->rd]);
+                write_float_to_double(std::min(a, b), f[extract_rd(current_inst->inst)]);
             else if (extract_funct3(current_inst->inst) == 0b001)
                 // FMAX.S
-                write_float_to_double(std::max(a, b), f[current_inst->rd]);
+                write_float_to_double(std::max(a, b), f[extract_rd(current_inst->inst)]);
             else
             {
                 // Unknown funct3
@@ -2033,29 +1998,29 @@ namespace Hamster
             break;
         case 0b1100000:
             // FCVT.W*.S
-            switch (current_inst->rs2)
+            switch (extract_rs2(current_inst->inst))
             {
             case 0b00000:
                 // FCVT.W.S
-                a = read_float_from_double(f[current_inst->rs1]);
+                a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
                 if (a > INT32_MAX || a < INT32_MIN)
                 {
                     // NV
                     fcsr |= 1 << 4;
                     break;
                 }
-                x[current_inst->rd] = (int32_t)a;
+                x[extract_rd(current_inst->inst)] = (int32_t)a;
                 break;
             case 0b00001:
                 // FCVT.WU.S
-                a = read_float_from_double(f[current_inst->rs1]);
+                a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
                 if (a > UINT32_MAX || a < 0)
                 {
                     // NV
                     fcsr |= 1 << 4;
                     break;
                 }
-                x[current_inst->rd] = (uint32_t)a;
+                x[extract_rd(current_inst->inst)] = (uint32_t)a;
                 break;
             default:
                 // Unknown funct3
@@ -2071,13 +2036,13 @@ namespace Hamster
             {
             case 0b000:
                 // FMV.X.W
-                a = read_float_from_double(f[current_inst->rs1]);
-                memcpy(&x[current_inst->rd], &a, sizeof(float));
+                a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+                memcpy(&x[extract_rd(current_inst->inst)], &a, sizeof(float));
                 break;
             case 0b001:
                 // FCLASS.S
-                a = read_float_from_double(f[current_inst->rs1]);
-                x[current_inst->rd] = classify_float(a);
+                a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+                x[extract_rd(current_inst->inst)] = classify_float(a);
                 break;
             default:
                 // Unknown funct3
@@ -2089,21 +2054,21 @@ namespace Hamster
             break;
         case 0b1010000:
             // FEQ.S or FLT.S or FLE.S
-            a = read_float_from_double(f[current_inst->rs1]);
-            b = read_float_from_double(f[current_inst->rs2]);
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
             switch (extract_funct3(current_inst->inst))
             {
             case 0b000:
                 // FEQ.S
-                x[current_inst->rd] = (a == b);
+                x[extract_rd(current_inst->inst)] = (a == b);
                 break;
             case 0b001:
                 // FLT.S
-                x[current_inst->rd] = (a < b);
+                x[extract_rd(current_inst->inst)] = (a < b);
                 break;
             case 0b010:
                 // FLE.S
-                x[current_inst->rd] = (a <= b);
+                x[extract_rd(current_inst->inst)] = (a <= b);
                 break;
             default:
                 // Unknown funct3
@@ -2114,17 +2079,17 @@ namespace Hamster
             break;
         case 0b1101000:
             // FCVT.S.W*
-            switch (current_inst->rs2)
+            switch (extract_rs2(current_inst->inst))
             {
             case 0b00000:
                 // FCVT.S.W
-                a = (float)(int32_t)x[current_inst->rs1];
-                write_float_to_double(a, f[current_inst->rd]);
+                a = (float)(int32_t)x[extract_rs1(current_inst->inst)];
+                write_float_to_double(a, f[extract_rd(current_inst->inst)]);
                 break;
             case 0b00001:
                 // FCVT.S.WU
-                a = (float)(uint32_t)x[current_inst->rs1];
-                write_float_to_double(a, f[current_inst->rd]);
+                a = (float)(uint32_t)x[extract_rs1(current_inst->inst)];
+                write_float_to_double(a, f[extract_rd(current_inst->inst)]);
                 break;
             default:
                 // Unknown funct3
@@ -2135,55 +2100,55 @@ namespace Hamster
             break;
         case 0b1111000:
             // FMV.W.X
-            memcpy(&a, &x[current_inst->rs1], sizeof(float));
-            write_float_to_double(a, f[current_inst->rd]);
+            memcpy(&a, &x[extract_rs1(current_inst->inst)], sizeof(float));
+            write_float_to_double(a, f[extract_rd(current_inst->inst)]);
             break;
         case 0b0000001:
             // FADD.D
-            ad = f[current_inst->rs1];
-            bd = f[current_inst->rs2];
-            f[current_inst->rd] = ad + bd;
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = ad + bd;
             break;
         case 0b0000101:
             // FSUB.D
-            ad = f[current_inst->rs1];
-            bd = f[current_inst->rs2];
-            f[current_inst->rd] = ad - bd;
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = ad - bd;
             break;
         case 0b0001001:
             // FMUL.D
-            ad = f[current_inst->rs1];
-            bd = f[current_inst->rs2];
-            f[current_inst->rd] = ad * bd;
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = ad * bd;
             break;
         case 0b0001101:
             // FDIV.D
-            ad = f[current_inst->rs1];
-            bd = f[current_inst->rs2];
-            f[current_inst->rd] = ad / bd;
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = ad / bd;
             break;
         case 0b0101101:
             // FSQRT.D
-            ad = f[current_inst->rs1];
-            f[current_inst->rd] = sqrt(ad);
+            ad = f[extract_rs1(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = sqrt(ad);
             break;
         case 0b0010001:
             // FSGN*.D
-            ad = f[current_inst->rs1];
-            bd = f[current_inst->rs2];
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
             switch (extract_funct3(current_inst->inst))
             {
             case 0b000:
                 // FSGNJ.D
-                f[current_inst->rd] = bd < 0 ? -abs(ad) : abs(ad);
+                f[extract_rd(current_inst->inst)] = bd < 0 ? -abs(ad) : abs(ad);
                 break;
             case 0b001:
                 // FSGNJN.D
-                f[current_inst->rd] = bd < 0 ? abs(ad) : -abs(ad);
+                f[extract_rd(current_inst->inst)] = bd < 0 ? abs(ad) : -abs(ad);
                 break;
             case 0b010:
                 // FSGNJX.D
-                f[current_inst->rd] = bd < 0 ? -ad : ad;
+                f[extract_rd(current_inst->inst)] = bd < 0 ? -ad : ad;
                 break;
             default:
                 // Unknown funct3
@@ -2194,14 +2159,14 @@ namespace Hamster
             break;
         case 0b0010101:
             // F(MIN|MAX).D
-            ad = f[current_inst->rs1];
-            bd = f[current_inst->rs2];
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
             if (extract_funct3(current_inst->inst) == 0b000)
                 // FMIN.D
-                f[current_inst->rd] = std::min(ad, bd);
+                f[extract_rd(current_inst->inst)] = std::min(ad, bd);
             else if (extract_funct3(current_inst->inst) == 0b001)
                 // FMAX.D
-                f[current_inst->rd] = std::max(ad, bd);
+                f[extract_rd(current_inst->inst)] = std::max(ad, bd);
             else
             {
                 // Unknown funct3
@@ -2212,31 +2177,31 @@ namespace Hamster
             break;
         case 0b0100000:
             // FCVT.S.D
-            ad = f[current_inst->rs1];
-            write_float_to_double((float)ad, f[current_inst->rd]);
+            ad = f[extract_rs1(current_inst->inst)];
+            write_float_to_double((float)ad, f[extract_rd(current_inst->inst)]);
             break;
         case 0b0100001:
             // FCVT.D.S
-            ad = read_float_from_double(f[current_inst->rs1]);
-            f[current_inst->rd] = ad;
+            ad = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            f[extract_rd(current_inst->inst)] = ad;
             break;
         case 0b1010001:
             // FEQ.D or FLT.D or FLE.D
-            ad = f[current_inst->rs1];
-            bd = f[current_inst->rs2];
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
             switch (extract_funct3(current_inst->inst))
             {
             case 0b000:
                 // FEQ.D
-                x[current_inst->rd] = (ad == bd);
+                x[extract_rd(current_inst->inst)] = (ad == bd);
                 break;
             case 0b001:
                 // FLT.D
-                x[current_inst->rd] = (ad < bd);
+                x[extract_rd(current_inst->inst)] = (ad < bd);
                 break;
             case 0b010:
                 // FLE.D
-                x[current_inst->rd] = (ad <= bd);
+                x[extract_rd(current_inst->inst)] = (ad <= bd);
                 break;
             default:
                 // Unknown funct3
@@ -2247,13 +2212,13 @@ namespace Hamster
             break;
         case 0b1110001:
             // FCLASS.D
-            ad = f[current_inst->rs1];
-            x[current_inst->rd] = classify_double(ad);
+            ad = f[extract_rs1(current_inst->inst)];
+            x[extract_rd(current_inst->inst)] = classify_double(ad);
             break;
         case 0b1100001:
             // FCVT.W.D or FCVT.WU.D
-            ad = f[current_inst->rs1];
-            switch (current_inst->rs2)
+            ad = f[extract_rs1(current_inst->inst)];
+            switch (extract_rs2(current_inst->inst))
             {
             case 0b00000:
                 // FCVT.W.D
@@ -2263,7 +2228,7 @@ namespace Hamster
                     fcsr |= 1 << 4;
                     break;
                 }
-                x[current_inst->rd] = (int32_t)std::nearbyint(ad);
+                x[extract_rd(current_inst->inst)] = (int32_t)std::nearbyint(ad);
                 break;
             case 0b00001:
                 // FCVT.WU.D
@@ -2273,7 +2238,7 @@ namespace Hamster
                     fcsr |= 1 << 4;
                     break;
                 }
-                x[current_inst->rd] = (uint32_t)std::nearbyint(ad);
+                x[extract_rd(current_inst->inst)] = (uint32_t)std::nearbyint(ad);
                 break;
             default:
                 // Unknown funct3
@@ -2284,17 +2249,17 @@ namespace Hamster
             break;
         case 0b1101001:
             // FCVT.D.W*
-            switch (current_inst->rs2)
+            switch (extract_rs2(current_inst->inst))
             {
             case 0b00000:
                 // FCVT.D.W
-                ad = (double)(int32_t)x[current_inst->rs1];
-                f[current_inst->rd] = ad;
+                ad = (double)(int32_t)x[extract_rs1(current_inst->inst)];
+                f[extract_rd(current_inst->inst)] = ad;
                 break;
             case 0b00001:
                 // FCVT.D.WU
-                ad = (double)(uint32_t)x[current_inst->rs1];
-                f[current_inst->rd] = ad;
+                ad = (double)(uint32_t)x[extract_rs1(current_inst->inst)];
+                f[extract_rd(current_inst->inst)] = ad;
                 break;
             default:
                 // Unknown funct3
