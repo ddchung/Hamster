@@ -232,11 +232,6 @@ namespace Hamster
         entry->dirty = 1;
     }
 
-    uint8_t PageManager::get_permissions(uint32_t id) const
-    {
-        return page_table[id]->perms;
-    }
-
     bool PageManager::is_id_valid(uint32_t id) const
     {
         return id < page_table.size() && page_table[id] != nullptr;

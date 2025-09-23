@@ -68,33 +68,31 @@ namespace Hamster
             return (do_write(addr, buf, size) == (ssize_t)size) - 1;
         }
 
-        // fast read of 4 * HAMSTER_TRACE_SIZE bytes
-        int fast_fetch_trace(uint32_t addr, uint32_t *buf)
+        /**
+         * @brief Get an instruction iterator
+         * @param addr The initial address that it points to. Must be aligned to 4 bytes, and exist.
+         * @return The instruction iterator. This iterator traverses within a single page only.
+         * @note Page must be executable
+         */
+        PageManager::InstructionIterator make_iterator(uint32_t addr)
         {
-            assert(buf != nullptr);
-            assert((addr % 4) == 0);
+            assert(addr % 4 == 0);
 
             uint32_t id = page_table.get_page(addr);
-            if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
-                return -1;
+            assert(id != PageTable::PAGE_ID_UNUSED);
 
-            uint32_t offset = addr & (HAMSTER_PAGE_SIZE - 1);
-            uint32_t chunk_size = std::min<uint32_t>(HAMSTER_TRACE_SIZE * 4, HAMSTER_PAGE_SIZE - offset);
-            if (page_manager.read(id, offset, buf, chunk_size) != (ssize_t)chunk_size)
-                return -1;
-            if (chunk_size < HAMSTER_TRACE_SIZE * 4)
-            {
-                // Read from second page
-                id = page_table.get_page(addr + chunk_size);
-                if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
-                    return -1;
-                buf += chunk_size / 4;
-                chunk_size = HAMSTER_TRACE_SIZE * 4 - chunk_size;
-                if (page_manager.read(id, 0, buf, chunk_size) != (ssize_t)chunk_size)
-                    return -1;
-            }
+            return page_manager.make_iterator(id, addr % HAMSTER_PAGE_SIZE);
+        }
 
-            return 0;
+        /**
+         * @brief Check if a location is executable
+         * @param addr The address to check
+         * @return 0 if it is, 1 otherwise
+         */
+        int check_executable(uint32_t addr)
+        {
+            uint32_t id = page_table.get_page(addr);
+            return id == PageTable::PAGE_ID_UNUSED || (page_manager.get_permissions(id) & PERM_EXEC) == 0;
         }
 
         /**

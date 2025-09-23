@@ -5,8 +5,6 @@
 #include <math.h>
 #include <cstring>
 
-#define RISCV_EMULATOR_JAL_PREDICTION 0
-
 namespace Hamster
 {
     namespace
@@ -357,8 +355,6 @@ namespace Hamster
     uint32_t
     RiscVEmulator::execute_trace(ExecuteResult &result)
     {
-        uint32_t prefetched_instructions[HAMSTER_TRACE_SIZE];
-
         static DecodedTrace traces[3];
         static uint32_t last_trace_slot = 0;
 
@@ -909,19 +905,16 @@ namespace Hamster
                 result.illegal_load.address = pc;
                 return 0;
             }
-            if (memory->memory.fast_fetch_trace(pc, prefetched_instructions) < 0)
+            if (memory->memory.check_executable(pc))
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
                 result.illegal_load.address = pc;
                 return 0;
             }
-#if RISCV_EMULATOR_JAL_PREDICTION
-            uint32_t pc_it = pc;
-#endif
 
-            for (uint32_t *p_inst = prefetched_instructions; p_inst < prefetched_instructions + HAMSTER_TRACE_SIZE; ++p_inst)
+            for (auto it = memory->memory.make_iterator(pc); !it.is_end(); ++it)
             {
-                uint32_t inst = *p_inst;
+                uint32_t inst = *it;
 
                 // Decode instruction
                 DecodedInst &dinst = predecoded_insts[decoded_count];
@@ -938,40 +931,12 @@ namespace Hamster
                 dinst.handler = opcode_jumptable[(inst & 0x7000) | ((inst >> 20) & 0xFE0) | opcode];
                 ++decoded_count;
 
-#if RISCV_EMULATOR_JAL_PREDICTION
-                pc_it += 4;
-                if (dinst.handler == &&case_op_branch || dinst.handler == &&case_op_jalr || decoded_count == HAMSTER_TRACE_SIZE)
-                {
-                    // Control flow change, end of trace
-                    break;
-                }
-                else if (dinst.handler == &&case_op_jal)
-                {
-                    pc_it += dinst.imm_j - 4;
-                    if (pc_it & 0b11)
-                    {
-                        // Unaligned fetch not allowed
-                        result.status = ExecuteResult::Status::IllegalLoad;
-                        result.illegal_load.address = pc_it;
-                        return 0;
-                    }
-                    if (memory->memory.fast_fetch_trace(pc_it, prefetched_instructions) < 0)
-                    {
-                        result.status = ExecuteResult::Status::IllegalLoad;
-                        result.illegal_load.address = pc_it;
-                        return 0;
-                    }
-                    // -1 for ++p_inst at end of for loop
-                    p_inst = prefetched_instructions - 1;
-                }
-#else
                 if (dinst.handler == &&case_op_branch || dinst.handler == &&case_op_jalr ||
                     dinst.handler == &&case_op_jal || decoded_count == HAMSTER_TRACE_SIZE)
                 {
                     // Control flow change, end of trace
                     break;
                 }
-#endif
             }
 
             traces[last_trace_slot].decoded_count = decoded_count;
@@ -1361,16 +1326,9 @@ namespace Hamster
         x[current_inst->rd] = pc + 4;
         pc = new_pc;
 
-#if RISCV_EMULATOR_JAL_PREDICTION
-        x[0] = 0;
-        if (__builtin_expect(!!(++current_inst >= predecoded_insts + decoded_count), 0))
-            return current_inst - predecoded_insts;
-        goto * current_inst->handler;
-#else
         assert(current_inst == predecoded_insts + decoded_count - 1);
         ++total_instructions_executed;
         return decoded_count;
-#endif
 
     case_op_jalr:
         // JALR

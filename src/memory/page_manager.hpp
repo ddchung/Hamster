@@ -39,6 +39,45 @@ namespace Hamster
             uint32_t zero : 1;
         };
     public:
+
+        // An optimized instruction fetch iterator that can traverse within a page
+        // Has less functionality than your average iterator though
+        class InstructionIterator
+        {
+            friend class PageManager;
+
+            InstructionIterator(uint32_t *it, uint32_t *end)
+                : it(it), end(end)
+            {
+            }
+
+        public:
+            
+            uint32_t operator *()
+            {
+                return *it;
+            }
+
+            void operator++(int)
+            {
+                ++it;
+            }
+
+            void operator++()
+            {
+                ++it;
+            }
+
+            bool is_end()
+            {
+                return it == end;
+            }
+            
+        private:
+            uint32_t *it;
+            uint32_t *end;
+        };
+
         PageManager()
         { page_table.reserve(0xFFFF); }
         ~PageManager();
@@ -186,6 +225,32 @@ namespace Hamster
         }
 
         /**
+         * @brief Get an instruction iterator
+         * @param id The id of the page
+         * @param addr The relative offset within the page. Must be aligned to 4 bytes
+         * @return The iterator
+         * @note Swaps in the page if necessary
+         * @note Page must be executable
+         */
+        InstructionIterator make_iterator(uint32_t id, size_t addr)
+        {
+            PageEntry *entry = page_table[id];
+            if (entry->swapped)
+                swap_in(id);
+            assert(entry->data != nullptr);
+            assert(addr < HAMSTER_PAGE_SIZE);
+            assert(addr % 4 == 0);
+            assert(entry->perms & PERM_EXEC);
+
+            uint32_t *it, *end;
+
+            end = (uint32_t *)(entry->data + HAMSTER_PAGE_SIZE);
+            it = (uint32_t *)(entry->data + addr);
+            
+            return InstructionIterator(it, end);
+        }
+
+        /**
          * @brief Set the permissions of a page
          * @param id The ID of the page
          * @param perms The new permissions for the page
@@ -218,7 +283,10 @@ namespace Hamster
          * @brief Get the permissions of a page
          * @return The permissions of a page, bitmask of PERM_READ, PERM_WRITE, PERM_EXEC
          */
-        uint8_t get_permissions(uint32_t id) const;
+        uint8_t get_permissions(uint32_t id) const
+        {
+            return page_table[id]->perms;
+        }
 
     private:
         Vector<PageEntry *> page_table;
