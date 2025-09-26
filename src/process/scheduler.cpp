@@ -33,6 +33,13 @@ namespace Hamster
                     continue;
                 }
 
+                // Stop any blocking operation
+                if (task.blocking_operation)
+                {
+                    task.blocking_operation = nullptr;
+                    task.emulator.x[10] = -EINTR;
+                }
+
                 // Call the signal handler
                 SignalHandler handler = task.process->obj.signal_handlers->obj.sig_handlers[signo];
                 handler.fn(&task, &siginfo, &handler.action);

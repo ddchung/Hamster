@@ -36,6 +36,14 @@ namespace Hamster
             ucontext.context.fpstate.d.fcsr = emulator.fcsr;
             memcpy(ucontext.context.fpstate.d.f, emulator.f, sizeof(emulator.f));
 
+            task->sig_mask &= ~action->mask.sig[0];
+
+            if ((action->flags & H_SA_NODEFER) == 0)
+                task->sig_mask &= ~(1u << siginfo->signo);
+            
+            // align sp to 16bytes
+            sp &= ~0xF;
+
             // Trampoline
             if (action->flags & H_SA_RESTORER)
                 emulator.x[1] = action->restorer; // return address
