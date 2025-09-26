@@ -7,8 +7,8 @@
 #include <cstring>
 
 #ifndef NTRACE
-# include <cinttypes>
-# include <tuple>
+#include <cinttypes>
+#include <tuple>
 #endif
 
 namespace Hamster
@@ -17,42 +17,140 @@ namespace Hamster
     {
 #ifndef NTRACE
         const char *error_names[] = {
-            "No Error",                                     // 0 - No error
-            "H_EPERM - Operation not permitted",            // 1
-            "H_ENOENT - No such file or directory",         // 2
-            "H_ESRCH - No such process",                    // 3
-            "H_EINTR - Interrupted system call",            // 4
-            "H_EIO - I/O error",                            // 5
-            "H_ENXIO - No such device or address",          // 6
-            "H_E2BIG - Argument list too long",             // 7
-            "H_ENOEXEC - Exec format error",                // 8
-            "H_EBADF - Bad file number",                    // 9
-            "H_ECHILD - No child processes",                // 10
-            "H_EAGAIN - Try again",                         // 11
-            "H_ENOMEM - Out of memory",                     // 12
-            "H_EACCES - Permission denied",                 // 13
-            "H_EFAULT - Bad address",                       // 14
-            "H_ENOTBLK - Block device required",            // 15
-            "H_EBUSY - Device or resource busy",            // 16
-            "H_EEXIST - File exists",                       // 17
-            "H_EXDEV - Cross-device link",                  // 18
-            "H_ENODEV - No such device",                    // 19
-            "H_ENOTDIR - Not a directory",                  // 20
-            "H_EISDIR - Is a directory",                    // 21
-            "H_EINVAL - Invalid argument",                  // 22
-            "H_ENFILE - File table overflow",               // 23
-            "H_EMFILE - Too many open files",               // 24
-            "H_ENOTTY - Not a typewriter",                  // 25
-            "H_ETXTBSY - Text file busy",                   // 26
-            "H_EFBIG - File too large",                     // 27
-            "H_ENOSPC - No space left on device",           // 28
-            "H_ESPIPE - Illegal seek",                      // 29
-            "H_EROFS - Read-only file system",              // 30
-            "H_EMLINK - Too many links",                    // 31
-            "H_EPIPE - Broken pipe",                        // 32
-            "H_EDOM - Math argument out of domain of func", // 33
-            "H_ERANGE - Math result not representable"      // 34
-        };
+            "No Error",
+            "H_EPERM - Operation not permitted",
+            "H_ENOENT - No such file or directory",
+            "H_ESRCH - No such process",
+            "H_EINTR - Interrupted system call",
+            "H_EIO - I/O error",
+            "H_ENXIO - No such device or address",
+            "H_E2BIG - Argument list too long",
+            "H_ENOEXEC - Exec format error",
+            "H_EBADF - Bad file number",
+            "H_ECHILD - No child processes",
+            "H_EAGAIN - Try again",
+            "H_ENOMEM - Out of memory",
+            "H_EACCES - Permission denied",
+            "H_EFAULT - Bad address",
+            "H_ENOTBLK - Block device required",
+            "H_EBUSY - Device or resource busy",
+            "H_EEXIST - File exists",
+            "H_EXDEV - Cross-device link",
+            "H_ENODEV - No such device",
+            "H_ENOTDIR - Not a directory",
+            "H_EISDIR - Is a directory",
+            "H_EINVAL - Invalid argument",
+            "H_ENFILE - File table overflow",
+            "H_EMFILE - Too many open files",
+            "H_ENOTTY - Not a typewriter",
+            "H_ETXTBSY - Text file busy",
+            "H_EFBIG - File too large",
+            "H_ENOSPC - No space left on device",
+            "H_ESPIPE - Illegal seek",
+            "H_EROFS - Read-only file system",
+            "H_EMLINK - Too many links",
+            "H_EPIPE - Broken pipe",
+            "H_EDOM - Math argument out of domain of func",
+            "H_ERANGE - Math result not representable",
+            "H_EDEADLK - Resource deadlock would occur",
+            "H_ENAMETOOLONG - File name too long",
+            "H_ENOLCK - No record locks available",
+            "H_ENOSYS - Invalid system call number",
+            "H_ENOTEMPTY - Directory not empty",
+            "H_ELOOP - Too many symbolic links encountered",
+            "H_EWOULDBLOCK - Operation would block",
+            "H_ENOMSG - No message of desired type",
+            "H_EIDRM - Identifier removed",
+            "H_ECHRNG - Channel number out of range",
+            "H_EL2NSYNC - Level 2 not synchronized",
+            "H_EL3HLT - Level 3 halted",
+            "H_EL3RST - Level 3 reset",
+            "H_ELNRNG - Link number out of range",
+            "H_EUNATCH - Protocol driver not attached",
+            "H_ENOCSI - No CSI structure available",
+            "H_EL2HLT - Level 2 halted",
+            "H_EBADE - Invalid exchange",
+            "H_EBADR - Invalid request descriptor",
+            "H_EXFULL - Exchange full",
+            "H_ENOANO - No anode",
+            "H_EBADRQC - Invalid request code",
+            "H_EBADSLT - Invalid slot",
+            "H_EBFONT - Bad font file format",
+            "H_ENOSTR - Device not a stream",
+            "H_ENODATA - No data available",
+            "H_ETIME - Timer expired",
+            "H_ENOSR - Out of streams resources",
+            "H_ENONET - Machine is not on the network",
+            "H_ENOPKG - Package not installed",
+            "H_EREMOTE - Object is remote",
+            "H_ENOLINK - Link has been severed",
+            "H_EADV - Advertise error",
+            "H_ESRMNT - Srmount error",
+            "H_ECOMM - Communication error on send",
+            "H_EPROTO - Protocol error",
+            "H_EMULTIHOP - Multihop attempted",
+            "H_EDOTDOT - RFS specific error",
+            "H_EBADMSG - Not a data message",
+            "H_EOVERFLOW - Value too large for defined data type",
+            "H_ENOTUNIQ - Name not unique on network",
+            "H_EBADFD - File descriptor in bad state",
+            "H_EREMCHG - Remote address changed",
+            "H_ELIBACC - Can not access a needed shared library",
+            "H_ELIBBAD - Accessing a corrupted shared library",
+            "H_ELIBSCN - .lib section in a.out corrupted",
+            "H_ELIBMAX - Attempting to link in too many shared libraries",
+            "H_ELIBEXEC - Cannot exec a shared library directly",
+            "H_EILSEQ - Illegal byte sequence",
+            "H_ERESTART - Interrupted system call should be restarted",
+            "H_ESTRPIPE - Streams pipe error",
+            "H_EUSERS - Too many users",
+            "H_ENOTSOCK - Socket operation on non-socket",
+            "H_EDESTADDRREQ - Destination address required",
+            "H_EMSGSIZE - Message too long",
+            "H_EPROTOTYPE - Protocol wrong type for socket",
+            "H_ENOPROTOOPT - Protocol not available",
+            "H_EPROTONOSUPPORT - Protocol not supported",
+            "H_ESOCKTNOSUPPORT - Socket type not supported",
+            "H_EOPNOTSUPP - Operation not supported on transport endpoint",
+            "H_ENOTSUP - Operation not supported",
+            "H_EPFNOSUPPORT - Protocol family not supported",
+            "H_EAFNOSUPPORT - Address family not supported by protocol",
+            "H_EADDRINUSE - Address already in use",
+            "H_EADDRNOTAVAIL - Cannot assign requested address",
+            "H_ENETDOWN - Network is down",
+            "H_ENETUNREACH - Network is unreachable",
+            "H_ENETRESET - Network dropped connection because of reset",
+            "H_ECONNABORTED - Software caused connection abort",
+            "H_ECONNRESET - Connection reset by peer",
+            "H_ENOBUFS - No buffer space available",
+            "H_EISCONN - Transport endpoint is already connected",
+            "H_ENOTCONN - Transport endpoint is not connected",
+            "H_ESHUTDOWN - Cannot send after transport endpoint shutdown",
+            "H_ETOOMANYREFS - Too many references: cannot splice",
+            "H_ETIMEDOUT - Connection timed out",
+            "H_ECONNREFUSED - Connection refused",
+            "H_EHOSTDOWN - Host is down",
+            "H_EHOSTUNREACH - No route to host",
+            "H_EALREADY - Operation already in progress",
+            "H_EINPROGRESS - Operation now in progress",
+            "H_ESTALE - Stale file handle",
+            "H_EUCLEAN - Structure needs cleaning",
+            "H_ENOTNAM - Not a XENIX named type file",
+            "H_ENAVAIL - No XENIX semaphores available",
+            "H_EISNAM - Is a named type file",
+            "H_EREMOTEIO - Remote I/O error",
+            "H_EDQUOT - Quota exceeded",
+            "H_ENOMEDIUM - No medium found",
+            "H_EMEDIUMTYPE - Wrong medium type",
+            "H_ECANCELED - Operation Canceled",
+            "H_ENOKEY - Required key not available",
+            "H_EKEYEXPIRED - Key has expired",
+            "H_EKEYREVOKED - Key has been revoked",
+            "H_EKEYREJECTED - Key was rejected by service",
+            "H_EOWNERDEAD - Owner died",
+            "H_ENOTRECOVERABLE - State not recoverable",
+            "H_ERFKILL - Operation not possible due to RF-kill",
+            "H_EHWPOISON - Memory page has hardware error"};
 
         constexpr struct ParamType_INT
         {
@@ -179,18 +277,18 @@ namespace Hamster
             Task *current_task = scheduler.get_current_task();
             _trace("TID %" PRIu32 " system call %s, args: {", current_task->tid, name);
             ((
-                print_arg(Args.type, Args.name, (uint32_t)*args),
-                _trace(", "),
-                ++args
-            ), ...);
+                 print_arg(Args.type, Args.name, (uint32_t)*args),
+                 _trace(", "),
+                 ++args),
+             ...);
             _trace("} -> %" PRIi32, result);
 
-            if (result < 0 && (ssize_t)result > -(ssize_t)(sizeof (error_names) / sizeof(error_names[0])))
+            if (result < 0 && (ssize_t)result > -(ssize_t)(sizeof(error_names) / sizeof(error_names[0])))
                 _trace(" (error %s)", error_names[-result]);
             _trace("\n");
         }
 #else // NTRACE
-# define trace_syscall(...) ((void)0)
+#define trace_syscall(...) ((void)0)
 #endif // NTRACE
     } // namespace
 
@@ -309,7 +407,7 @@ namespace Hamster
                 SysTraceParam{"dirfd", PT_INT},
                 SysTraceParam{"path", PT_STR},
                 SysTraceParam{"flags", PT_UINT},
-                SysTraceParam{"mode", PT_INT}> ("openat", args, result);
+                SysTraceParam{"mode", PT_INT}>("openat", args, result);
             break;
         case SyscallID::READ:
             result = syscall(sys_read);
