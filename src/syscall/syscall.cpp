@@ -6,8 +6,9 @@
 #include <errno/errno.h>
 #include <cstring>
 
-#ifdef NTRACE
-#include <utility>
+#ifndef NTRACE
+# include <cinttypes>
+# include <tuple>
 #endif
 
 namespace Hamster
@@ -16,49 +17,181 @@ namespace Hamster
     {
 #ifndef NTRACE
         const char *error_names[] = {
-            "No Error",                                // 0 - No error
-            "H_EPERM - Operation not permitted",         // 1
-            "H_ENOENT - No such file or directory",      // 2
-            "H_ESRCH - No such process",                 // 3
-            "H_EINTR - Interrupted system call",         // 4
-            "H_EIO - I/O error",                         // 5
-            "H_ENXIO - No such device or address",       // 6
-            "H_E2BIG - Argument list too long",          // 7
-            "H_ENOEXEC - Exec format error",             // 8
-            "H_EBADF - Bad file number",                 // 9
-            "H_ECHILD - No child processes",             // 10
-            "H_EAGAIN - Try again",                      // 11
-            "H_ENOMEM - Out of memory",                  // 12
-            "H_EACCES - Permission denied",              // 13
-            "H_EFAULT - Bad address",                    // 14
-            "H_ENOTBLK - Block device required",         // 15
-            "H_EBUSY - Device or resource busy",         // 16
-            "H_EEXIST - File exists",                    // 17
-            "H_EXDEV - Cross-device link",               // 18
-            "H_ENODEV - No such device",                 // 19
-            "H_ENOTDIR - Not a directory",               // 20
-            "H_EISDIR - Is a directory",                 // 21
-            "H_EINVAL - Invalid argument",               // 22
-            "H_ENFILE - File table overflow",            // 23
-            "H_EMFILE - Too many open files",            // 24
-            "H_ENOTTY - Not a typewriter",               // 25
-            "H_ETXTBSY - Text file busy",                // 26
-            "H_EFBIG - File too large",                  // 27
-            "H_ENOSPC - No space left on device",        // 28
-            "H_ESPIPE - Illegal seek",                   // 29
-            "H_EROFS - Read-only file system",           // 30
-            "H_EMLINK - Too many links",                 // 31
-            "H_EPIPE - Broken pipe",                     // 32
+            "No Error",                                     // 0 - No error
+            "H_EPERM - Operation not permitted",            // 1
+            "H_ENOENT - No such file or directory",         // 2
+            "H_ESRCH - No such process",                    // 3
+            "H_EINTR - Interrupted system call",            // 4
+            "H_EIO - I/O error",                            // 5
+            "H_ENXIO - No such device or address",          // 6
+            "H_E2BIG - Argument list too long",             // 7
+            "H_ENOEXEC - Exec format error",                // 8
+            "H_EBADF - Bad file number",                    // 9
+            "H_ECHILD - No child processes",                // 10
+            "H_EAGAIN - Try again",                         // 11
+            "H_ENOMEM - Out of memory",                     // 12
+            "H_EACCES - Permission denied",                 // 13
+            "H_EFAULT - Bad address",                       // 14
+            "H_ENOTBLK - Block device required",            // 15
+            "H_EBUSY - Device or resource busy",            // 16
+            "H_EEXIST - File exists",                       // 17
+            "H_EXDEV - Cross-device link",                  // 18
+            "H_ENODEV - No such device",                    // 19
+            "H_ENOTDIR - Not a directory",                  // 20
+            "H_EISDIR - Is a directory",                    // 21
+            "H_EINVAL - Invalid argument",                  // 22
+            "H_ENFILE - File table overflow",               // 23
+            "H_EMFILE - Too many open files",               // 24
+            "H_ENOTTY - Not a typewriter",                  // 25
+            "H_ETXTBSY - Text file busy",                   // 26
+            "H_EFBIG - File too large",                     // 27
+            "H_ENOSPC - No space left on device",           // 28
+            "H_ESPIPE - Illegal seek",                      // 29
+            "H_EROFS - Read-only file system",              // 30
+            "H_EMLINK - Too many links",                    // 31
+            "H_EPIPE - Broken pipe",                        // 32
             "H_EDOM - Math argument out of domain of func", // 33
-            "H_ERANGE - Math result not representable"   // 34
+            "H_ERANGE - Math result not representable"      // 34
         };
-#endif
 
-        template <typename... Args>
-        uint8_t num_args(int32_t (*sys_fn)(Args...))
+        constexpr struct ParamType_INT
         {
-            return sizeof...(Args);
+        } PT_INT;
+        constexpr struct ParamType_UINT
+        {
+        } PT_UINT;
+        constexpr struct ParamType_PTR
+        {
+        } PT_PTR;
+        constexpr struct ParamType_STR
+        {
+        } PT_STR;
+
+        struct ParamType_FLAGS_Flag
+        {
+            constexpr ParamType_FLAGS_Flag(const char *n, uint32_t m)
+                : name(n), mask(m), value(m)
+            {
+            }
+
+            constexpr ParamType_FLAGS_Flag(const char *n, uint32_t m, uint32_t v)
+                : name(n), mask(m), value(v)
+            {
+            }
+
+            // Flag active if
+            // `(param & mask) == value`
+            const char *name;
+            uint32_t mask;
+            uint32_t value;
+        };
+
+        template <ParamType_FLAGS_Flag...>
+        struct ParamType_FLAGS
+        {
+        };
+
+        template <ParamType_FLAGS_Flag... Flags>
+        constexpr ParamType_FLAGS<Flags...> PT_FLAGS;
+
+        template <size_t N, class T>
+        struct SysTraceParam
+        {
+            const char name[N];
+            T type;
+        };
+
+        void print_arg(ParamType_INT, const char *name, uint32_t i)
+        {
+            _trace("%s=%" PRIi32, name, (int32_t)i);
         }
+
+        void print_arg(ParamType_UINT, const char *name, uint32_t i)
+        {
+            _trace("%s=%" PRIu32, name, i);
+        }
+
+        void print_arg(ParamType_PTR, const char *name, uint32_t p)
+        {
+            _trace("%s=%08" PRIx32, name, p);
+
+            Task *current_task = scheduler.get_current_task();
+
+            int perms = current_task->get_memory().get_permissions(p);
+            if (perms < 0)
+            {
+                _trace(" (ptr invalid)");
+            }
+            else
+            {
+                _trace(" (addr perms %c%c%c)", perms & PERM_READ ? 'r' : '-',
+                       perms & PERM_WRITE ? 'w' : '-',
+                       perms & PERM_EXEC ? 'x' : '-');
+            }
+        }
+
+        void print_arg(ParamType_STR, const char *name, uint32_t s)
+        {
+            Task *current_task = scheduler.get_current_task();
+
+            char *str = current_task->get_memory().get_string(s);
+            if (str)
+            {
+                _trace("%s=\"", name);
+                for (const char *it = str; *it; ++it)
+                {
+                    char c = *it;
+                    if (c >= 0x20 && c < 0x7F)
+                        _trace("%c", c);
+                    else
+                        _trace("\\x%02x", c);
+                }
+                _trace("\" @ 0x%08" PRIx32, s);
+                dealloc(str);
+            }
+            else
+            {
+                _trace("(inaccessible str @ %08" PRIx32 ")", s);
+            }
+        }
+
+        template <ParamType_FLAGS_Flag... Flags>
+        void print_arg(ParamType_FLAGS<Flags...>, const char *name, uint32_t i)
+        {
+            _trace("%s=(", name);
+            bool first = true;
+            for (const auto &flag : {Flags...})
+            {
+                if (i & flag.mask == flag.value)
+                {
+                    if (!first)
+                        _trace(" | ");
+                    first = false;
+                    _trace("%s", flag.name);
+                }
+            }
+            _trace(")");
+        }
+
+        template <SysTraceParam... Args>
+        void trace_syscall(const char *name, int32_t *args, int32_t result)
+        {
+            Task *current_task = scheduler.get_current_task();
+            _trace("TID %" PRIu32 " system call %s, args: {", current_task->tid, name);
+            ((
+                print_arg(Args.type, Args.name, (uint32_t)*args),
+                _trace(", "),
+                ++args
+            ), ...);
+            _trace("} -> %" PRIi32, result);
+
+            if (result < 0 && (ssize_t)result > -(ssize_t)(sizeof (error_names) / sizeof(error_names[0])))
+                _trace(" (error %s)", error_names[-result]);
+            _trace("\n");
+        }
+#else // NTRACE
+# define trace_syscall(...) ((void)0)
+#endif // NTRACE
     } // namespace
 
     int32_t cvt_error()
@@ -74,405 +207,379 @@ namespace Hamster
         int32_t args[6] = {0};
         Task *current_task = scheduler.get_current_task();
         memcpy(args, current_task->emulator.x + 10, sizeof(args));
-#ifndef NTRACE
-        uint8_t arg_count = 0;
-#else
-        auto &arg_count = std::ignore;
-#endif
 
         int32_t result;
         switch (sys_id)
         {
         case SyscallID::EXIT:
             result = syscall(sys_exit);
-            arg_count = num_args(sys_exit);
+            trace_syscall<>("exit", args, result);
             break;
         case SyscallID::GETPID:
             result = syscall(sys_getpid);
-            arg_count = num_args(sys_getpid);
+            trace_syscall<>("getpid", args, result);
             break;
         case SyscallID::GETTID:
             result = syscall(sys_gettid);
-            arg_count = num_args(sys_gettid);
+            trace_syscall<>("gettid", args, result);
             break;
         case SyscallID::SETPGID:
             result = syscall(sys_setpgid);
-            arg_count = num_args(sys_setpgid);
+            trace_syscall<>("setpgid", args, result);
             break;
         case SyscallID::GETPGID:
             result = syscall(sys_getpgid);
-            arg_count = num_args(sys_getpgid);
+            trace_syscall<>("getpgid", args, result);
             break;
         case SyscallID::GETSID:
             result = syscall(sys_getsid);
-            arg_count = num_args(sys_getsid);
+            trace_syscall<>("getsid", args, result);
             break;
         case SyscallID::SETSID:
             result = syscall(sys_setsid);
-            arg_count = num_args(sys_setsid);
+            trace_syscall<>("setsid", args, result);
             break;
         case SyscallID::SCHED_YIELD:
             result = syscall(sys_sched_yield);
-            arg_count = num_args(sys_sched_yield);
+            trace_syscall<>("sched_yield", args, result);
             break;
         case SyscallID::GETPPID:
             result = syscall(sys_getppid);
-            arg_count = num_args(sys_getppid);
+            trace_syscall<>("getppid", args, result);
             break;
         case SyscallID::CLONE:
             result = syscall(sys_clone);
-            arg_count = num_args(sys_clone);
+            trace_syscall<>("clone", args, result);
             break;
         case SyscallID::EXECVE:
             result = syscall(sys_execve);
-            arg_count = num_args(sys_execve);
+            trace_syscall<>("execve", args, result);
             break;
         case SyscallID::EXECVEAT:
             result = syscall(sys_execveat);
-            arg_count = num_args(sys_execveat);
+            trace_syscall<>("execveat", args, result);
             break;
         case SyscallID::WAITID:
             result = syscall(sys_waitid);
-            arg_count = num_args(sys_waitid);
+            trace_syscall<>("waitid", args, result);
             break;
         case SyscallID::WAIT4:
             result = syscall(sys_wait4);
-            arg_count = num_args(sys_wait4);
+            trace_syscall<>("wait4", args, result);
             break;
         case SyscallID::KILL:
             result = syscall(sys_kill);
-            arg_count = num_args(sys_kill);
+            trace_syscall<>("kill", args, result);
             break;
         case SyscallID::TGKILL:
             result = syscall(sys_tgkill);
-            arg_count = num_args(sys_tgkill);
+            trace_syscall<>("tgkill", args, result);
             break;
         case SyscallID::GETRANDOM:
             result = syscall(sys_getrandom);
-            arg_count = num_args(sys_getrandom);
+            trace_syscall<>("getrandom", args, result);
             break;
         case SyscallID::SETUID:
             result = syscall(sys_setuid);
-            arg_count = num_args(sys_setuid);
+            trace_syscall<>("setuid", args, result);
             break;
         case SyscallID::SETREUID:
             result = syscall(sys_setreuid);
-            arg_count = num_args(sys_setreuid);
+            trace_syscall<>("setreuid", args, result);
             break;
         case SyscallID::SETRESUID:
             result = syscall(sys_setresuid);
-            arg_count = num_args(sys_setresuid);
+            trace_syscall<>("setresuid", args, result);
             break;
         case SyscallID::SETGID:
             result = syscall(sys_setgid);
-            arg_count = num_args(sys_setgid);
+            trace_syscall<>("setgid", args, result);
             break;
         case SyscallID::SETREGID:
             result = syscall(sys_setregid);
-            arg_count = num_args(sys_setregid);
+            trace_syscall<>("setregid", args, result);
             break;
         case SyscallID::SETRESGID:
             result = syscall(sys_setresgid);
-            arg_count = num_args(sys_setresgid);
+            trace_syscall<>("setresgid", args, result);
             break;
         case SyscallID::OPENAT:
             result = syscall(sys_openat);
-            arg_count = num_args(sys_openat);
+            trace_syscall<
+                SysTraceParam{"dirfd", PT_INT},
+                SysTraceParam{"path", PT_STR},
+                SysTraceParam{"flags", PT_UINT},
+                SysTraceParam{"mode", PT_INT}> ("openat", args, result);
             break;
         case SyscallID::READ:
             result = syscall(sys_read);
-            arg_count = num_args(sys_read);
+            trace_syscall<>("read", args, result);
             break;
         case SyscallID::WRITE:
             result = syscall(sys_write);
-            arg_count = num_args(sys_write);
+            trace_syscall<>("write", args, result);
             break;
         case SyscallID::CLOSE:
             result = syscall(sys_close);
-            arg_count = num_args(sys_close);
+            trace_syscall<>("close", args, result);
             break;
         case SyscallID::SENDFILE64:
             result = syscall(sys_sendfile64);
-            arg_count = num_args(sys_sendfile64);
+            trace_syscall<>("sendfile64", args, result);
             break;
         case SyscallID::SPLICE:
             result = syscall(sys_splice);
-            arg_count = num_args(sys_splice);
+            trace_syscall<>("splice", args, result);
             break;
         case SyscallID::STATFS:
             result = syscall(sys_statfs);
-            arg_count = num_args(sys_statfs);
+            trace_syscall<>("statfs", args, result);
             break;
         case SyscallID::FSTATFS:
             result = syscall(sys_fstatfs);
-            arg_count = num_args(sys_fstatfs);
+            trace_syscall<>("fstatfs", args, result);
             break;
         case SyscallID::MOUNT:
             result = syscall(sys_mount);
-            arg_count = num_args(sys_mount);
+            trace_syscall<>("mount", args, result);
             break;
         case SyscallID::UMOUNT2:
             result = syscall(sys_umount2);
-            arg_count = num_args(sys_umount2);
+            trace_syscall<>("umount2", args, result);
             break;
         case SyscallID::FCHOWNAT:
             result = syscall(sys_fchownat);
-            arg_count = num_args(sys_fchownat);
+            trace_syscall<>("fchownat", args, result);
             break;
         case SyscallID::FCHOWN:
             result = syscall(sys_fchown);
-            arg_count = num_args(sys_fchown);
+            trace_syscall<>("fchown", args, result);
             break;
         case SyscallID::FCHMODAT:
             result = syscall(sys_fchmodat);
-            arg_count = num_args(sys_fchmodat);
+            trace_syscall<>("fchmodat", args, result);
             break;
         case SyscallID::FCHMOD:
             result = syscall(sys_fchmod);
-            arg_count = num_args(sys_fchmod);
+            trace_syscall<>("fchmod", args, result);
             break;
         case SyscallID::FTRUNCATE64:
             result = syscall(sys_ftruncate64);
-            arg_count = num_args(sys_ftruncate64);
+            trace_syscall<>("ftruncate64", args, result);
             break;
         case SyscallID::TRUNCATE64:
             result = syscall(sys_truncate64);
-            arg_count = num_args(sys_truncate64);
+            trace_syscall<>("truncate64", args, result);
             break;
         case SyscallID::LLSEEK:
             result = syscall(sys_llseek);
-            arg_count = num_args(sys_llseek);
+            trace_syscall<>("llseek", args, result);
             break;
         case SyscallID::NEWFSTATAT:
             result = syscall(sys_newfstatat);
-            arg_count = num_args(sys_newfstatat);
+            trace_syscall<>("newfstatat", args, result);
             break;
         case SyscallID::NEWFSTAT:
             result = syscall(sys_newfstat);
-            arg_count = num_args(sys_newfstat);
+            trace_syscall<>("newfstat", args, result);
             break;
         case SyscallID::DUP:
             result = syscall(sys_dup);
-            arg_count = num_args(sys_dup);
+            trace_syscall<>("dup", args, result);
             break;
         case SyscallID::DUP3:
             result = syscall(sys_dup3);
-            arg_count = num_args(sys_dup3);
+            trace_syscall<>("dup3", args, result);
             break;
         case SyscallID::MKDIRAT:
             result = syscall(sys_mkdirat);
-            arg_count = num_args(sys_mkdirat);
+            trace_syscall<>("mkdirat", args, result);
             break;
         case SyscallID::UNLINKAT:
             result = syscall(sys_unlinkat);
-            arg_count = num_args(sys_unlinkat);
+            trace_syscall<>("unlinkat", args, result);
             break;
         case SyscallID::LINKAT:
             result = syscall(sys_linkat);
-            arg_count = num_args(sys_linkat);
+            trace_syscall<>("linkat", args, result);
             break;
         case SyscallID::RENAMEAT:
             result = syscall(sys_renameat);
-            arg_count = num_args(sys_renameat);
+            trace_syscall<>("renameat", args, result);
             break;
         case SyscallID::RENAMEAT2:
             result = syscall(sys_renameat2);
-            arg_count = num_args(sys_renameat2);
+            trace_syscall<>("renameat2", args, result);
             break;
         case SyscallID::GETDENTS64:
             result = syscall(sys_getdents64);
-            arg_count = num_args(sys_getdents64);
+            trace_syscall<>("getdents64", args, result);
             break;
         case SyscallID::CHDIR:
             result = syscall(sys_chdir);
-            arg_count = num_args(sys_chdir);
+            trace_syscall<>("chdir", args, result);
             break;
         case SyscallID::GETCWD:
             result = syscall(sys_getcwd);
-            arg_count = num_args(sys_getcwd);
+            trace_syscall<>("getcwd", args, result);
             break;
         case SyscallID::FACCESSAT:
             result = syscall(sys_faccessat);
-            arg_count = num_args(sys_faccessat);
+            trace_syscall<>("faccessat", args, result);
             break;
         case SyscallID::FACCESSAT2:
             result = syscall(sys_faccessat2);
-            arg_count = num_args(sys_faccessat2);
+            trace_syscall<>("faccessat2", args, result);
             break;
         case SyscallID::PIPE2:
             result = syscall(sys_pipe2);
-            arg_count = num_args(sys_pipe2);
+            trace_syscall<>("pipe2", args, result);
             break;
         case SyscallID::BRK:
             result = syscall(sys_brk);
-            arg_count = num_args(sys_brk);
+            trace_syscall<>("brk", args, result);
             break;
         case SyscallID::MMAP2:
             result = syscall(sys_mmap2);
-            arg_count = num_args(sys_mmap2);
+            trace_syscall<>("mmap2", args, result);
             break;
         case SyscallID::MREMAP:
             result = syscall(sys_mremap);
-            arg_count = num_args(sys_mremap);
+            trace_syscall<>("mremap", args, result);
             break;
         case SyscallID::MUNMAP:
             result = syscall(sys_munmap);
-            arg_count = num_args(sys_munmap);
+            trace_syscall<>("munmap", args, result);
             break;
         case SyscallID::MPROTECT:
             result = syscall(sys_mprotect);
-            arg_count = num_args(sys_mprotect);
+            trace_syscall<>("mprotect", args, result);
             break;
         case SyscallID::STATX:
             result = syscall(sys_statx);
-            arg_count = num_args(sys_statx);
+            trace_syscall<>("statx", args, result);
             break;
         case SyscallID::READLINKAT:
             result = syscall(sys_readlinkat);
-            arg_count = num_args(sys_readlinkat);
+            trace_syscall<>("readlinkat", args, result);
             break;
         case SyscallID::SYMLINKAT:
             result = syscall(sys_symlinkat);
-            arg_count = num_args(sys_symlinkat);
+            trace_syscall<>("symlinkat", args, result);
             break;
         case SyscallID::GETUID:
             result = syscall(sys_getuid);
-            arg_count = num_args(sys_getuid);
+            trace_syscall<>("getuid", args, result);
             break;
         case SyscallID::GETEUID:
             result = syscall(sys_geteuid);
-            arg_count = num_args(sys_geteuid);
+            trace_syscall<>("geteuid", args, result);
             break;
         case SyscallID::GETRESUID:
             result = syscall(sys_getresuid);
-            arg_count = num_args(sys_getresuid);
+            trace_syscall<>("getresuid", args, result);
             break;
         case SyscallID::GETGID:
             result = syscall(sys_getgid);
-            arg_count = num_args(sys_getgid);
+            trace_syscall<>("getgid", args, result);
             break;
         case SyscallID::GETEGID:
             result = syscall(sys_getegid);
-            arg_count = num_args(sys_getegid);
+            trace_syscall<>("getegid", args, result);
             break;
         case SyscallID::GETRESGID:
             result = syscall(sys_getresgid);
-            arg_count = num_args(sys_getresgid);
+            trace_syscall<>("getresgid", args, result);
             break;
         case SyscallID::GETGROUPS:
             result = syscall(sys_getgroups);
-            arg_count = num_args(sys_getgroups);
+            trace_syscall<>("getgroups", args, result);
             break;
         case SyscallID::SETGROUPS:
             result = syscall(sys_setgroups);
-            arg_count = num_args(sys_setgroups);
+            trace_syscall<>("setgroups", args, result);
             break;
         case SyscallID::IOCTL:
             result = syscall(sys_ioctl);
-            arg_count = num_args(sys_ioctl);
+            trace_syscall<>("ioctl", args, result);
             break;
         case SyscallID::FCNTL64:
             result = syscall(sys_fcntl64);
-            arg_count = num_args(sys_fcntl64);
+            trace_syscall<>("fcntl64", args, result);
             break;
         case SyscallID::PRCTL:
             result = syscall(sys_prctl);
-            arg_count = num_args(sys_prctl);
+            trace_syscall<>("prctl", args, result);
             break;
         case SyscallID::EXIT_GROUP:
             result = syscall(sys_exit_group);
-            arg_count = num_args(sys_exit_group);
+            trace_syscall<>("exit_group", args, result);
             break;
         case SyscallID::RT_SIGACTION:
             result = syscall(sys_rt_sigaction);
-            arg_count = num_args(sys_rt_sigaction);
+            trace_syscall<>("rt_sigaction", args, result);
             break;
         case SyscallID::RT_SIGRETURN:
             result = syscall(sys_rt_sigreturn);
-            arg_count = num_args(sys_rt_sigreturn);
+            trace_syscall<>("rt_sigreturn", args, result);
             break;
         case SyscallID::RT_SIGPROCMASK:
             result = syscall(sys_rt_sigprocmask);
-            arg_count = num_args(sys_rt_sigprocmask);
+            trace_syscall<>("rt_sigprocmask", args, result);
             break;
         case SyscallID::RT_SIGPENDING:
             result = syscall(sys_rt_sigpending);
-            arg_count = num_args(sys_rt_sigpending);
+            trace_syscall<>("rt_sigpending", args, result);
             break;
         case SyscallID::RT_SIGTIMEDWAIT_TIME64:
             result = syscall(sys_rt_sigtimedwait_time64);
-            arg_count = num_args(sys_rt_sigtimedwait_time64);
+            trace_syscall<>("rt_sigtimedwait_time64", args, result);
             break;
         case SyscallID::RT_SIGQUEUEINFO:
             result = syscall(sys_rt_sigqueueinfo);
-            arg_count = num_args(sys_rt_sigqueueinfo);
+            trace_syscall<>("rt_sigqueueinfo", args, result);
             break;
         case SyscallID::RT_SIGSUSPEND:
             result = syscall(sys_rt_sigsuspend);
-            arg_count = num_args(sys_rt_sigsuspend);
+            trace_syscall<>("rt_sigsuspend", args, result);
             break;
         case SyscallID::UNAME:
             result = syscall(sys_uname);
-            arg_count = num_args(sys_uname);
+            trace_syscall<>("uname", args, result);
             break;
         case SyscallID::PSELECT6_TIME64:
             result = syscall(sys_pselect6_time64);
-            arg_count = num_args(sys_pselect6_time64);
+            trace_syscall<>("pselect6_time64", args, result);
             break;
         case SyscallID::FSYNC:
             result = syscall(sys_fsync);
-            arg_count = num_args(sys_fsync);
+            trace_syscall<>("fsync", args, result);
             break;
         case SyscallID::FDATASYNC:
             result = syscall(sys_fdatasync);
-            arg_count = num_args(sys_fdatasync);
+            trace_syscall<>("fdatasync", args, result);
             break;
         case SyscallID::CLOCK_GETRES_TIME64:
             result = syscall(sys_clock_getres_time64);
-            arg_count = num_args(sys_clock_getres_time64);
+            trace_syscall<>("clock_getres_time64", args, result);
             break;
         case SyscallID::CLOCK_GETTIME64:
             result = syscall(sys_clock_gettime64);
-            arg_count = num_args(sys_clock_gettime64);
+            trace_syscall<>("clock_gettime64", args, result);
             break;
         case SyscallID::CLOCK_NANOSLEEP_TIME64:
             result = syscall(sys_clock_nanosleep_time64);
-            arg_count = num_args(sys_clock_nanosleep_time64);
+            trace_syscall<>("clock_nanosleep_time64", args, result);
             break;
         case SyscallID::CLOCK_SETTIME64:
             result = syscall(sys_clock_settime64);
-            arg_count = num_args(sys_clock_settime64);
+            trace_syscall<>("clock_settime64", args, result);
             break;
         default:
             // Unsupported syscall ID
             result = -H_ENOSYS;
-            arg_count = 0;
             break;
         }
-
-#ifndef NTRACE
-        _trace("TID %d: syscall(num=%d, args={", current_task->tid, sys_id);
-
-        for (uint8_t i = 0; i < arg_count; ++i)
-        {
-            _trace("%d", args[i]);
-            if (i < arg_count - 1)
-                _trace(", ");
-        }
-        _trace("}) = %d", result);
-
-        if (result < 0 && result > -128)
-        {
-            _trace(" (error)");
-
-            if ((size_t)-result < sizeof(error_names) / sizeof(error_names[0]))
-            {
-                _trace(": %s", error_names[-result]);
-            }
-        }
-
-        _trace("\n");
-#endif
 
         return result;
     }
@@ -490,19 +597,19 @@ namespace Hamster
     __attribute__((weak)) int32_t sys_sched_yield() { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_getppid() { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_clone(uint32_t flags, uint32_t stack_loc, uint32_t ptid_loc,
-                      uint32_t ctid_loc, uint32_t newtls) { return -H_ENOSYS; }
+                                            uint32_t ctid_loc, uint32_t newtls) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_execve(uint32_t filename_loc, uint32_t argv_loc,
-                       uint32_t envp_loc) { return -H_ENOSYS; }
+                                             uint32_t envp_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_execveat(int32_t dirfd, uint32_t filename_loc,
-                         uint32_t argv_loc, uint32_t envp_loc, int32_t flags) { return -H_ENOSYS; }
+                                               uint32_t argv_loc, uint32_t envp_loc, int32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_waitid(int32_t which, int32_t pid, uint32_t infop_loc,
-                       int32_t options, uint32_t ru_loc) { return -H_ENOSYS; }
+                                             int32_t options, uint32_t ru_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_wait4(int32_t pid, uint32_t status_loc, int32_t options,
-                      uint32_t ru_loc) { return -H_ENOSYS; }
+                                            uint32_t ru_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_kill(int32_t pid, int32_t sig) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_tgkill(int32_t tgid, int32_t tid, int32_t sig) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_getrandom(uint32_t buf_loc, uint32_t buflen,
-                          uint32_t flags) { return -H_ENOSYS; }
+                                                uint32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_setuid(uint32_t uid) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_setreuid(uint32_t ruid, uint32_t euid) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_setresuid(uint32_t ruid, uint32_t euid, uint32_t suid) { return -H_ENOSYS; }
@@ -510,110 +617,110 @@ namespace Hamster
     __attribute__((weak)) int32_t sys_setregid(uint32_t rgid, uint32_t egid) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_setresgid(uint32_t rgid, uint32_t egid, uint32_t sgid) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_openat(int32_t dfd, uint32_t pathname_loc, int32_t flags,
-                       uint32_t mode) { return -H_ENOSYS; }
+                                             uint32_t mode) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_read(int32_t fd, uint32_t buf_loc, uint32_t count) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_write(int32_t fd, uint32_t buf_loc, uint32_t count) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_close(int32_t fd) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_sendfile64(int32_t out_fd, int32_t in_fd,
-                          uint32_t offset_loc,
-                          uint32_t count) { return -H_ENOSYS; }
+                                                 uint32_t offset_loc,
+                                                 uint32_t count) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_splice(int32_t fd_in, uint32_t off_in_loc,
-                       int32_t fd_out, uint32_t off_out_loc,
-                       uint32_t len, uint32_t flags) { return -H_ENOSYS; }
+                                             int32_t fd_out, uint32_t off_out_loc,
+                                             uint32_t len, uint32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_statfs(uint32_t path_loc, uint32_t size, uint32_t buf_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_fstatfs(int32_t fd, uint32_t size, uint32_t buf_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_mount(uint32_t source_loc, uint32_t target_loc,
-                      uint32_t filesystemtype_loc, uint32_t mountflags,
-                      uint32_t data_loc) { return -H_ENOSYS; }
+                                            uint32_t filesystemtype_loc, uint32_t mountflags,
+                                            uint32_t data_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_umount2(uint32_t target_loc, int32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_fchownat(int32_t dirfd, uint32_t pathname_loc,
-                         uint32_t owner, uint32_t group, int32_t flags) { return -H_ENOSYS; }
+                                               uint32_t owner, uint32_t group, int32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_fchown(int32_t fd, uint32_t owner, uint32_t group) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_fchmodat(int32_t dirfd, uint32_t pathname_loc,
-                         uint32_t mode, int32_t flags) { return -H_ENOSYS; }
+                                               uint32_t mode, int32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_fchmod(int32_t fd, uint32_t mode) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_ftruncate64(int32_t fd, uint32_t off_high, uint32_t off_low) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_truncate64(uint32_t path_loc, uint32_t off_high,
-                           uint32_t off_low) { return -H_ENOSYS; }
+                                                 uint32_t off_low) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_llseek(int32_t fd, uint32_t off_high, uint32_t off_low,
-                       uint32_t result_loc, int32_t whence) { return -H_ENOSYS; }
+                                             uint32_t result_loc, int32_t whence) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_newfstatat(int32_t dirfd, uint32_t pathname_loc,
-                           uint32_t statbuf_loc, int32_t flags) { return -H_ENOSYS; }
+                                                 uint32_t statbuf_loc, int32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_newfstat(int32_t fd, uint32_t statbuf_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_dup(int32_t oldfd) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_dup3(int32_t oldfd, int32_t newfd, int32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_mkdirat(int32_t dirfd, uint32_t pathname_loc,
-                        uint32_t mode) { return -H_ENOSYS; }
+                                              uint32_t mode) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_unlinkat(int32_t dirfd, uint32_t pathname_loc,
-                         int32_t flags) { return -H_ENOSYS; }
+                                               int32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_linkat(int32_t olddirfd, uint32_t oldpathname_loc,
-                       int32_t newdirfd, uint32_t newpathname_loc,
-                       int32_t flags) { return -H_ENOSYS; }
+                                             int32_t newdirfd, uint32_t newpathname_loc,
+                                             int32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_renameat(int32_t olddirfd, uint32_t oldpathname_loc,
-                         int32_t newdirfd, uint32_t newpathname_loc) { return -H_ENOSYS; }
+                                               int32_t newdirfd, uint32_t newpathname_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_renameat2(int32_t olddirfd, uint32_t oldpathname_loc,
-                          int32_t newdirfd, uint32_t newpathname_loc,
-                          uint32_t flags) { return -H_ENOSYS; }
+                                                int32_t newdirfd, uint32_t newpathname_loc,
+                                                uint32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_getdents64(int32_t fd, uint32_t dirp_loc,
-                           uint32_t count) { return -H_ENOSYS; }
+                                                 uint32_t count) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_chdir(uint32_t path_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_getcwd(uint32_t buf_loc, uint32_t size) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_faccessat(int32_t dirfd, uint32_t pathname_loc,
-                          int32_t mode) { return -H_ENOSYS; }
+                                                int32_t mode) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_faccessat2(int32_t dirfd, uint32_t pathname_loc,
-                           int32_t mode, int32_t flags) { return -H_ENOSYS; }
+                                                 int32_t mode, int32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_pipe2(uint32_t pipefd_loc, int32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_brk(uint32_t end_data_segment_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_mmap2(uint32_t addr, uint32_t length,
-                          uint32_t prot, uint32_t flags,
-                          int32_t fd, uint32_t offset) { return -H_ENOSYS; }
+                                            uint32_t prot, uint32_t flags,
+                                            int32_t fd, uint32_t offset) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_mremap(uint32_t old_address, uint32_t old_size,
-                          uint32_t new_size, uint32_t flags,
-                          uint32_t new_address) { return -H_ENOSYS; }
+                                             uint32_t new_size, uint32_t flags,
+                                             uint32_t new_address) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_munmap(uint32_t addr, uint32_t length) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_mprotect(uint32_t addr, uint32_t len, int32_t prot) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_statx(int32_t dirfd, uint32_t pathname_loc,
-                      int32_t flags, uint32_t mask,
-                      uint32_t statxbuf_loc) { return -H_ENOSYS; }
+                                            int32_t flags, uint32_t mask,
+                                            uint32_t statxbuf_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_readlinkat(int32_t dirfd, uint32_t pathname_loc,
-                           uint32_t buf_loc, uint32_t bufsiz) { return -H_ENOSYS; }
+                                                 uint32_t buf_loc, uint32_t bufsiz) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_symlinkat(uint32_t target_loc, int32_t newdirfd,
-                          uint32_t linkpath_loc) { return -H_ENOSYS; }
+                                                uint32_t linkpath_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_getuid() { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_geteuid() { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_getresuid(uint32_t ruid_loc,
-                          uint32_t euid_loc, uint32_t suid_loc) { return -H_ENOSYS; }
+                                                uint32_t euid_loc, uint32_t suid_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_getgid() { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_getegid() { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_getresgid(uint32_t rgid_loc,
-                          uint32_t egid_loc, uint32_t sgid_loc) { return -H_ENOSYS; }
+                                                uint32_t egid_loc, uint32_t sgid_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_getgroups(uint32_t size, uint32_t list_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_setgroups(uint32_t size, uint32_t list_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_ioctl(int32_t fd, int32_t request, uint32_t arg) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_fcntl64(int32_t fd, int32_t cmd,
-                      uint32_t arg) { return -H_ENOSYS; }
+                                              uint32_t arg) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_prctl(int32_t option, uint32_t arg2,
-                      uint32_t arg3, uint32_t arg4,
-                      uint32_t arg5) { return -H_ENOSYS; }
+                                            uint32_t arg3, uint32_t arg4,
+                                            uint32_t arg5) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_exit_group(int32_t status) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_rt_sigaction(int32_t signum, uint32_t act_loc,
-                          uint32_t oldact_loc, uint32_t sigsetsize) { return -H_ENOSYS; }
+                                                   uint32_t oldact_loc, uint32_t sigsetsize) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_rt_sigpending(uint32_t sigset_loc, uint32_t sigsetsize) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_rt_sigprocmask(int32_t how, uint32_t set_loc,
-                          uint32_t oldset_loc, uint32_t sigsetsize) { return -H_ENOSYS; }
+                                                     uint32_t oldset_loc, uint32_t sigsetsize) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_rt_sigqueueinfo(int32_t pid, int32_t sig,
-                          uint32_t uinfo_loc) { return -H_ENOSYS; }
+                                                      uint32_t uinfo_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_rt_sigreturn() { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_rt_sigsuspend(uint32_t unewset_loc, uint32_t sigsetsize) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_rt_sigtimedwait_time64(int32_t sigset_loc,
-                          uint32_t info_loc, uint32_t timeout_loc,
-                          uint32_t sigsetsize) { return -H_ENOSYS; }
+                                                             uint32_t info_loc, uint32_t timeout_loc,
+                                                             uint32_t sigsetsize) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_rt_tgsigqueueinfo(int32_t tgid, int32_t tid, int32_t sig,
-                          uint32_t uinfo_loc) { return -H_ENOSYS; }
+                                                        uint32_t uinfo_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_uname(uint32_t buf_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_pselect6_time64(int32_t nfds, uint32_t readfds_loc,
-                          uint32_t writefds_loc, uint32_t exceptfds_loc,
-                          uint32_t timeout_loc, uint32_t sigmask_loc) { return -H_ENOSYS; }
+                                                      uint32_t writefds_loc, uint32_t exceptfds_loc,
+                                                      uint32_t timeout_loc, uint32_t sigmask_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_fsync(int32_t fd) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_fdatasync(int32_t fd) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_clock_getres_time64(int32_t clock_id, uint32_t res_loc) { return -H_ENOSYS; }
@@ -621,4 +728,3 @@ namespace Hamster
     __attribute__((weak)) int32_t sys_clock_nanosleep_time64(int32_t clock_id, int32_t flags, uint32_t req_loc, uint32_t rem_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_clock_settime64(int32_t clock_id, uint32_t tp_loc) { return -H_ENOSYS; }
 } // namespace Hamster
-
