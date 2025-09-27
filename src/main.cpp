@@ -3,12 +3,15 @@
 #include <elf/elf_loader.hpp>
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
+#include <filesystem/device_manager.hpp>
 #include <memory/allocator.hpp>
 #include <process/scheduler.hpp>
 #include <kscheduler/kscheduler.hpp>
 #include <riscv/riscv_emulator.hpp>
+#include <driver/base_char_device.hpp>
 #include <errno/errno.h>
 #include <cstring>
+#include <cstdlib>
 
 
 void test_platform();
@@ -84,7 +87,78 @@ namespace
         uint64_t last_tick_count = 0;
     };
 #endif
+
+    // Some devices
+    struct NullDevice {};
+    struct ZeroDevice {};
+    struct FullDevice {};
+    struct RandomDevice {};
 } // namespace
+
+template <>
+ssize_t Hamster::CharacterDeviceImpl<NullDevice>::write(const void *, size_t size)
+{
+    // Discard
+    return size;
+}
+
+template <>
+ssize_t Hamster::CharacterDeviceImpl<NullDevice>::read(void *, size_t)
+{
+    // EOF
+    return 0;
+}
+
+template <>
+ssize_t Hamster::CharacterDeviceImpl<ZeroDevice>::write(const void *, size_t size)
+{
+    return size;
+}
+
+template <>
+ssize_t Hamster::CharacterDeviceImpl<ZeroDevice>::read(void *buf, size_t size)
+{
+    memset(buf, 0, size);
+    return size;
+}
+
+template <>
+ssize_t Hamster::CharacterDeviceImpl<FullDevice>::write(const void *, size_t)
+{
+    // Error with ENOSPC
+    Hamster::error = H_ENOSPC;
+    return -1;
+}
+
+template <>
+ssize_t Hamster::CharacterDeviceImpl<FullDevice>::read(void *buf, size_t size)
+{
+    memset(buf, 0, size);
+    return size;
+}
+
+template <>
+int64_t Hamster::CharacterDeviceImpl<FullDevice>::seek(int64_t offset, int whence)
+{
+    return 0;
+}
+
+template <>
+ssize_t Hamster::CharacterDeviceImpl<RandomDevice>::write(const void *, size_t size)
+{
+    // discard
+    return size;
+}
+
+template <>
+ssize_t Hamster::CharacterDeviceImpl<RandomDevice>::read(void *buf, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+    {
+        ((uint8_t *)buf)[i] = rand() % 256;
+    }
+    return size;
+}
 
 int main()
 {
@@ -118,6 +192,19 @@ int main()
         return -1;
     }
     log_operation_status("OK");
+
+    // Create some devices in /dev/
+    Hamster::device_manager.register_device({1, 3}, Hamster::alloc<Hamster::CharacterDevice<NullDevice>>());
+    Hamster::device_manager.register_device({1, 5}, Hamster::alloc<Hamster::CharacterDevice<ZeroDevice>>());
+    Hamster::device_manager.register_device({1, 7}, Hamster::alloc<Hamster::CharacterDevice<FullDevice>>());
+    Hamster::device_manager.register_device({1, 8}, Hamster::alloc<Hamster::CharacterDevice<RandomDevice>>());
+    Hamster::device_manager.register_device({1, 9}, Hamster::alloc<Hamster::CharacterDevice<RandomDevice>>());
+
+    Hamster::vfs.mknod("/dev/null", {1, 3}, 0666);
+    Hamster::vfs.mknod("/dev/zero", {1, 5}, 0666);
+    Hamster::vfs.mknod("/dev/full", {1, 7}, 0666);
+    Hamster::vfs.mknod("/dev/random", {1, 8}, 0666);
+    Hamster::vfs.mknod("/dev/urandom", {1, 9}, 0666);
 
     Hamster::scheduler.spawn("/usr/bin/init");
 

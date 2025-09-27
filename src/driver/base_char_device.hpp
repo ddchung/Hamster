@@ -34,6 +34,8 @@ namespace Hamster
         // Implement your device-specific read logic here
     }
 
+    // Note that you can override seek, but it can't store any state in the handle
+
     // replace {123, 456} with your device's major and minor numbers
     device_manager.register_device({123, 456}, alloc<CharacterDevice<MyDevice>>());
 
@@ -47,6 +49,8 @@ namespace Hamster
         static ssize_t read(void *buffer, size_t size);
         static int ioctl(int request, IoctlArg arg);
         static int poll(int op);
+        static int64_t seek(int64_t offset, int whence);
+        static int64_t tell();
     };
 
     template <class>
@@ -109,6 +113,20 @@ namespace Hamster
     }
 
     template <class T>
+    int64_t CharacterDeviceImpl<T>::seek(int64_t offset, int)
+    {
+        error = H_ESPIPE;
+        return -1;
+    }
+
+    template <class T>
+    int64_t CharacterDeviceImpl<T>::tell()
+    {
+        error = H_ESPIPE;
+        return -1;
+    }
+
+    template <class T>
     CharacterDevice<T>::Handle::Handle(int flags) : flags(flags) {}
 
     template <class T>
@@ -155,15 +173,18 @@ namespace Hamster
     template <class T>
     int64_t CharacterDevice<T>::Handle::seek(int64_t offset, int whence)
     {
-        error = H_ESPIPE;
-        return -1;
+        return CharacterDeviceImpl<T>::seek(offset, whence);
     }
 
     template <class T>
     int64_t CharacterDevice<T>::Handle::tell()
     {
-        error = H_ESPIPE;
-        return -1;
+        // Attempt to use tell, but if not implemented
+        // try to use seek.
+        int64_t res = CharacterDeviceImpl<T>::tell();
+        if (res < 0 && error == H_ESPIPE)
+            res = seek(0, H_SEEK_CUR);
+        return res;
     }
 
     template <class T>
