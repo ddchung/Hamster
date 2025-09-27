@@ -201,17 +201,17 @@ namespace Hamster
 
         void print_arg(ParamType_INT, const char *name, uint32_t i)
         {
-            _trace("%s=%" PRIi32, name, (int32_t)i);
+            _trace("\033[35m%s\033[0m=%" PRIi32, name, (int32_t)i);
         }
 
         void print_arg(ParamType_UINT, const char *name, uint32_t i)
         {
-            _trace("%s=%" PRIu32, name, i);
+            _trace("\033[35m%s\033[0m=%" PRIu32, name, i);
         }
 
         void print_arg(ParamType_PTR, const char *name, uint32_t p)
         {
-            _trace("%s=%08" PRIx32, name, p);
+            _trace("\033[35m%s\033[0m=%08" PRIx32, name, p);
 
             Task *current_task = scheduler.get_current_task();
 
@@ -235,7 +235,7 @@ namespace Hamster
             char *str = current_task->get_memory().get_string(s);
             if (str)
             {
-                _trace("%s=\"", name);
+                _trace("\033[35m%s\033[0m=\"", name);
                 for (const char *it = str; *it; ++it)
                 {
                     char c = *it;
@@ -256,7 +256,7 @@ namespace Hamster
         template <ParamType_FLAGS_Flag... Flags>
         void print_arg(ParamType_FLAGS<Flags...>, const char *name, uint32_t i)
         {
-            _trace("%s=(", name);
+            _trace("\033[35m%s\033[0m=(", name);
             bool first = true;
             for (const auto &flag : {Flags...})
             {
@@ -275,20 +275,26 @@ namespace Hamster
         void trace_syscall(const char *name, int32_t *args, int32_t result)
         {
             Task *current_task = scheduler.get_current_task();
-            _trace("TID %" PRIu32 " system call %s, args: {", current_task->tid, name);
+            _trace("TID \033[34m%" PRIu32 "\033[0m\tsystem call \033[32m%s\033[0m,\targs: {", current_task->tid, name);
             ((
                  print_arg(Args.type, Args.name, (uint32_t)*args),
-                 _trace(", "),
+                 _trace(",\t"),
                  ++args),
              ...);
-            _trace("} -> %" PRIi32, result);
+            _trace("} -> \033[36m%" PRIi32, result);
 
             if (result < 0 && (ssize_t)result > -(ssize_t)(sizeof(error_names) / sizeof(error_names[0])))
-                _trace(" (error %s)", error_names[-result]);
-            _trace("\n");
+                _trace("\t\033[31m(error %s)", error_names[-result]);
+            _trace("\033[0m\n");
         }
+# define SysTraceParam(...) SysTraceParam{__VA_ARGS__}
 #else // NTRACE
-#define trace_syscall(...) ((void)0)
+        template <int...>
+        inline void trace_syscall(...)
+        {
+        }
+
+# define SysTraceParam(...) 0
 #endif // NTRACE
     } // namespace
 
@@ -311,7 +317,7 @@ namespace Hamster
         {
         case SyscallID::EXIT:
             result = syscall(sys_exit);
-            trace_syscall<>("exit", args, result);
+            trace_syscall<SysTraceParam("code", PT_INT)>("exit", args, result);
             break;
         case SyscallID::GETPID:
             result = syscall(sys_getpid);
@@ -323,15 +329,17 @@ namespace Hamster
             break;
         case SyscallID::SETPGID:
             result = syscall(sys_setpgid);
-            trace_syscall<>("setpgid", args, result);
+            trace_syscall<
+                SysTraceParam("pid", PT_INT),
+                SysTraceParam("pgid", PT_INT)>("setpgid", args, result);
             break;
         case SyscallID::GETPGID:
             result = syscall(sys_getpgid);
-            trace_syscall<>("getpgid", args, result);
+            trace_syscall<SysTraceParam("pid", PT_INT)>("getpgid", args, result);
             break;
         case SyscallID::GETSID:
             result = syscall(sys_getsid);
-            trace_syscall<>("getsid", args, result);
+            trace_syscall<SysTraceParam("pid", PT_INT)>("getsid", args, result);
             break;
         case SyscallID::SETSID:
             result = syscall(sys_setsid);
@@ -347,223 +355,394 @@ namespace Hamster
             break;
         case SyscallID::CLONE:
             result = syscall(sys_clone);
-            trace_syscall<>("clone", args, result);
+            trace_syscall<
+                SysTraceParam("flags", PT_UINT),
+                SysTraceParam("stack", PT_PTR),
+                SysTraceParam("ptid", PT_PTR),
+                SysTraceParam("tls", PT_INT),
+                SysTraceParam("ctid", PT_PTR)>("clone", args, result);
             break;
         case SyscallID::EXECVE:
             result = syscall(sys_execve);
-            trace_syscall<>("execve", args, result);
+            trace_syscall<
+                SysTraceParam("filename", PT_STR),
+                SysTraceParam("argv", PT_PTR),
+                SysTraceParam("envp", PT_PTR)>("execve", args, result);
             break;
         case SyscallID::EXECVEAT:
             result = syscall(sys_execveat);
-            trace_syscall<>("execveat", args, result);
+            trace_syscall<
+                SysTraceParam("flags", PT_UINT),
+                SysTraceParam("filename", PT_STR),
+                SysTraceParam("argv", PT_PTR),
+                SysTraceParam("envp", PT_PTR),
+                SysTraceParam("flags", PT_UINT)>("execveat", args, result);
             break;
         case SyscallID::WAITID:
             result = syscall(sys_waitid);
-            trace_syscall<>("waitid", args, result);
+            trace_syscall<
+                SysTraceParam("which", PT_INT),
+                SysTraceParam("pid", PT_INT),
+                SysTraceParam("infop", PT_PTR),
+                SysTraceParam("options", PT_INT),
+                SysTraceParam("ru", PT_PTR)>("waitid", args, result);
             break;
         case SyscallID::WAIT4:
             result = syscall(sys_wait4);
-            trace_syscall<>("wait4", args, result);
+            trace_syscall<
+                SysTraceParam("pid", PT_INT),
+                SysTraceParam("status", PT_PTR),
+                SysTraceParam("options", PT_INT),
+                SysTraceParam("ru", PT_PTR)>("wait4", args, result);
             break;
         case SyscallID::KILL:
             result = syscall(sys_kill);
-            trace_syscall<>("kill", args, result);
+            trace_syscall<
+                SysTraceParam("pid", PT_INT),
+                SysTraceParam("sig", PT_INT)>("kill", args, result);
             break;
         case SyscallID::TGKILL:
             result = syscall(sys_tgkill);
-            trace_syscall<>("tgkill", args, result);
+            trace_syscall<
+                SysTraceParam("tgid", PT_INT),
+                SysTraceParam("tid", PT_INT),
+                SysTraceParam("sig", PT_INT)>("tgkill", args, result);
             break;
         case SyscallID::GETRANDOM:
             result = syscall(sys_getrandom);
-            trace_syscall<>("getrandom", args, result);
+            trace_syscall<
+                SysTraceParam("buf", PT_PTR),
+                SysTraceParam("buflen", PT_UINT),
+                SysTraceParam("flags", PT_UINT)>("getrandom", args, result);
             break;
         case SyscallID::SETUID:
             result = syscall(sys_setuid);
-            trace_syscall<>("setuid", args, result);
+            trace_syscall<
+                SysTraceParam("uid", PT_UINT)>("setuid", args, result);
             break;
         case SyscallID::SETREUID:
             result = syscall(sys_setreuid);
-            trace_syscall<>("setreuid", args, result);
+            trace_syscall<
+                SysTraceParam("ruid", PT_UINT),
+                SysTraceParam("euid", PT_UINT)>("setreuid", args, result);
             break;
         case SyscallID::SETRESUID:
             result = syscall(sys_setresuid);
-            trace_syscall<>("setresuid", args, result);
+            trace_syscall<
+                SysTraceParam("ruid", PT_UINT),
+                SysTraceParam("euid", PT_UINT),
+                SysTraceParam("suid", PT_UINT)>("setresuid", args, result);
             break;
         case SyscallID::SETGID:
             result = syscall(sys_setgid);
-            trace_syscall<>("setgid", args, result);
+            trace_syscall<
+                SysTraceParam("gid", PT_UINT)>("setgid", args, result);
             break;
         case SyscallID::SETREGID:
             result = syscall(sys_setregid);
-            trace_syscall<>("setregid", args, result);
+            trace_syscall<
+                SysTraceParam("rgid", PT_UINT),
+                SysTraceParam("egid", PT_UINT)>("setregid", args, result);
             break;
         case SyscallID::SETRESGID:
             result = syscall(sys_setresgid);
-            trace_syscall<>("setresgid", args, result);
+            trace_syscall<
+                SysTraceParam("rgid", PT_UINT),
+                SysTraceParam("egid", PT_UINT),
+                SysTraceParam("sgid", PT_UINT)>("setresgid", args, result);
             break;
         case SyscallID::OPENAT:
             result = syscall(sys_openat);
             trace_syscall<
-                SysTraceParam{"dirfd", PT_INT},
-                SysTraceParam{"path", PT_STR},
-                SysTraceParam{"flags", PT_UINT},
-                SysTraceParam{"mode", PT_INT}>("openat", args, result);
+                SysTraceParam("dirfd", PT_INT),
+                SysTraceParam("path", PT_STR),
+                SysTraceParam("flags", PT_UINT),
+                SysTraceParam("mode", PT_INT)>("openat", args, result);
             break;
         case SyscallID::READ:
             result = syscall(sys_read);
-            trace_syscall<>("read", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT),
+                SysTraceParam("buf", PT_PTR),
+                SysTraceParam("count", PT_UINT)>("read", args, result);
             break;
         case SyscallID::WRITE:
             result = syscall(sys_write);
-            trace_syscall<>("write", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT),
+                SysTraceParam("buf", PT_PTR),
+                SysTraceParam("count", PT_UINT)>("write", args, result);
             break;
         case SyscallID::CLOSE:
             result = syscall(sys_close);
-            trace_syscall<>("close", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT)>("close", args, result);
             break;
         case SyscallID::SENDFILE64:
             result = syscall(sys_sendfile64);
-            trace_syscall<>("sendfile64", args, result);
+            trace_syscall<
+                SysTraceParam("out_fd", PT_INT),
+                SysTraceParam("in_fd", PT_INT),
+                SysTraceParam("offset", PT_PTR),
+                SysTraceParam("count", PT_UINT)>("sendfile64", args, result);
             break;
         case SyscallID::SPLICE:
             result = syscall(sys_splice);
-            trace_syscall<>("splice", args, result);
+            trace_syscall<
+                SysTraceParam("fd_in", PT_INT),
+                SysTraceParam("off_in", PT_PTR),
+                SysTraceParam("fd_out", PT_INT),
+                SysTraceParam("off_out", PT_PTR),
+                SysTraceParam("len", PT_UINT),
+                SysTraceParam("flags", PT_UINT)>("splice", args, result);
             break;
         case SyscallID::STATFS:
             result = syscall(sys_statfs);
-            trace_syscall<>("statfs", args, result);
+            trace_syscall<
+                SysTraceParam("path", PT_STR),
+                SysTraceParam("size", PT_UINT),
+                SysTraceParam("buf", PT_PTR)>("statfs", args, result);
             break;
         case SyscallID::FSTATFS:
             result = syscall(sys_fstatfs);
-            trace_syscall<>("fstatfs", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT),
+                SysTraceParam("size", PT_UINT),
+                SysTraceParam("buf", PT_PTR)>("fstatfs", args, result);
             break;
         case SyscallID::MOUNT:
             result = syscall(sys_mount);
-            trace_syscall<>("mount", args, result);
+            trace_syscall<
+                SysTraceParam("source", PT_STR),
+                SysTraceParam("target", PT_STR),
+                SysTraceParam("filesystemtype", PT_STR),
+                SysTraceParam("mountflags", PT_UINT),
+                SysTraceParam("data", PT_PTR)>("mount", args, result);
             break;
         case SyscallID::UMOUNT2:
             result = syscall(sys_umount2);
-            trace_syscall<>("umount2", args, result);
+            trace_syscall<
+                SysTraceParam("target", PT_STR),
+                SysTraceParam("flags", PT_INT)>("umount2", args, result);
             break;
         case SyscallID::FCHOWNAT:
             result = syscall(sys_fchownat);
-            trace_syscall<>("fchownat", args, result);
+            trace_syscall<
+                SysTraceParam("dirfd", PT_INT),
+                SysTraceParam("pathname", PT_STR),
+                SysTraceParam("owner", PT_UINT),
+                SysTraceParam("group", PT_UINT),
+                SysTraceParam("flags", PT_INT)>("fchownat", args, result);
             break;
         case SyscallID::FCHOWN:
             result = syscall(sys_fchown);
-            trace_syscall<>("fchown", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT),
+                SysTraceParam("owner", PT_UINT),
+                SysTraceParam("group", PT_UINT)>("fchown", args, result);
             break;
         case SyscallID::FCHMODAT:
             result = syscall(sys_fchmodat);
-            trace_syscall<>("fchmodat", args, result);
+            trace_syscall<
+                SysTraceParam("dirfd", PT_INT),
+                SysTraceParam("pathname", PT_STR),
+                SysTraceParam("mode", PT_UINT),
+                SysTraceParam("flags", PT_INT)>("fchmodat", args, result);
             break;
         case SyscallID::FCHMOD:
             result = syscall(sys_fchmod);
-            trace_syscall<>("fchmod", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT),
+                SysTraceParam("mode", PT_UINT)>("fchmod", args, result);
             break;
         case SyscallID::FTRUNCATE64:
             result = syscall(sys_ftruncate64);
-            trace_syscall<>("ftruncate64", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT),
+                SysTraceParam("off_high", PT_UINT),
+                SysTraceParam("off_low", PT_UINT)>("ftruncate64", args, result);
             break;
         case SyscallID::TRUNCATE64:
             result = syscall(sys_truncate64);
-            trace_syscall<>("truncate64", args, result);
+            trace_syscall<
+                SysTraceParam("path", PT_STR),
+                SysTraceParam("off_high", PT_UINT),
+                SysTraceParam("off_low", PT_UINT)>("truncate64", args, result);
             break;
         case SyscallID::LLSEEK:
             result = syscall(sys_llseek);
-            trace_syscall<>("llseek", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT),
+                SysTraceParam("off_high", PT_UINT),
+                SysTraceParam("off_low", PT_UINT),
+                SysTraceParam("result", PT_PTR),
+                SysTraceParam("whence", PT_INT)>("llseek", args, result);
             break;
         case SyscallID::NEWFSTATAT:
             result = syscall(sys_newfstatat);
-            trace_syscall<>("newfstatat", args, result);
+            trace_syscall<
+                SysTraceParam("dirfd", PT_INT),
+                SysTraceParam("pathname", PT_STR),
+                SysTraceParam("statbuf", PT_PTR),
+                SysTraceParam("flags", PT_INT)>("newfstatat", args, result);
             break;
         case SyscallID::NEWFSTAT:
             result = syscall(sys_newfstat);
-            trace_syscall<>("newfstat", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT),
+                SysTraceParam("statbuf", PT_PTR)>("newfstat", args, result);
             break;
         case SyscallID::DUP:
             result = syscall(sys_dup);
-            trace_syscall<>("dup", args, result);
+            trace_syscall<
+                SysTraceParam("oldfd", PT_INT)>("dup", args, result);
             break;
         case SyscallID::DUP3:
             result = syscall(sys_dup3);
-            trace_syscall<>("dup3", args, result);
+            trace_syscall<
+                SysTraceParam("oldfd", PT_INT),
+                SysTraceParam("newfd", PT_INT),
+                SysTraceParam("flags", PT_INT)>("dup3", args, result);
             break;
         case SyscallID::MKDIRAT:
             result = syscall(sys_mkdirat);
-            trace_syscall<>("mkdirat", args, result);
+            trace_syscall<
+                SysTraceParam("dirfd", PT_INT),
+                SysTraceParam("pathname", PT_STR),
+                SysTraceParam("mode", PT_UINT)>("mkdirat", args, result);
             break;
         case SyscallID::UNLINKAT:
             result = syscall(sys_unlinkat);
-            trace_syscall<>("unlinkat", args, result);
+            trace_syscall<
+                SysTraceParam("dirfd", PT_INT),
+                SysTraceParam("pathname", PT_STR),
+                SysTraceParam("flags", PT_INT)>("unlinkat", args, result);
             break;
         case SyscallID::LINKAT:
             result = syscall(sys_linkat);
-            trace_syscall<>("linkat", args, result);
+            trace_syscall<
+                SysTraceParam("olddirfd", PT_INT),
+                SysTraceParam("oldpathname", PT_STR),
+                SysTraceParam("newdirfd", PT_INT),
+                SysTraceParam("newpathname", PT_STR),
+                SysTraceParam("flags", PT_INT)>("linkat", args, result);
             break;
         case SyscallID::RENAMEAT:
             result = syscall(sys_renameat);
-            trace_syscall<>("renameat", args, result);
+            trace_syscall<
+                SysTraceParam("olddirfd", PT_INT),
+                SysTraceParam("oldpathname", PT_STR),
+                SysTraceParam("newdirfd", PT_INT),
+                SysTraceParam("newpathname", PT_STR)>("renameat", args, result);
             break;
         case SyscallID::RENAMEAT2:
             result = syscall(sys_renameat2);
-            trace_syscall<>("renameat2", args, result);
+            trace_syscall<
+                SysTraceParam("olddirfd", PT_INT),
+                SysTraceParam("oldpathname", PT_STR),
+                SysTraceParam("newdirfd", PT_INT),
+                SysTraceParam("newpathname", PT_STR),
+                SysTraceParam("flags", PT_UINT)>("renameat2", args, result);
             break;
         case SyscallID::GETDENTS64:
             result = syscall(sys_getdents64);
-            trace_syscall<>("getdents64", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT),
+                SysTraceParam("dirp", PT_PTR),
+                SysTraceParam("count", PT_UINT)>("getdents64", args, result);
             break;
         case SyscallID::CHDIR:
             result = syscall(sys_chdir);
-            trace_syscall<>("chdir", args, result);
+            trace_syscall<
+                SysTraceParam("path", PT_STR)>("chdir", args, result);
             break;
         case SyscallID::GETCWD:
             result = syscall(sys_getcwd);
-            trace_syscall<>("getcwd", args, result);
+            trace_syscall<
+                SysTraceParam("buf", PT_PTR),
+                SysTraceParam("size", PT_UINT)>("getcwd", args, result);
             break;
         case SyscallID::FACCESSAT:
             result = syscall(sys_faccessat);
-            trace_syscall<>("faccessat", args, result);
+            trace_syscall<
+                SysTraceParam("dirfd", PT_INT),
+                SysTraceParam("pathname", PT_STR),
+                SysTraceParam("mode", PT_INT)>("faccessat", args, result);
             break;
         case SyscallID::FACCESSAT2:
             result = syscall(sys_faccessat2);
-            trace_syscall<>("faccessat2", args, result);
+            trace_syscall<
+                SysTraceParam("dirfd", PT_INT),
+                SysTraceParam("pathname", PT_STR),
+                SysTraceParam("mode", PT_INT),
+                SysTraceParam("flags", PT_INT)>("faccessat2", args, result);
             break;
         case SyscallID::PIPE2:
             result = syscall(sys_pipe2);
-            trace_syscall<>("pipe2", args, result);
+            trace_syscall<
+                SysTraceParam("pipefd", PT_PTR),
+                SysTraceParam("flags", PT_INT)>("pipe2", args, result);
             break;
         case SyscallID::BRK:
             result = syscall(sys_brk);
-            trace_syscall<>("brk", args, result);
+            trace_syscall<
+                SysTraceParam("end_data_segment", PT_PTR)>("brk", args, result);
             break;
         case SyscallID::MMAP2:
             result = syscall(sys_mmap2);
-            trace_syscall<>("mmap2", args, result);
+            trace_syscall<
+                SysTraceParam("addr", PT_PTR),
+                SysTraceParam("length", PT_UINT),
+                SysTraceParam("prot", PT_UINT),
+                SysTraceParam("flags", PT_UINT),
+                SysTraceParam("fd", PT_INT),
+                SysTraceParam("offset", PT_UINT)>("mmap2", args, result);
             break;
         case SyscallID::MREMAP:
             result = syscall(sys_mremap);
-            trace_syscall<>("mremap", args, result);
+            trace_syscall<
+                SysTraceParam("old_address", PT_PTR),
+                SysTraceParam("old_size", PT_UINT),
+                SysTraceParam("new_size", PT_UINT),
+                SysTraceParam("flags", PT_UINT),
+                SysTraceParam("new_address", PT_PTR)>("mremap", args, result);
             break;
         case SyscallID::MUNMAP:
             result = syscall(sys_munmap);
-            trace_syscall<>("munmap", args, result);
+            trace_syscall<
+                SysTraceParam("addr", PT_PTR),
+                SysTraceParam("length", PT_UINT)>("munmap", args, result);
             break;
         case SyscallID::MPROTECT:
             result = syscall(sys_mprotect);
-            trace_syscall<>("mprotect", args, result);
+            trace_syscall<
+                SysTraceParam("addr", PT_PTR),
+                SysTraceParam("len", PT_UINT),
+                SysTraceParam("prot", PT_INT)>("mprotect", args, result);
             break;
         case SyscallID::STATX:
             result = syscall(sys_statx);
-            trace_syscall<>("statx", args, result);
+            trace_syscall<
+                SysTraceParam("dirfd", PT_INT),
+                SysTraceParam("pathname", PT_STR),
+                SysTraceParam("flags", PT_INT),
+                SysTraceParam("mask", PT_UINT),
+                SysTraceParam("statxbuf", PT_PTR)>("statx", args, result);
             break;
         case SyscallID::READLINKAT:
             result = syscall(sys_readlinkat);
-            trace_syscall<>("readlinkat", args, result);
+            trace_syscall<
+                SysTraceParam("dirfd", PT_INT),
+                SysTraceParam("pathname", PT_STR),
+                SysTraceParam("buf", PT_PTR),
+                SysTraceParam("bufsiz", PT_UINT)>("readlinkat", args, result);
             break;
         case SyscallID::SYMLINKAT:
             result = syscall(sys_symlinkat);
-            trace_syscall<>("symlinkat", args, result);
+            trace_syscall<
+                SysTraceParam("target", PT_STR),
+                SysTraceParam("newdirfd", PT_INT),
+                SysTraceParam("linkpath", PT_STR)>("symlinkat", args, result);
             break;
         case SyscallID::GETUID:
             result = syscall(sys_getuid);
@@ -575,7 +754,10 @@ namespace Hamster
             break;
         case SyscallID::GETRESUID:
             result = syscall(sys_getresuid);
-            trace_syscall<>("getresuid", args, result);
+            trace_syscall<
+                SysTraceParam("ruid", PT_PTR),
+                SysTraceParam("euid", PT_PTR),
+                SysTraceParam("suid", PT_PTR)>("getresuid", args, result);
             break;
         case SyscallID::GETGID:
             result = syscall(sys_getgid);
@@ -587,35 +769,58 @@ namespace Hamster
             break;
         case SyscallID::GETRESGID:
             result = syscall(sys_getresgid);
-            trace_syscall<>("getresgid", args, result);
+            trace_syscall<
+                SysTraceParam("rgid", PT_PTR),
+                SysTraceParam("egid", PT_PTR),
+                SysTraceParam("sgid", PT_PTR)>("getresgid", args, result);
             break;
         case SyscallID::GETGROUPS:
             result = syscall(sys_getgroups);
-            trace_syscall<>("getgroups", args, result);
+            trace_syscall<
+                SysTraceParam("size", PT_UINT),
+                SysTraceParam("list", PT_PTR)>("getgroups", args, result);
             break;
         case SyscallID::SETGROUPS:
             result = syscall(sys_setgroups);
-            trace_syscall<>("setgroups", args, result);
+            trace_syscall<
+                SysTraceParam("size", PT_UINT),
+                SysTraceParam("list", PT_PTR)>("setgroups", args, result);
             break;
         case SyscallID::IOCTL:
             result = syscall(sys_ioctl);
-            trace_syscall<>("ioctl", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT),
+                SysTraceParam("request", PT_INT),
+                SysTraceParam("arg", PT_PTR)>("ioctl", args, result);
             break;
         case SyscallID::FCNTL64:
             result = syscall(sys_fcntl64);
-            trace_syscall<>("fcntl64", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT),
+                SysTraceParam("cmd", PT_INT),
+                SysTraceParam("arg", PT_PTR)>("fcntl64", args, result);
             break;
         case SyscallID::PRCTL:
             result = syscall(sys_prctl);
-            trace_syscall<>("prctl", args, result);
+            trace_syscall<
+                SysTraceParam("option", PT_INT),
+                SysTraceParam("arg2", PT_PTR),
+                SysTraceParam("arg3", PT_PTR),
+                SysTraceParam("arg4", PT_PTR),
+                SysTraceParam("arg5", PT_PTR)>("prctl", args, result);
             break;
         case SyscallID::EXIT_GROUP:
             result = syscall(sys_exit_group);
-            trace_syscall<>("exit_group", args, result);
+            trace_syscall<
+                SysTraceParam("status", PT_INT)>("exit_group", args, result);
             break;
         case SyscallID::RT_SIGACTION:
             result = syscall(sys_rt_sigaction);
-            trace_syscall<>("rt_sigaction", args, result);
+            trace_syscall<
+                SysTraceParam("signum", PT_INT),
+                SysTraceParam("act", PT_PTR),
+                SysTraceParam("oldact", PT_PTR),
+                SysTraceParam("sigsetsize", PT_UINT)>("rt_sigaction", args, result);
             break;
         case SyscallID::RT_SIGRETURN:
             result = syscall(sys_rt_sigreturn);
@@ -623,55 +828,89 @@ namespace Hamster
             break;
         case SyscallID::RT_SIGPROCMASK:
             result = syscall(sys_rt_sigprocmask);
-            trace_syscall<>("rt_sigprocmask", args, result);
+            trace_syscall<
+                SysTraceParam("how", PT_INT),
+                SysTraceParam("set", PT_PTR),
+                SysTraceParam("oldset", PT_PTR),
+                SysTraceParam("sigsetsize", PT_UINT)>("rt_sigprocmask", args, result);
             break;
         case SyscallID::RT_SIGPENDING:
             result = syscall(sys_rt_sigpending);
-            trace_syscall<>("rt_sigpending", args, result);
+            trace_syscall<
+                SysTraceParam("set", PT_PTR),
+                SysTraceParam("sigsetsize", PT_UINT)>("rt_sigpending", args, result);
             break;
         case SyscallID::RT_SIGTIMEDWAIT_TIME64:
             result = syscall(sys_rt_sigtimedwait_time64);
-            trace_syscall<>("rt_sigtimedwait_time64", args, result);
+            trace_syscall<
+                SysTraceParam("sigset", PT_PTR),
+                SysTraceParam("info", PT_PTR),
+                SysTraceParam("timeout", PT_PTR),
+                SysTraceParam("sigsetsize", PT_UINT)>("rt_sigtimedwait_time64", args, result);
             break;
         case SyscallID::RT_SIGQUEUEINFO:
             result = syscall(sys_rt_sigqueueinfo);
-            trace_syscall<>("rt_sigqueueinfo", args, result);
+            trace_syscall<
+                SysTraceParam("tgid", PT_INT),
+                SysTraceParam("sig", PT_INT),
+                SysTraceParam("info", PT_PTR)>("rt_sigqueueinfo", args, result);
             break;
         case SyscallID::RT_SIGSUSPEND:
             result = syscall(sys_rt_sigsuspend);
-            trace_syscall<>("rt_sigsuspend", args, result);
+            trace_syscall<
+                SysTraceParam("unewset", PT_PTR),
+                SysTraceParam("sigsetsize", PT_UINT)>("rt_sigsuspend", args, result);
             break;
         case SyscallID::UNAME:
             result = syscall(sys_uname);
-            trace_syscall<>("uname", args, result);
+            trace_syscall<
+                SysTraceParam("buf", PT_PTR)>("uname", args, result);
             break;
         case SyscallID::PSELECT6_TIME64:
             result = syscall(sys_pselect6_time64);
-            trace_syscall<>("pselect6_time64", args, result);
+            trace_syscall<
+                SysTraceParam("nfds", PT_INT),
+                SysTraceParam("readfds", PT_PTR),
+                SysTraceParam("writefds", PT_PTR),
+                SysTraceParam("exceptfds", PT_PTR),
+                SysTraceParam("timeout", PT_PTR),
+                SysTraceParam("sigmask", PT_PTR)>("pselect6_time64", args, result);
             break;
         case SyscallID::FSYNC:
             result = syscall(sys_fsync);
-            trace_syscall<>("fsync", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT)>("fsync", args, result);
             break;
         case SyscallID::FDATASYNC:
             result = syscall(sys_fdatasync);
-            trace_syscall<>("fdatasync", args, result);
+            trace_syscall<
+                SysTraceParam("fd", PT_INT)>("fdatasync", args, result);
             break;
         case SyscallID::CLOCK_GETRES_TIME64:
             result = syscall(sys_clock_getres_time64);
-            trace_syscall<>("clock_getres_time64", args, result);
+            trace_syscall<
+                SysTraceParam("clock_id", PT_INT),
+                SysTraceParam("res", PT_PTR)>("clock_getres_time64", args, result);
             break;
         case SyscallID::CLOCK_GETTIME64:
             result = syscall(sys_clock_gettime64);
-            trace_syscall<>("clock_gettime64", args, result);
+            trace_syscall<
+                SysTraceParam("clock_id", PT_INT),
+                SysTraceParam("tp", PT_PTR)>("clock_gettime64", args, result);
             break;
         case SyscallID::CLOCK_NANOSLEEP_TIME64:
             result = syscall(sys_clock_nanosleep_time64);
-            trace_syscall<>("clock_nanosleep_time64", args, result);
+            trace_syscall<
+                SysTraceParam("clock_id", PT_INT),
+                SysTraceParam("flags", PT_INT),
+                SysTraceParam("req", PT_PTR),
+                SysTraceParam("rem", PT_PTR)>("clock_nanosleep_time64", args, result);
             break;
         case SyscallID::CLOCK_SETTIME64:
             result = syscall(sys_clock_settime64);
-            trace_syscall<>("clock_settime64", args, result);
+            trace_syscall<
+                SysTraceParam("clock_id", PT_INT),
+                SysTraceParam("tp", PT_PTR)>("clock_settime64", args, result);
             break;
         default:
             // Unsupported syscall ID
