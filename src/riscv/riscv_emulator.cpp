@@ -350,6 +350,7 @@ namespace Hamster
         return current_inst - predecoded_insts;      \
     } while (0);
 
+    __attribute__((flatten))
     uint32_t
     RiscVEmulator::execute_trace(ExecuteResult &result)
     {
