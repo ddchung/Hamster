@@ -367,14 +367,9 @@ namespace Hamster
             predecoded_insts = traces[1].decoded_insts;
             decoded_count = traces[1].decoded_count;
         }
-        else if (pc == traces[2].pc)
-        {
-            predecoded_insts = traces[2].decoded_insts;
-            decoded_count = traces[2].decoded_count;
-        }
         else
         {
-            last_trace_slot = (last_trace_slot + 1) % 3;
+            last_trace_slot = (last_trace_slot + 1) % 2;
             predecoded_insts = traces[last_trace_slot].decoded_insts;
             traces[last_trace_slot].pc = pc;
 
@@ -1530,7 +1525,6 @@ namespace Hamster
             // Clear trace cache
             traces[0].pc = 0;
             traces[1].pc = 0;
-            traces[2].pc = 0;
             // End the current trace early, to re-fetch instructions next time
             result.status = ExecuteResult::Status::Success;
             OPCODE_RETURN_OK();

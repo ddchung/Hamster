@@ -95,7 +95,7 @@ namespace Hamster
 
         uint32_t execute_trace(ExecuteResult &result);
 
-        DecodedTrace traces[3] = {};
+        DecodedTrace traces[2] = {};
         uint32_t last_trace_slot = 0;
     };
 } // namespace Hamster
