@@ -675,7 +675,10 @@ namespace Hamster
     int Task::init_tid(int new_id)
     {
         if (tid == 0)
+        {
             tid = new_id;
+            emulator.reserved_mem_id = tid;
+        }
 
         Process &proc = process->obj;
 
