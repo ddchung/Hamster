@@ -204,7 +204,7 @@ namespace Hamster
             {
                 if (free_range_size)
                     deallocate(free_range_start, free_range_size);
-                free_range_start = (loc >> HAMSTER_PAGE_SIZE_BITS) + HAMSTER_PAGE_SIZE;
+                free_range_start = (loc << HAMSTER_PAGE_SIZE_BITS) + HAMSTER_PAGE_SIZE;
                 free_range_size = 0;
             }
 

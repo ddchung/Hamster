@@ -85,7 +85,9 @@ namespace Hamster
 
             // Check if we ran out of time
             uint64_t now = _get_sys_time();
-            if (current_task->last_tick + timespec_to_systick(timeout) <= now)
+
+            // Note: not <= so timeout=0 will still check once
+            if (current_task->last_tick + timespec_to_systick(timeout) < now)
             {
                 // Timeout reached, mark all as not ready
                 if ((readfds_loc != 0 &&
