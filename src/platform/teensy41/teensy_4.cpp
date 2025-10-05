@@ -164,6 +164,9 @@ namespace
     struct TeensySpeakerDevice
     {
     };
+    struct TeensySerialDevice
+    {
+    };
 
     IntervalTimer speaker_timer;
 
@@ -256,6 +259,53 @@ namespace Hamster
         }
         return 1; // ready
     }
+
+    template <>
+    ssize_t CharacterDeviceImpl<TeensySerialDevice>::read(void *buf, size_t size)
+    {
+        size_t avail = SerialUSB1.available();
+        size = min(avail, size);
+        if (size == 0)
+        {
+            Hamster::error = EAGAIN;
+            return -1;
+        }
+        SerialUSB1.readBytes((char *)buf, size);
+        return size;
+    }
+
+    template <>
+    ssize_t CharacterDeviceImpl<TeensySerialDevice>::write(const void *buf, size_t size)
+    {
+        size_t avail = SerialUSB1.availableForWrite();
+        size = min(avail, size);
+        if (size == 0)
+        {
+            Hamster::error = EAGAIN;
+            return -1;
+        }
+        SerialUSB1.write((const char *)buf, size);
+        return size;
+    }
+
+    template <>
+    ssize_t CharacterDeviceImpl<TeensySerialDevice>::poll(int op)
+    {
+        if (op & 0x1)
+        {
+            // read
+            if (SerialUSB1.available() == 0)
+                return 0;
+        }
+        if (op & 0x2)
+        {
+            // write
+            if (SerialUSB1.availableForWrite() == 0)
+                return 0;
+        }
+
+        return 1;
+    }
 } // namespace
 
 void Hamster::_init_allocator()
@@ -316,6 +366,10 @@ int Hamster::_mount_rootfs()
     auto speaker_device = Hamster::alloc<CharacterDevice<TeensySpeakerDevice>>();
     Hamster::device_manager.register_device({0, 2}, speaker_device);
     Hamster::vfs.mknod("/dev/speaker", {0, 2}, 0666);
+
+    auto serial_device = Hamster::alloc<CharacterDevice<TeensySerialDevice>>();
+    Hamster::device_manager.register_device({0, 3}, serial_device);
+    Hamster::vfs.mknod("/dev/serial", {0, 3}, 0666);
 
     return 0;
 }
@@ -381,7 +435,7 @@ void Hamster::_trace(const char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    SerialUSB1.vprintf(fmt, args);
+    SerialUSB2.vprintf(fmt, args);
     va_end(args);
 }
 #endif
