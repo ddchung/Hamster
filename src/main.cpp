@@ -205,6 +205,8 @@ int main()
     Hamster::vfs.mknod("/dev/full", {1, 7}, 0666);
     Hamster::vfs.mknod("/dev/random", {1, 8}, 0666);
     Hamster::vfs.mknod("/dev/urandom", {1, 9}, 0666);
+    Hamster::vfs.mkdir("/dev/shm", 0777);
+    Hamster::vfs.mount("/dev/shm", Hamster::alloc<Hamster::RamFs>());
 
     Hamster::scheduler.spawn("/usr/bin/init");
 
