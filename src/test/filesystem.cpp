@@ -438,6 +438,58 @@ void test_filesystem()
         assert(vfs->remove(mapfile) == 0);
     }
 
+    // --- Shared File Mapping Test ---
+    {
+        Hamster::MemorySpace ms1, ms2;
+        constexpr uint32_t page_size = HAMSTER_PAGE_SIZE;
+        constexpr uint32_t region_size = page_size * 2;
+        uint8_t perms = Hamster::PERM_READ | Hamster::PERM_WRITE;
+
+        const char *sharedfile = "/shared_map.bin";
+        int fd = vfs->open(sharedfile, OPEN_RDWR | OPEN_CREAT, 0644);
+        assert(fd >= 0);
+        char filedata[region_size];
+        for (uint32_t i = 0; i < sizeof(filedata); ++i) filedata[i] = (char)(i % 256);
+        assert(vfs->write(fd, filedata, sizeof(filedata)) == (ssize_t)sizeof(filedata));
+        assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
+
+        // Map the file shared into ms1
+        assert(ms1.map_shared_file(0x50000, fd, 0, region_size, perms) == 0);
+        // Write to ms1 mapping
+        char newdata[region_size];
+        for (uint32_t i = 0; i < sizeof(newdata); ++i) newdata[i] = (char)(255 - (i % 256));
+        assert(ms1.memcpy(0x50000, newdata, sizeof(newdata)) == 0);
+
+        // Copy ms1 to ms2 (should share the mapping)
+        ms2 = ms1;
+
+        // Read from ms2 and check it sees the new data
+        char readback[region_size];
+        assert(ms2.memcpy(readback, 0x50000, sizeof(readback)) == 0);
+        assert(memcmp(readback, newdata, sizeof(newdata)) == 0);
+
+        // Write different data in ms2
+        for (uint32_t i = 0; i < sizeof(newdata); ++i) newdata[i] = (char)((i * 3) % 256);
+        assert(ms2.memcpy(0x50000, newdata, sizeof(newdata)) == 0);
+
+        // Read from ms1 and check it sees the new data
+        char readback2[region_size];
+        assert(ms1.memcpy(readback2, 0x50000, sizeof(readback2)) == 0);
+        assert(memcmp(readback2, newdata, sizeof(newdata)) == 0);
+
+        // Read from file and check it sees the new data (shared mapping)
+        assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
+        char filecheck[region_size];
+        assert(vfs->read(fd, filecheck, sizeof(filecheck)) == (ssize_t)sizeof(filecheck));
+        assert(memcmp(filecheck, newdata, sizeof(newdata)) == 0);
+
+        // Cleanup
+        assert(ms1.unmap(0x50000, region_size) == 0);
+        assert(ms2.unmap(0x50000, region_size) == 0);
+        vfs->close(fd);
+        assert(vfs->remove(sharedfile) == 0);
+    }
+
     assert(vfs->unmount("/") == 0);
 }
 

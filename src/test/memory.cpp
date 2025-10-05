@@ -411,6 +411,44 @@ void test_memory()
         pm.free_page(id);
         pm.free_page(id2);
     }
+
+    // Test: Shared anonymous mapping in MemorySpace
+    {
+        Hamster::MemorySpace ms1;
+        Hamster::MemorySpace ms2;
+        constexpr uint32_t test_addr = 0x10000;
+        constexpr uint32_t test_size = 0x1000;
+        constexpr uint8_t perms = Hamster::PERM_READ | Hamster::PERM_WRITE;
+
+        // Map a shared anonymous region in ms1
+        int res = ms1.map_shared_anonymous(test_addr, test_size, perms);
+        assert(res == 0);
+        // Write data to ms1
+        uint8_t pattern[test_size];
+        for (uint32_t i = 0; i < test_size; ++i) pattern[i] = i % 256;
+        res = ms1.memcpy(test_addr, pattern, test_size);
+        assert(res == 0);
+
+        // Copy ms1 to ms2 (should share the mapping)
+        ms2 = ms1;
+
+        // Read from ms2 and check data matches
+        uint8_t readback[test_size];
+        res = ms2.memcpy(readback, test_addr, test_size);
+        assert(res == 0);
+        assert(memcmp(pattern, readback, test_size) == 0);
+
+        // Write new data in ms2
+        for (uint32_t i = 0; i < test_size; ++i) readback[i] = 255 - (i % 256);
+        res = ms2.memcpy(test_addr, readback, test_size);
+        assert(res == 0);
+
+        // Read from ms1 and check it sees the new data (shared)
+        uint8_t readback2[test_size];
+        res = ms1.memcpy(readback2, test_addr, test_size);
+        assert(res == 0);
+        assert(memcmp(readback, readback2, test_size) == 0);
+    }
 }
 
 #endif // NDEBUG

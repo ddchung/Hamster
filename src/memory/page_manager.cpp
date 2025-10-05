@@ -57,6 +57,7 @@ namespace Hamster
         entry->perms = perms;
         entry->refcount = 1;
         entry->zero = 1;
+        entry->shared = 0;
         return id;
     }
 
@@ -77,6 +78,20 @@ namespace Hamster
         entry->zero = 0;
 
         return id;
+    }
+
+    void PageManager::make_shared(uint32_t id)
+    {
+        PageEntry *entry = page_table[id];
+
+        entry->shared = 1;
+
+        // Note: clear swapped on shared file mappings since operations
+        //       simply get forwarded to the file. It also won't ever
+        //       get swapped out since we didn't put it in the queue,
+        //       and this is good because swapping out would be meaningless
+        if (entry->fd)
+            entry->swapped = 0;
     }
 
     void PageManager::free_page(uint32_t id)
@@ -166,6 +181,7 @@ namespace Hamster
         }
         else
         {
+            assert(entry->shared == 0);
             // Private file mapping
             if (vfs.read(entry->fd->fd, entry->data, HAMSTER_PAGE_SIZE) < 0)
                 return -1;
@@ -211,7 +227,8 @@ namespace Hamster
         PageEntry *&entry = page_table[id];
         assert(!entry->swapped);
 
-        if (entry->refcount > 1)
+        // Don't split shared pages to properly implement the sharing
+        if (entry->refcount > 1 && !entry->shared)
         {
             // copy the page
             entry->refcount--;

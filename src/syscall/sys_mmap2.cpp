@@ -19,10 +19,6 @@ namespace Hamster
         int64_t offset64 = (int64_t)offset * 4096;  
 
         // Do some checking
-
-        // We only support private mappings for now
-        if (flags & H_MAP_SHARED)
-            return -H_ENOSYS;
         
         if (flags & (H_MAP_FIXED | H_MAP_FIXED_NOREPLACE) && addr & (HAMSTER_PAGE_SIZE - 1))
             return -H_EINVAL;
@@ -71,13 +67,19 @@ namespace Hamster
 
         // Do the mapping
 
-        if (flags & H_MAP_ANONYMOUS)
+        if (flags & H_MAP_SHARED)
         {
-            memory.map_anonymous(internal_addr, length, internal_perms);
+            if (flags & H_MAP_ANONYMOUS)
+                memory.map_shared_anonymous(internal_addr, length, internal_perms);
+            else
+                memory.map_shared_file(internal_addr, vfs_fd, offset64, length, internal_perms);
         }
         else
         {
-            memory.map_private_file(internal_addr, vfs_fd, offset64, length, internal_perms);
+            if (flags & H_MAP_ANONYMOUS)
+                memory.map_anonymous(internal_addr, length, internal_perms);
+            else
+                memory.map_private_file(internal_addr, vfs_fd, offset64, length, internal_perms);
         }
 
         return internal_addr;

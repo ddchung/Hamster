@@ -5,6 +5,7 @@
 #include <memory/stl_sequential.hpp>
 #include <memory/stl_map.hpp>
 #include <memory/stl_set.hpp>
+#include <filesystem/vfs.hpp>
 #include <errno/errno.h>
 #include <sys/types.h>
 #include <cstdint>
@@ -37,6 +38,7 @@ namespace Hamster
             uint32_t dirty : 1;
             uint32_t perms : 3;
             uint32_t zero : 1;
+            uint32_t shared : 1; // Whether this page is a shared mapping
         };
     public:
 
@@ -104,6 +106,13 @@ namespace Hamster
         uint32_t mmap_private(FileMappingFD *fd, int64_t offset, uint8_t perms = PERM_READ | PERM_WRITE);
 
         /**
+         * @brief Make a page shared
+         * @param id The id of the page to convert to shared mapping
+         * @note This must be called on a page right after it has been created, through `allocate_page` or `mmap_private`
+         */
+        void make_shared(uint32_t id);
+
+        /**
          * @brief Copy a page with copy-on-write management
          * @param id The ID of the page to copy
          * @return The ID of the new page
@@ -142,21 +151,32 @@ namespace Hamster
             PageEntry *entry = page_table[id];
             if (entry->swapped)
                 return -1;
-            assert(entry->data != nullptr);
             assert(addr < HAMSTER_PAGE_SIZE);
-
+            
             // Check readability
             if ((entry->perms & PERM_READ) == 0)
             {
                 error = H_EACCES;
                 return -1;
             }
-
+            
             // Read from the page
             if (addr + size > HAMSTER_PAGE_SIZE)
-                size = HAMSTER_PAGE_SIZE - addr;
-
-            memcpy(buf, entry->data + addr, size);
+            size = HAMSTER_PAGE_SIZE - addr;
+            
+            if HAMSTER_UNLIKELY(entry->fd)
+            {
+                // Note: private file mappings get captured and converted to anon mappings
+                //       by swap_in
+                assert(entry->shared);
+                vfs.seek(entry->fd->fd, entry->offset + addr, H_SEEK_SET);
+                return vfs.read(entry->fd->fd, buf, size);
+            }
+            else
+            {
+                assert(entry->data != nullptr);
+                memcpy(buf, entry->data + addr, size);
+            }
             return size;
         }
 
@@ -175,7 +195,6 @@ namespace Hamster
             PageEntry *entry = page_table[id];
             if (entry->swapped)
                 return -1;
-            assert(entry->data != nullptr);
             assert(addr < HAMSTER_PAGE_SIZE);
 
             if ((entry->perms & PERM_WRITE) == 0)
@@ -196,7 +215,19 @@ namespace Hamster
                 entry = page_table[id];
             }
 
-            memcpy(entry->data + addr, buf, size);
+            if HAMSTER_UNLIKELY(entry->fd)
+            {
+                // Note: private file mappings get captured and converted to anon mappings
+                //       by swap_in
+                assert(entry->shared);
+                vfs.seek(entry->fd->fd, entry->offset + addr, H_SEEK_SET);
+                return vfs.write(entry->fd->fd, buf, size);
+            }
+            else
+            {
+                assert(entry->data != nullptr);
+                memcpy(entry->data + addr, buf, size);
+            }
             return size;
         }
 

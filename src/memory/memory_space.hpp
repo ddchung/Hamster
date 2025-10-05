@@ -136,6 +136,16 @@ namespace Hamster
         int map_anonymous(uint32_t loc, uint32_t size, uint8_t perms);
 
         /**
+         * @brief Map a new shared anonymous memory region, at the specified region
+         * @param loc The starting address of the memory region to map
+         * @param size The size of the memory region to map, rounded up to the nearest page size
+         * @param perms The permissions for the memory region, composed by bitwise-ORing `PERM_*` flags
+         * @return 0 on success, or -1 and set `error` on failiure
+         * @note `loc`, if specified, is rounded down to the nearest page boundary
+         */
+        int map_shared_anonymous(uint32_t loc, uint32_t size, uint8_t perms);
+
+        /**
          * @brief Map a new private file, at the specified location
          * @param loc The starting address of the memory region to map
          * @param fd The file descriptor of the file to map
@@ -146,6 +156,17 @@ namespace Hamster
          * @note `loc`, if specified, is rounded down to the nearest page boundary
          */
         int map_private_file(uint32_t loc, int fd, uint32_t offset, uint32_t size, uint8_t perms);
+
+        /**
+         * @brief Map a new shared file, at the specified location
+         * @param loc The starting address of the memory to map
+         * @param fd The file to map
+         * @param offset The offset within the file
+         * @param size How many bytes to map
+         * @param perms The permissions of the new memory
+         * @return 0 on success, -1 on error and set `error`
+         */
+        int map_shared_file(uint32_t loc, int fd, uint32_t offset, uint32_t size, uint8_t perms);
 
         /**
          * @brief Change the permissions of a region

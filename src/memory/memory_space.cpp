@@ -161,6 +161,24 @@ namespace Hamster
         return 0;
     }
 
+    int MemorySpace::map_shared_anonymous(uint32_t loc, uint32_t size, uint8_t perms)
+    {
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+        next_mmap = std::max<uint32_t>(next_mmap, end << HAMSTER_PAGE_SIZE_BITS);
+
+        for (; loc < end; ++loc)
+        {
+            if (page_table.get_page_direct(loc) == PageTable::PAGE_ID_UNUSED)
+            {
+                uint32_t page = page_manager.allocate_page(perms);
+                page_manager.make_shared(page);
+                page_table.set_page_direct(loc, page);
+            }
+        }
+        return 0;
+    }
+
     int MemorySpace::map_private_file(uint32_t loc, int fd, uint32_t offset, uint32_t size, uint8_t perms)
     {
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
@@ -185,6 +203,37 @@ namespace Hamster
         {
             // note: set_page automatically frees an existing entry, if present
             page_table.set_page_direct(loc, page_manager.mmap_private(fmfd, offset, perms));
+            offset += HAMSTER_PAGE_SIZE;
+        }
+        return 0;
+    }
+
+    int MemorySpace::map_shared_file(uint32_t loc, int fd, uint32_t offset, uint32_t size, uint8_t perms)
+    {
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        // Correctly account for attempts to map in the middle of a page
+        offset = ROUND_DOWN_PAGE(offset);
+
+        next_mmap = std::max<uint32_t>(next_mmap, loc + size);
+
+        FileMappingFD *fmfd = alloc<FileMappingFD>();
+        fmfd->fd = vfs.dup(fd);
+        fmfd->refcount = 0;
+
+        if (fmfd->fd < 0)
+        {
+            dealloc(fmfd);
+            return -1;
+        }
+
+        for (; loc < end; ++loc)
+        {
+            // note: set_page automatically frees an existing entry, if present
+            uint32_t page = page_manager.mmap_private(fmfd, offset, perms);
+            page_manager.make_shared(page);
+            page_table.set_page_direct(loc, page);
             offset += HAMSTER_PAGE_SIZE;
         }
         return 0;
