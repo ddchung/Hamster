@@ -5,7 +5,6 @@
 #include <filesystem/ramfs.hpp>
 #include <filesystem/device_manager.hpp>
 #include <memory/allocator.hpp>
-#include <process/scheduler.hpp>
 #include <kscheduler/kscheduler.hpp>
 #include <riscv/riscv_emulator.hpp>
 #include <driver/base_char_device.hpp>
@@ -55,12 +54,6 @@ namespace
 
         void run() override
         {
-            Hamster::scheduler.tick();
-            if (Hamster::scheduler.num_tasks() == 0)
-            {
-                Hamster::_trace("No tasks left, exiting...\n");
-                flags |= Hamster::KSCHED_REMOVE_NOW | Hamster::KSCHED_REMOVE_ALL;
-            }
         }
     };
 
@@ -207,8 +200,6 @@ int main()
     Hamster::vfs.mknod("/dev/urandom", {1, 9}, 0666);
     Hamster::vfs.mkdir("/dev/shm", 0777);
     Hamster::vfs.mount("/dev/shm", Hamster::alloc<Hamster::RamFs>());
-
-    Hamster::scheduler.spawn("/usr/bin/init");
 
     // Add the user scheduler tick task
     Hamster::kscheduler.add_task(Hamster::alloc<UserSchedulerTickTask>());
