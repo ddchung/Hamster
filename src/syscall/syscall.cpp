@@ -1,4 +1,6 @@
 
+#if 0
+
 #include <syscall/syscall.hpp>
 #include <abi/syscall_id.hpp>
 #include <process/scheduler.hpp>
@@ -1160,3 +1162,5 @@ namespace Hamster
     __attribute__((weak)) int32_t sys_clock_nanosleep_time64(int32_t clock_id, int32_t flags, uint32_t req_loc, uint32_t rem_loc) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_clock_settime64(int32_t clock_id, uint32_t tp_loc) { return -H_ENOSYS; }
 } // namespace Hamster
+
+#endif

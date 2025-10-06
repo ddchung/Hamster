@@ -1,5 +1,7 @@
 // Hamster system calls
 
+#if 0
+
 #pragma once
 
 #include <abi/syscall_id.hpp>
@@ -203,3 +205,6 @@ namespace Hamster
             return sys_fn(current_task->emulator.x[10], current_task->emulator.x[11], current_task->emulator.x[12], current_task->emulator.x[13], current_task->emulator.x[14], current_task->emulator.x[15]);
     }
 }
+
+
+#endif
