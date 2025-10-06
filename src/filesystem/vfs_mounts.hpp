@@ -29,7 +29,7 @@ public:
     Mounts &operator=(Mounts &&other);
     ~Mounts();
     BaseDirectory *resolve_mount(BaseFile *file);
-    BaseFile *resolve_symlink(BaseSymlink *link, int flags);
+    BaseFile *resolve_symlink(BaseSymlink *link, int flags, BaseDirectory *dir = nullptr);
     // Open a file or directory, resolving symlinks if necessary
     // If flags contains OPEN_NOFOLLOW, and the last component is a symlink, it will return the symlink itself
     BaseFile *lopen(const char *path, int flags, int mode, BaseDirectory *dir = nullptr);

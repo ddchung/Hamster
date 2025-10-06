@@ -21,7 +21,7 @@ namespace Hamster
         // Check if the result location is valid
         if (result_loc == 0)
         {
-            error = EFAULT; // Bad address
+            error = H_EFAULT; // Bad address
             return -1;
         }
 
@@ -44,10 +44,10 @@ namespace Hamster
                     break;
                 case H_SEEK_END:
                     // For directories, we don't have an end, so we just ignore this
-                    error = ENOTSUP; // Invalid argument
+                    error = H_ENOTSUP; // Invalid argument
                     return -1;
                 default:
-                    error = EINVAL; // Invalid argument
+                    error = H_EINVAL; // Invalid argument
                     return -1;
             }
         }
@@ -61,9 +61,9 @@ namespace Hamster
         }
 
         // Copy the new offset back to userspace
-        if (current_task->memory->obj.memory.memcpy(result_loc, &new_offset, sizeof(new_offset)) < 0)
+        if (current_task->memory->obj.memory.memcpy_alloc(result_loc, &new_offset, sizeof(new_offset)) < 0)
         {
-            error = EFAULT; // Bad address
+            error = H_EFAULT; // Bad address
             return -1;
         }
 

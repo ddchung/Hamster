@@ -34,37 +34,65 @@ namespace Hamster
             return user_fd->flags;
         case FILE_GETFL:
         {
-            if (user_fd->type != UserFDType::VFS)
-                return -EBADF; // Not a VFS file descriptor
-            int vfs_fd = user_fd->vfs_fd;
-            if (vfs_fd < 0)
-                return -EBADF; // Closed or invalid file descriptor
-            int res = vfs.get_flags(vfs_fd);
-            if (res < 0)
-                return cvt_error();
-            return res;
+            int flags = 0;
+            switch (user_fd->type)
+            {
+            case UserFDType::VFS:
+            {
+                int vfs_fd = user_fd->vfs_fd;
+                if (vfs_fd < 0)
+                    return -H_EBADF; // Closed or invalid file descriptor
+                flags = vfs.get_flags(vfs_fd);
+                if (flags < 0)
+                    return cvt_error();
+                return flags;
+            }
+            case UserFDType::PIPE_WRITE:
+                flags = OPEN_WRONLY;
+                [[fallthrough]];
+            case UserFDType::PIPE_READ:
+                // Note: OPEN_RDONLY == 0
+
+                if (user_fd->flags & USER_FD_PIPE_NONBLOCK)
+                    flags |= OPEN_NONBLOCK;
+                return flags;
+            default:
+                return -H_EBADF;
+            }
         }
         case FILE_SETFL:
         {
             constexpr int changeable_flags = OPEN_APPEND | OPEN_NONBLOCK;
-            if (user_fd->type != UserFDType::VFS)
-                return -EBADF; // Not a VFS file descriptor
-            int vfs_fd = user_fd->vfs_fd;
-            if (vfs_fd < 0)
-                return -EBADF; // Closed or invalid file descriptor
-            int old_flags = vfs.get_flags(vfs_fd);
-            if (old_flags < 0)
-                return cvt_error();
-            int new_flags = (old_flags & ~changeable_flags) | (arg & changeable_flags);
-            if (vfs.set_flags(vfs_fd, new_flags) < 0)
-                return cvt_error();
-            return 0;
+            switch (user_fd->type)
+            {
+            case UserFDType::VFS:
+            {
+                int vfs_fd = user_fd->vfs_fd;
+                if (vfs_fd < 0)
+                    return -H_EBADF; // Closed or invalid file descriptor
+                int old_flags = vfs.get_flags(vfs_fd);
+                if (old_flags < 0)
+                    return cvt_error();
+                int new_flags = (old_flags & ~changeable_flags) | (arg & changeable_flags);
+                if (vfs.set_flags(vfs_fd, new_flags) < 0)
+                    return cvt_error();
+                return 0;
+            }
+            case UserFDType::PIPE_READ:
+            case UserFDType::PIPE_WRITE:
+                if (arg & OPEN_NONBLOCK)
+                    user_fd->flags |= USER_FD_PIPE_NONBLOCK;
+                else
+                    user_fd->flags &= ~USER_FD_PIPE_NONBLOCK;
+                return 0;
+            default:
+                return -H_EBADF;
+            }
         }
         default:
             // Unsupported command
-            error = ENOSYS;
+            error = H_ENOSYS;
             return -1;
         }
     }
 } // namespace Hamster
-

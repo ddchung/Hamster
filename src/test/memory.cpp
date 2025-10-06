@@ -1,23 +1,20 @@
 // test memory
 
 #include <memory/allocator.hpp>
-#include <memory/page.hpp>
+#include <memory/page_manager.hpp>
 #include <memory/memory_space.hpp>
 #include <memory/stl_sequential.hpp>
 #include <memory/stl_map.hpp>
 #include <memory/tree.hpp>
+#include <memory/circular_buffer.hpp>
+#include <memory/allocator.hpp>
 #include <platform/platform.hpp>
+#include <memory/shared_ptr.hpp>
 #include <cassert>
 #include <cstdlib>
+#include <cstring>
 
 #ifndef NDEBUG
-
-static unsigned int hash_int(unsigned int x) {
-    x = ((x >> 16) ^ x) * 0x45d9f3b;
-    x = ((x >> 16) ^ x) * 0x45d9f3b;
-    x = (x >> 16) ^ x;
-    return x;
-}
 
 void test_memory()
 {
@@ -83,234 +80,59 @@ void test_memory()
         }
     }
 
-    // Test default constructor
+    // Page Manager
+    Hamster::PageManager &pm = Hamster::page_manager;
+
+    uint32_t id = pm.allocate_page();
+
+    pm.free_page(id);
+
+    id = pm.allocate_page();
+
+    // Write some data to the page
+    const char *data = "Hello, World!";
+    ssize_t bytes_written = pm.try_write(id, 0, data, strlen(data));
+    if (bytes_written == -1)
     {
-        Hamster::Page page;
-        assert(!page.is_swapped());
+        pm.swap_in(id);
+        bytes_written = pm.try_write(id, 0, data, strlen(data));
     }
+    assert(bytes_written != -1);
 
-    // Test copy constructor
+    // Read the data back from the page
+    char buffer[256];
+    ssize_t bytes_read = pm.try_read(id, 0, buffer, strlen(data));
+    assert(bytes_read != -1);
+    assert(bytes_read == (ssize_t)strlen(data));
+    assert(strncmp(buffer, data, strlen(data)) == 0);
+
+    pm.free_page(id);
+    // Write a lot of data to multiple pages
+    constexpr size_t page_count = 512;
+    for (size_t i = 0; i < page_count; ++i)
     {
-        Hamster::Page page1;
+        uint32_t id = pm.allocate_page();
 
-        // fill with sequential data
-        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
+        // Write some data to the page
+        ssize_t bytes_written = pm.try_write(id, 0, data, strlen(data));
+        if (bytes_written == -1)
         {
-            page1[i] = (uint8_t)i;
+            pm.swap_in(id);
+            bytes_written = pm.try_write(id, 0, data, strlen(data));
         }
-        Hamster::Page page2(page1);
-        assert(!page2.is_swapped());
-        // Check if data is copied correctly
-        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
-        {
-            assert(page2[i] == (uint8_t)i);
-        }
+        assert(bytes_written != -1);
+
+        // Read the data back from the page
+        ssize_t bytes_read = pm.try_read(id, 0, buffer, strlen(data));
+        assert(bytes_read != -1);
+        assert(bytes_read == (ssize_t)strlen(data));
+        assert(strncmp(buffer, data, strlen(data)) == 0);
     }
 
-    // Test copy assignment
+    // Free all allocated pages
+    for (size_t i = 0; i < page_count; ++i)
     {
-        Hamster::Page page1;
-
-        // fill with sequential data
-        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
-        {
-            page1[i] = (uint8_t)i;
-        }
-        Hamster::Page page2;
-        page2 = page1;
-        assert(!page2.is_swapped());
-        // Check if data is copied correctly
-        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
-        {
-            assert(page2[i] == (uint8_t)i);
-        }
-    }
-
-    // Test move constructor
-    {
-        Hamster::Page page1;
-        Hamster::Page page2(std::move(page1));
-        assert(!page2.is_swapped());
-    }
-
-    // Test move assignment
-    {
-        Hamster::Page page1;
-        Hamster::Page page2 = std::move(page1);
-        assert(!page2.is_swapped());
-    }
-
-    // Test swap_in and swap_out
-    {
-        Hamster::Page page;
-        assert(page.swap_out() == 0);
-        assert(page.swap_in() == 0);
-        assert(!page.is_swapped());
-    }
-
-    // Test operator[]
-    {
-        Hamster::Page page;
-        page[0] = 42;
-        assert(page[0] == 42);
-    }
-
-    // Test get_dummy
-    {
-        uint8_t &dummy = Hamster::Page::get_dummy();
-        dummy = 99;
-        assert(Hamster::Page::get_dummy() == 99);
-    }
-
-    {
-        Hamster::Page page;
-        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
-        {
-            page[i] = (uint8_t)i;
-        }
-        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
-        {
-            assert(page[i] == (uint8_t)i);
-        }
-        page.swap_out();
-        page.swap_in();
-        for (int i = 0; i < HAMSTER_PAGE_SIZE; ++i)
-        {
-            assert(page[i] == (uint8_t)i);
-        }
-    }
-
-    // Memory Space
-    Hamster::MemorySpace mem_space;
-
-    // fill with data
-    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
-    {
-        assert(mem_space.write_byte(HAMSTER_PAGE_SIZE + j, (uint8_t)j) == 0);
-    }
-
-    // check data
-    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
-    {
-        uint8_t val;
-        assert(mem_space.read_byte(HAMSTER_PAGE_SIZE + j, val) == 0);
-        assert(val == (uint8_t)j);
-    }
-
-    // fill with random data
-    for (int j = 0; j < 16 * HAMSTER_PAGE_SIZE; ++j)
-    {
-        assert(mem_space.write_byte(HAMSTER_PAGE_SIZE + j, (uint8_t)hash_int(j)) == 0);
-    }
-
-    // check data
-    for (int j = 0; j < 16 * HAMSTER_PAGE_SIZE; ++j)
-    {
-        uint8_t val;
-        assert(mem_space.read_byte(HAMSTER_PAGE_SIZE + j, val) == 0);
-        assert(val == (uint8_t)hash_int(j));
-    }
-
-    mem_space.swap_out_all();
-
-    // check data
-    for (int j = 0; j < 16 * HAMSTER_PAGE_SIZE; ++j)
-    {
-        uint8_t val;
-        assert(mem_space.read_byte(HAMSTER_PAGE_SIZE + j, val) == 0);
-        assert(val == (uint8_t)hash_int(j));
-    }
-
-    // deallocate pages
-    for (int j = 0; j < 16; ++j)
-    {
-        i = mem_space.deallocate_page(HAMSTER_PAGE_SIZE + j * HAMSTER_PAGE_SIZE);
-        assert(i == 0);
-    }
-
-    // check that all pages are deallocated
-    for (int j = 0; j < 16; ++j)
-    {
-        assert(!mem_space.is_allocated(HAMSTER_PAGE_SIZE + j * HAMSTER_PAGE_SIZE));
-    }
-
-    // memcpy
-    uint8_t *src = Hamster::alloc<uint8_t>(0x1234);
-    uint8_t *dest = Hamster::alloc<uint8_t>(0x1234);
-
-    for (int j = 0; j < 0x1234; ++j)
-    {
-        src[j] = (uint8_t)hash_int(j);
-    }
-
-    assert(mem_space.memcpy(0x1234, src, 0x1234) == 0);
-    assert(mem_space.memcpy(dest, 0x1234, 0x1234) == 0);
-
-    for (uint64_t j = 0; j < 0x1234; ++j)
-    {
-        assert(dest[j] == src[j]);
-        assert(mem_space.write_byte(0x1234 + j, src[j]) == 0);
-    }
-
-    Hamster::dealloc(src);
-    Hamster::dealloc(dest);
-
-    // big data
-    // might be slow, so disable
-#   if !defined(ARDUINO)
-
-    for (int j = 0; j < 256; ++j)
-    {
-        assert(i >= 0);
-        for (int k = 0; k < HAMSTER_PAGE_SIZE; ++k)
-        {
-            uint64_t addr = j * HAMSTER_PAGE_SIZE + k;
-            assert(mem_space.write_byte(addr, (uint8_t)hash_int(addr)) == 0);
-        }
-    }
-
-    mem_space.swap_out_all();
-
-    for (uint64_t j = 0; j < 256 * HAMSTER_PAGE_SIZE; ++j)
-    {
-        uint8_t val;
-        assert(mem_space.read_byte(j, val) == 0);
-        assert(val == (uint8_t)hash_int(j));
-    }
-#   endif
-
-    // Test memory space copy constructor
-
-    // fill with some data
-    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
-    {
-        assert(mem_space.write_byte(HAMSTER_PAGE_SIZE + j, (uint8_t)j) == 0);
-    }
-    // check data
-    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
-    {
-        uint8_t val;
-        assert(mem_space.read_byte(HAMSTER_PAGE_SIZE + j, val) == 0);
-        assert(val == (uint8_t)j);
-    }
-    // create a copy
-    Hamster::MemorySpace mem_space_copy(mem_space);
-    // check data in the copy
-    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
-    {
-        uint8_t val;
-        assert(mem_space_copy.read_byte(HAMSTER_PAGE_SIZE + j, val) == 0);
-        assert(val == (uint8_t)j);
-    }
-    // Another copy
-    Hamster::MemorySpace mem_space_copy2;
-    mem_space_copy2 = mem_space;
-    // check data in the second copy
-    for (int j = 0; j < HAMSTER_PAGE_SIZE; ++j)
-    {
-        uint8_t val;
-        assert(mem_space_copy2.read_byte(HAMSTER_PAGE_SIZE + j, val) == 0);
-        assert(val == (uint8_t)j);
+        pm.free_page(i);
     }
 
     // Tree
@@ -354,8 +176,7 @@ void test_memory()
     assert(*it2[1][1] == 8);
 
     int expected[] = {
-        5, 3, 1, 2, 7, 6, 8
-    };
+        5, 3, 1, 2, 7, 6, 8};
 
     i = 0;
 
@@ -371,63 +192,317 @@ void test_memory()
 
     // STLAllocator edge cases
     Hamster::Vector<int> stl_vec;
-    for (int i = 0; i < 100; ++i) stl_vec.push_back(i);
-    for (int i = 0; i < 100; ++i) assert(stl_vec[i] == i);
+    for (int i = 0; i < 100; ++i)
+        stl_vec.push_back(i);
+    for (int i = 0; i < 100; ++i)
+        assert(stl_vec[i] == i);
     stl_vec.clear();
-
-    // Page edge cases
-    Hamster::Page page;
-    page.swap_out();
-    // Accessing swapped-out page returns dummy
-    uint8_t &dummy_ref = page[0];
-    dummy_ref = 55;
-    assert(Hamster::Page::get_dummy() == 55);
-    page.swap_in();
-    // Out-of-bounds access returns dummy
-    uint8_t &oob_ref = page[HAMSTER_PAGE_SIZE + 1000];
-    oob_ref = 77;
-    assert(Hamster::Page::get_dummy() == 77);
-    // Set/get flags
-    page.get_flags() = 0xABCD;
-    assert(page.get_flags() == 0xABCD);
-
-    // MemorySpace edge cases
-    Hamster::MemorySpace ms;
-    // Write/read to unallocated address (should auto-allocate)
-    assert(ms.write_byte(0x100000, 0x42) == 0);
-    uint8_t val = 0;
-    assert(ms.read_byte(0x100000, val) == 0 && val == 0x42);
-    // Deallocate already deallocated page
-    assert(ms.deallocate_page(0x100000) == 0);
-    assert(ms.deallocate_page(0x100000) == -1);
-    // Allocate page at 0x200000
-    assert(ms.write_byte(0x200000, 0x0) == 0);
-    // Set permissions and check enforcement
-    assert(ms.set_permissions(0x200000, 0x0) == 0); // no access
-    assert(ms.write_byte(0x200000, 0x11) == -1); // should fail
-    assert(ms.set_permissions(0x200000, 0x2) == 0); // write only
-    assert(ms.write_byte(0x200000, 0x22) == 0);
-    assert(ms.set_permissions(0x200000, 0x1) == 0); // read only
-    assert(ms.write_byte(0x200000, 0x33) == -1); // should fail
-    // Copy/move assignment and self-assignment
-    Hamster::MemorySpace ms2;
-    ms2 = ms;
-    ms2 = ms2;
-    Hamster::MemorySpace ms3(std::move(ms2));
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wself-move"
-    ms3 = std::move(ms3);
-#pragma GCC diagnostic pop
-
-    // mmap/munmap edge cases (simulate with invalid params)
-    assert(ms.mmap(0x300000, 0x1000, 0x3, MAP_PRIVATE, -1, 0) == -1); // invalid fd
 
     // STLAllocator with map
     Hamster::Map<int, int> stl_map;
     stl_map[1] = 2;
     stl_map[3] = 4;
     assert(stl_map[1] == 2 && stl_map[3] == 4);
+
+    // --- CircularBuffer tests ---
+    {
+        Hamster::CircularBuffer<int> cb;
+        assert(cb.empty());
+        assert(cb.size() == 0);
+
+        // Push elements
+
+        // ()
+
+        cb.push(10);
+        // (10)
+        assert(!cb.empty());
+        assert(cb.size() == 1);
+        assert(cb.front() == 10);
+
+        cb.push(20);
+        // (20, 10)
+        assert(cb.size() == 2);
+        assert(cb.front() == 20);
+
+        cb.push(30);
+        // (30, 10, 20)
+        assert(cb.size() == 3);
+        assert(cb.front() == 30);
+
+        // Advance and retreat
+        cb.advance();
+        // (10, 20, 30)
+        assert(cb.front() == 10);
+        cb.advance();
+        // (20, 30, 10)
+        assert(cb.front() == 20);
+        cb.retreat();
+        // (10, 20, 30)
+        assert(cb.front() == 10);
+        cb.retreat();
+        // (30, 10, 20)
+        assert(cb.front() == 30);
+
+        // Pop elements
+        cb.pop();
+        // (10, 20)
+        assert(cb.size() == 2);
+        assert(cb.front() == 10);
+        cb.pop();
+        // (20)
+        assert(cb.size() == 1);
+        assert(cb.front() == 20);
+        cb.pop();
+        // ()
+        assert(cb.size() == 0);
+        assert(cb.empty());
+
+        // Test emplace
+        cb.emplace(42);
+        // (42)
+        assert(cb.size() == 1);
+        assert(cb.front() == 42);
+        cb.pop();
+        // ()
+        assert(cb.empty());
+    }
+
+    // --- PageManager: double free, copy, permissions, swap, dirty, invalid ops ---
+    {
+        Hamster::PageManager &pm = Hamster::page_manager;
+        uint32_t id = pm.allocate_page();
+
+        // Copy page (copy-on-write)
+        id = pm.allocate_page();
+        uint32_t id2 = pm.copy(id);
+        assert(pm.is_id_valid(id2));
+        pm.free_page(id);
+        pm.free_page(id2);
+
+        // Permissions
+        id = pm.allocate_page();
+        assert(pm.set_permissions(id, Hamster::PERM_READ) == 0);
+        assert(pm.get_permissions(id) == Hamster::PERM_READ);
+        pm.free_page(id);
+
+        // Swap in/out, mark dirty
+        id = pm.allocate_page();
+        assert(pm.swap_in(id) == 0);
+        assert(pm.swap_out(id) == 0);
+        assert(pm.swap_in(id) == 0);
+        pm.mark_page_dirty(id);
+        assert(pm.swap_out(id) == 0);
+        pm.free_page(id);
+    }
+
+    // --- MemorySpace: mapping, unmapping, read/write, protection, edge cases ---
+    {
+        Hamster::MemorySpace ms;
+        constexpr uint32_t page_size = HAMSTER_PAGE_SIZE;
+        constexpr uint32_t region_size = page_size * 2;
+        uint8_t perms = Hamster::PERM_READ | Hamster::PERM_WRITE;
+
+        // Map anonymous region
+        assert(ms.map_anonymous(0, region_size, perms) == 0);
+        // Check mapping
+        assert(ms.is_mapped(0, region_size) == 1);
+        assert(ms.how_many_mapped(0, region_size) == 2);
+
+        // Write to mapped region
+        char testdata[] = "testdata";
+        assert(ms.memcpy(0, testdata, sizeof(testdata)) == 0);
+        char buf[32] = {0};
+        assert(ms.memcpy(buf, 0, sizeof(testdata)) == 0);
+        assert(strcmp(buf, testdata) == 0);
+
+        // memset
+        assert(ms.memset(0, 0xAB, 8) == 0);
+        memset(buf, 0, sizeof(buf));
+        assert(ms.memcpy(buf, 0, 8) == 0);
+        for (int i = 0; i < 8; ++i)
+            assert((unsigned char)buf[i] == 0xAB);
+
+        // mprotect
+        assert(ms.mprotect(0, page_size, Hamster::PERM_READ) == 0);
+        // Unmap
+        assert(ms.unmap(0, page_size) == 0);
+        assert(ms.is_mapped(0, page_size) == 0);
+
+        // Read from unmapped region (should fail)
+        assert(ms.memcpy(buf, 0, 4) != 0);
+
+        // memset_alloc and memcpy_alloc
+        assert(ms.memset_alloc(page_size * 10, 0xCD, 4) == 0);
+        memset(buf, 0, sizeof(buf));
+        assert(ms.memcpy(buf, page_size * 10, 4) == 0);
+        for (int i = 0; i < 4; ++i)
+            assert((unsigned char)buf[i] == 0xCD);
+
+        // read_until_zero
+        char str[] = "abc\0def";
+        assert(ms.memcpy_alloc(page_size * 20, str, sizeof(str)) == 0);
+        char *out = ms.read_until_zero(page_size * 20);
+        assert(out != nullptr && strcmp(out, "abc") == 0);
+        Hamster::dealloc(out);
+
+        // Copy constructor/assignment (copy-on-write)
+        Hamster::MemorySpace ms2 = ms;
+        assert(ms2.is_mapped(page_size * 10, 4) == 1);
+        Hamster::MemorySpace ms3;
+        ms3 = ms2;
+        assert(ms3.is_mapped(page_size * 10, 4) == 1);
+    }
+
+    // Page copying
+    {
+        Hamster::PageManager &pm = Hamster::page_manager;
+
+        // Allocate a page
+        uint32_t id = pm.allocate_page();
+
+        uint8_t buf[32];
+
+        // Fill with data
+        for (uint8_t i = 0; i < sizeof(buf); ++i)
+            buf[i] = i;
+
+        for (uint16_t i = 0; i < (HAMSTER_PAGE_SIZE / sizeof(buf)); ++i)
+            pm.write(id, i * sizeof(buf), buf, sizeof(buf));
+
+        // Copy
+
+        uint32_t id2 = pm.copy(id);
+        assert(pm.is_id_valid(id2));
+
+        // Check both
+
+        uint8_t buf2[32];
+        for (uint16_t i = 0; i < (HAMSTER_PAGE_SIZE / sizeof(buf)); ++i)
+        {
+            pm.read(id, i * sizeof(buf), buf2, sizeof(buf));
+            assert(memcmp(buf, buf2, sizeof(buf)) == 0);
+
+            pm.read(id2, i * sizeof(buf), buf2, sizeof(buf));
+            assert(memcmp(buf, buf2, sizeof(buf)) == 0);
+        }
+
+        // Write to one
+
+        uint8_t buf3[32];
+        for (uint8_t i = 0; i < sizeof(buf); ++i)
+            buf3[i] = sizeof(buf) - i;
+
+        for (uint16_t i = 0; i < (HAMSTER_PAGE_SIZE / sizeof(buf)); ++i)
+            pm.write(id, i * sizeof(buf), buf3, sizeof(buf));
+        
+        // Check both again
+
+        for (uint16_t i = 0; i < (HAMSTER_PAGE_SIZE / sizeof(buf)); ++i)
+        {
+            // Make sure the first page has updated data
+            pm.read(id, i * sizeof(buf), buf2, sizeof(buf));
+            assert(memcmp(buf3, buf2, sizeof(buf)) == 0);
+
+            // ..and the second page has the original data
+            pm.read(id2, i * sizeof(buf), buf2, sizeof(buf));
+            assert(memcmp(buf, buf2, sizeof(buf)) == 0);
+        }
+
+        pm.free_page(id);
+        pm.free_page(id2);
+    }
+
+    // Test: Shared anonymous mapping in MemorySpace
+    {
+        Hamster::MemorySpace ms1;
+        Hamster::MemorySpace ms2;
+        constexpr uint32_t test_addr = 0x10000;
+        constexpr uint32_t test_size = 0x1000;
+        constexpr uint8_t perms = Hamster::PERM_READ | Hamster::PERM_WRITE;
+
+        // Map a shared anonymous region in ms1
+        int res = ms1.map_shared_anonymous(test_addr, test_size, perms);
+        assert(res == 0);
+        // Write data to ms1
+        uint8_t pattern[test_size];
+        for (uint32_t i = 0; i < test_size; ++i) pattern[i] = i % 256;
+        res = ms1.memcpy(test_addr, pattern, test_size);
+        assert(res == 0);
+
+        // Copy ms1 to ms2 (should share the mapping)
+        ms2 = ms1;
+
+        // Read from ms2 and check data matches
+        uint8_t readback[test_size];
+        res = ms2.memcpy(readback, test_addr, test_size);
+        assert(res == 0);
+        assert(memcmp(pattern, readback, test_size) == 0);
+
+        // Write new data in ms2
+        for (uint32_t i = 0; i < test_size; ++i) readback[i] = 255 - (i % 256);
+        res = ms2.memcpy(test_addr, readback, test_size);
+        assert(res == 0);
+
+        // Read from ms1 and check it sees the new data (shared)
+        uint8_t readback2[test_size];
+        res = ms1.memcpy(readback2, test_addr, test_size);
+        assert(res == 0);
+        assert(memcmp(readback, readback2, test_size) == 0);
+    }
+
+    // Test Hamster::SharedPtr
+    {
+        // Basic construction
+        Hamster::SharedPtr<int> sp1({}, 123);
+        assert(*sp1 == 123);
+        // Copy (deep by default)
+        Hamster::SharedPtr<int> sp2 = sp1;
+        assert(*sp2 == 123);
+        *sp2 = 456;
+        // Deep copy: changing sp2 does not affect sp1
+        assert(*sp1 == 123);
+        assert(*sp2 == 456);
+
+        // Shallow copy
+        Hamster::SharedPtr<int, size_t, Hamster::SharedPtrCopyType::SHALLOW> sp3({}, 789);
+        Hamster::SharedPtr<int, size_t, Hamster::SharedPtrCopyType::SHALLOW> sp4 = sp3;
+        assert(*sp3 == 789);
+        assert(*sp4 == 789);
+        *sp4 = 321;
+        // Shallow copy: changing sp4 affects sp3
+        assert(*sp3 == 321);
+        assert(*sp4 == 321);
+
+        // Move semantics
+        Hamster::SharedPtr<int> sp5 = std::move(sp2);
+        assert(*sp5 == 456);
+        assert(!sp2);
+
+        // Test with a struct
+        struct Point { int x, y; };
+        Hamster::SharedPtr<Point> p1({}, 1, 2);
+        assert(p1->x == 1 && p1->y == 2);
+        Hamster::SharedPtr<Point> p2 = p1;
+        p2->x = 10;
+        assert(p1->x == 1); // deep copy
+        assert(p2->x == 10);
+
+        Hamster::SharedPtr<float> f1{{}};
+
+        *f1 = 123.456f;
+        assert(*f1 == 123.456f);
+
+        {
+            Hamster::SharedPtr<float> f2{f1, Hamster::SharedPtrCopyType::SHALLOW};
+            *f2 = 234.567f;
+
+            assert(*f1 == 234.567f);
+            assert(*f2 == 234.567f);
+        }
+
+        assert(*f1 == 234.567f);
+    }
 }
 
 #endif // NDEBUG

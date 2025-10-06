@@ -19,7 +19,7 @@ namespace Hamster
         {
             if (!file)
             {
-                error = EINVAL;
+                error = H_EINVAL;
                 return -1;
             }
 
@@ -28,7 +28,7 @@ namespace Hamster
             auto handle = device_manager.create_handle(file->get_device_id(), file->get_flags());
             if (!handle)
             {
-                error = EIO;
+                error = H_EIO;
                 return -1;
             }
 
@@ -40,7 +40,7 @@ namespace Hamster
         {
             if (!file)
             {
-                error = EINVAL;
+                error = H_EINVAL;
                 return nullptr;
             }
 
@@ -133,7 +133,7 @@ namespace Hamster
     {
         if (!old_path || !new_path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -144,14 +144,14 @@ namespace Hamster
         BaseFile *f = data->fd_manager.get_fd(old_dfd);
         if (!f || f->type() != FileType::Directory)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
         BaseDirectory *old_dir = (BaseDirectory*)f;
         f = data->fd_manager.get_fd(new_dfd);
         if (!f || f->type() != FileType::Directory)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
         BaseDirectory *new_dir = (BaseDirectory*)f;
@@ -203,7 +203,7 @@ namespace Hamster
         {
             dealloc(old_dir);
             dealloc(new_dir);
-            error = ENOENT;
+            error = H_ENOENT;
             return -1;
         }
 
@@ -212,7 +212,7 @@ namespace Hamster
             dealloc(old_file);
             dealloc(old_dir);
             dealloc(new_dir);
-            error = EXDEV; // Cross-device link
+            error = H_EXDEV; // Cross-device link
             return -1;
         }
 
@@ -249,43 +249,45 @@ namespace Hamster
         BaseFile *file = data->fd_manager.get_fd(dfd);
         if (!file)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
         
         if (file->type() != FileType::Directory)
         {
-            error = ENOTDIR;
+            error = H_ENOTDIR;
             return -1;
         }
 
-        BaseDirectory *dir = (BaseDirectory *)file->clone();
-        if (!dir)
-            return -1;
+        BaseDirectory *dir;
         
         const char *last = strrchr(path, '/');
-        if (!last)
+        if (last)
         {
-            error = EINVAL;
-            return -1;
+            dir = (BaseDirectory *)file->clone();
+            if (!dir)
+                return -1;
+
+            String dir_name{path, (size_t)(last - path)};
+            dir = (BaseDirectory*)data->mounts.lopen(dir_name.c_str(), OPEN_WRONLY | OPEN_DIRECTORY, 0, dir);
+            if (!dir)
+                return -1;
+
+            int res = dir->remove(last + 1);
+            dealloc(dir);
+            return res;
         }
-
-        String dir_name{path, (size_t)(last - path)};
-        dir = (BaseDirectory*)data->mounts.lopen(dir_name.c_str(), OPEN_WRONLY | OPEN_DIRECTORY, 0, dir);
-
-        if (!dir)
-            return -1;
-
-        int res = dir->remove(last + 1);
-        dealloc(dir);
-        return res;
+        else
+        {
+            return ((BaseDirectory *)file)->remove(path);
+        }
     }
 
     int VFS::remove(const char *path)
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -310,7 +312,7 @@ namespace Hamster
             BaseSpecialDriverHandle *handle = get_special_handle((BaseSpecialFile *)file);
             if (!handle)
             {
-                error = EBADF;
+                error = H_EBADF;
                 return -1;
             }
 
@@ -363,7 +365,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
         
@@ -372,7 +374,7 @@ namespace Hamster
             return -1;
         if (dir_file->type() != FileType::Directory)
         {
-            error = ENOTDIR;
+            error = H_ENOTDIR;
             return -1;
         }
 
@@ -399,35 +401,34 @@ namespace Hamster
         {
             // Get the special file handle
             BaseSpecialDriverHandle *handle = get_special_handle((BaseSpecialFile *)file);
-            if (!handle)
+            if (handle)
             {
-                dealloc(file);
-                error = EBADF;
-                return -1;
+                buf->mode &= ~STAT_IFMT; // Clear the file type bits
+
+                switch (handle->special_type())
+                {
+                    case SpecialFileType::CharacterDevice:
+                        buf->mode |= STAT_IFCHR;
+                        break;
+                    case SpecialFileType::BlockDevice:
+                        buf->mode |= STAT_IFBLK;
+                        break;
+                    case SpecialFileType::Socket:
+                        buf->mode |= STAT_IFSOCK;
+                        break;
+                    case SpecialFileType::Fifo:
+                        buf->mode |= STAT_IFIFO;
+                        break;
+                    default:
+                        // Do nothing for other types
+                        break;
+                }
+
+                // we must delete the handle here, because this file isn't owned by
+                // the file descriptor manager, and thus won't have the handle deleted
+                // automatically.
+                dealloc(handle);
             }
-
-            buf->mode &= ~STAT_IFMT; // Clear the file type bits
-
-            switch (handle->special_type())
-            {
-                case SpecialFileType::CharacterDevice:
-                    buf->mode |= STAT_IFCHR;
-                    break;
-                case SpecialFileType::BlockDevice:
-                    buf->mode |= STAT_IFBLK;
-                    break;
-                case SpecialFileType::Socket:
-                    buf->mode |= STAT_IFSOCK;
-                    break;
-                case SpecialFileType::Fifo:
-                    buf->mode |= STAT_IFIFO;
-                    break;
-                default:
-                    // Do nothing for other types
-                    break;
-            }
-
-            dealloc(handle);
         }
 
         dealloc(file);
@@ -439,7 +440,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -456,39 +457,39 @@ namespace Hamster
     {
         if (target_dfd < 0 || dfd < 0)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
 
         if (!target_path || !path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
         BaseFile *file = data->fd_manager.get_fd(dfd);
         if (!file)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
         
         if (file->type() != FileType::Directory)
         {
-            error = ENOTDIR;
+            error = H_ENOTDIR;
             return -1;
         }
 
         BaseFile *file2 = data->fd_manager.get_fd(target_dfd);
         if (!file2)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
         
         if (file2->type() != FileType::Directory)
         {
-            error = ENOTDIR;
+            error = H_ENOTDIR;
             return -1;
         }
         
@@ -536,7 +537,7 @@ namespace Hamster
             res = parent_dir->link(target_file, name);
         else
         {
-            error = EPERM;
+            error = H_EPERM;
             res = -1;
         }
 
@@ -550,7 +551,7 @@ namespace Hamster
     {
         if (!target || !path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -628,14 +629,14 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
         BaseFile *file = data->fd_manager.get_fd(dfd);
         if (!file || file->type() != FileType::Directory)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
 
@@ -656,7 +657,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -674,14 +675,14 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
         BaseFile *file = data->fd_manager.get_fd(dfd);
         if (!file || file->type() != FileType::Directory)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
 
@@ -702,7 +703,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -734,7 +735,7 @@ namespace Hamster
             return handle->read((uint8_t*)buf, size);
         }
         default:
-            error = EISDIR;
+            error = H_EISDIR;
             return -1;
         }
     }
@@ -757,7 +758,7 @@ namespace Hamster
             return handle->write((const uint8_t*)buf, size);
         }
         default:
-            error = EISDIR;
+            error = H_EISDIR;
             return -1;
         }
     }
@@ -779,7 +780,7 @@ namespace Hamster
                 return -1;
             if (handle->special_type() != SpecialFileType::BlockDevice)
             {
-                error = EISDIR;
+                error = H_EISDIR;
                 return -1;
             }
             return ((BaseBlockDeviceHandle *)handle)->seek(offset, whence);
@@ -788,7 +789,7 @@ namespace Hamster
             // Seeking in directories changes the offset for list()
             return ((BaseDirectory *)file)->seek(offset, whence);
         default:
-            error = ESPIPE;
+            error = H_ESPIPE;
             return -1;
         }
     }
@@ -812,13 +813,13 @@ namespace Hamster
                 return -1;
             if (handle->special_type() != SpecialFileType::BlockDevice)
             {
-                error = EISDIR;
+                error = H_EISDIR;
                 return -1;
             }
             return ((BaseBlockDeviceHandle *)handle)->tell();
         }
         default:
-            error = EISDIR;
+            error = H_EISDIR;
             return -1;
         }
     }
@@ -831,7 +832,7 @@ namespace Hamster
 
         if (file->type() != FileType::Regular)
         {
-            error = EISDIR;
+            error = H_EISDIR;
             return -1;
         }
         int ret = ((BaseRegularFile *)file)->truncate(size);
@@ -855,13 +856,13 @@ namespace Hamster
                 return -1;
             if (handle->special_type() != SpecialFileType::BlockDevice)
             {
-                error = EISDIR;
+                error = H_EISDIR;
                 return -1;
             }
             return ((BaseBlockDeviceHandle *)handle)->size();
         }
         default:
-            error = EISDIR;
+            error = H_EISDIR;
             return -1;
         }
     }
@@ -871,7 +872,7 @@ namespace Hamster
         BaseFile *file = data->fd_manager.get_fd(dfd);
         if (!file || file->type() != FileType::Directory)
         {
-            error = EBADF;
+            error = H_EBADF;
             return nullptr;
         }   
 
@@ -886,7 +887,7 @@ namespace Hamster
         if (file->type() != FileType::Symlink)
         {
             dealloc(file);
-            error = EINVAL;
+            error = H_EINVAL;
             return nullptr;
         }
 
@@ -909,14 +910,14 @@ namespace Hamster
     {
         if (!path || !target)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
         BaseFile *file = data->fd_manager.get_fd(dfd);
         if (!file || file->type() != FileType::Directory)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }   
 
@@ -931,7 +932,7 @@ namespace Hamster
         if (file->type() != FileType::Symlink)
         {
             dealloc(file);
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -944,7 +945,7 @@ namespace Hamster
     {
         if (!path || !target)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -966,7 +967,7 @@ namespace Hamster
         if (file->type() != FileType::Directory)
         {
             dealloc(file);
-            error = ENOTDIR;
+            error = H_ENOTDIR;
             return nullptr;
         }
 
@@ -992,7 +993,7 @@ namespace Hamster
 
         if (file->type() != FileType::Directory)
         {
-            error = ENOTDIR;
+            error = H_ENOTDIR;
             return -1;
         }
 
@@ -1038,14 +1039,14 @@ namespace Hamster
     {
         if (!path || !target)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
         const char *last = strrchr(path, '/');
         if (!last)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -1065,7 +1066,7 @@ namespace Hamster
     {
         if (!path || !target)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -1074,7 +1075,7 @@ namespace Hamster
             return -1;
         if (dir->type() != FileType::Directory)
         {
-            error = ENOTDIR;
+            error = H_ENOTDIR;
             return -1;
         }
 
@@ -1111,14 +1112,14 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
         const char *last = strrchr(path, '/');
         if (!last)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -1155,7 +1156,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -1164,7 +1165,7 @@ namespace Hamster
             return -1;
         if (dir->type() != FileType::Directory)
         {
-            error = ENOTDIR;
+            error = H_ENOTDIR;
             return -1;
         }
 
@@ -1177,7 +1178,7 @@ namespace Hamster
         const char *last = strrchr(path, '/');
         if (!last)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             dealloc(cloned_file);
             return -1;
         }
@@ -1278,7 +1279,7 @@ namespace Hamster
 
         if (file->type() != FileType::Special)
         {
-            error = ENOTTY;
+            error = H_ENOTTY;
             return -1;
         }
         
@@ -1298,7 +1299,7 @@ namespace Hamster
         BaseFile *cloned_file = file->clone();
         if (!cloned_file)
         {
-            error = EIO;
+            error = H_EIO;
             return -1;
         }
 
@@ -1306,7 +1307,7 @@ namespace Hamster
         if (new_fd < 0)
         {
             dealloc(cloned_file);
-            error = EIO;
+            error = H_EIO;
             return -1;
         }
 
@@ -1330,7 +1331,7 @@ namespace Hamster
 
         if (file->type() != FileType::Special)
         {
-            error = ENOTTY;
+            error = H_ENOTTY;
             return 0;
         }
 
@@ -1341,8 +1342,7 @@ namespace Hamster
         
         if (handle->special_type() != SpecialFileType::CharacterDevice)
         {
-            dealloc(handle);
-            error = ENOTTY;
+            error = H_ENOTTY;
             return 0;
         }
         return ((BaseCharacterDeviceHandle *)handle)->is_tty();
@@ -1355,7 +1355,7 @@ namespace Hamster
             return {0, 0};
         if (file->type() != FileType::Special)
         {
-            error = ENOTTY;
+            error = H_ENOTTY;
             return {0, 0};
         }
 
@@ -1380,7 +1380,7 @@ namespace Hamster
         
         if (file->type() != FileType::Special)
         {
-            error = ENOTTY;
+            error = H_ENOTTY;
             return -1;
         }
 
@@ -1389,5 +1389,27 @@ namespace Hamster
             return -1;
 
         return handle->poll(op);
+    }
+
+    bool VFS::is_valid_fd(int fd)
+    {
+        return data->fd_manager.get_fd(fd) != nullptr;
+    }
+
+    int VFS::sync(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+        return file->sync();
+    }
+
+    int VFS::datasync(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return -1;
+
+        return file->datasync();
     }
 } // namespace Hamster

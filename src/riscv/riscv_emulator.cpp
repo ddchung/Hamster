@@ -1,41 +1,14 @@
-// Hamster risc-v emulator
+// opcode implementation
 
 #include <riscv/riscv_emulator.hpp>
+#include <platform/config.hpp>
 #include <math.h>
 #include <cstring>
-#include <cfenv>
 
 namespace Hamster
 {
     namespace
     {
-        enum Opcodes
-        {
-            OP_REG = 0b0110011,
-            OP_IMM = 0b0010011,
-            OP_LOAD = 0b0000011,
-            OP_STORE = 0b0100011,
-            OP_BRANCH = 0b1100011,
-            OP_JAL = 0b1101111,
-            OP_JALR = 0b1100111,
-            OP_LUI = 0b0110111,
-            OP_AUIPC = 0b0010111,
-            OP_SYSTEM = 0b1110011,
-            OP_MISC_MEM = 0b0001111,
-
-            OP_ATOMIC = 0b0101111,
-
-            OP_FLW = 0b0000111,
-            OP_FSW = 0b0100111,
-            OP_FMADD = 0b1000011,
-            OP_FMSUB = 0b1000111,
-            OP_FNMSUB = 0b1001011,
-            OP_FNMADD = 0b1001111,
-            OP_FREG = 0b1010011,
-
-            OP_CSR = 0b1110011,
-        };
-
         enum Funct3
         {
             FUNCT3_BEQ = 0b000,
@@ -111,54 +84,13 @@ namespace Hamster
             ROUND_DYN = 0b111,
         };
 
-        [[maybe_unused]]
-        const char *reg_names[] = {
-            "zero",
-            "ra",    // return address
-            "sp",    // stack pointer
-            "gp",    // global pointer
-            "tp",    // thread pointer
-            "t0",    // temporary
-            "t1",    // temporary
-            "t2",    // temporary
-            "s0",    // saved register
-            "s1",    // saved register
-            "a0",    // argument/return value
-            "a1",    // argument/return value
-            "a2",    // argument
-            "a3",    // argument
-            "a4",    // argument
-            "a5",    // argument
-            "a6",    // argument
-            "a7",    // argument
-            "s2",    // saved register
-            "s3",    // saved register
-            "s4",    // saved register
-            "s5",    // saved register
-            "s6",    // saved register
-            "s7",    // saved register
-            "s8",    // saved register
-            "s9",    // saved register
-            "s10",   // saved register
-            "s11",   // saved register
-            "t3",    // temporary
-            "t4",    // temporary
-            "t5",    // temporary
-            "t6",    // temporary
-        };
-
         uint32_t sign_extend(uint32_t value, uint32_t bits)
         {
-            if (value & (1U << (bits - 1)))  // Use 1U to avoid signed shift
+            if (value & (1U << (bits - 1))) // Use 1U to avoid signed shift
             {
                 value |= ~((1U << bits) - 1);
             }
             return value;
-        }
-
-        uint32_t extract_opcode(uint32_t inst)
-        {
-            return inst & 0x7F;
         }
 
         uint32_t extract_rd(uint32_t inst)
@@ -231,9 +163,9 @@ namespace Hamster
                 21);
         }
 
-        bool is_double_precision(uint32_t inst)
+        bool is_double_precision(uint32_t funct7)
         {
-            return (extract_funct7(inst) & 0b11) == 0b01;
+            return (funct7 & 0b11) == 0b01;
         }
 
         void write_float_to_double(float f, double &d)
@@ -252,35 +184,6 @@ namespace Hamster
             float f;
             memcpy(&f, buf_float, sizeof(float));
             return f;
-        }
-
-        void set_round_mode(uint8_t round_mode, uint32_t fcsr)
-        {
-            switch (round_mode)
-            {
-            case ROUND_RNE:
-                std::fesetround(FE_TONEAREST);
-                break;
-            case ROUND_RTZ:
-                std::fesetround(FE_TOWARDZERO);
-                break;
-            case ROUND_RDN:
-                std::fesetround(FE_DOWNWARD);
-                break;
-            case ROUND_RUP:
-                std::fesetround(FE_UPWARD);
-                break;
-            case ROUND_RMM:
-                std::fesetround(FE_TOWARDZERO);
-                break;
-            case ROUND_DYN:
-                // Extract rounding mode from FCSR
-                round_mode = (fcsr >> 5) & 0b111;
-                if (round_mode == ROUND_DYN)
-                    return;
-                set_round_mode(round_mode, fcsr);
-                break;
-            }
         }
 
         uint32_t classify_float(float f)
@@ -340,1560 +243,2036 @@ namespace Hamster
 
     int RiscVEmulator::read32(uint32_t addr, uint32_t &out)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        if (!memory->memory.is_allocated(addr) ||
-            !memory->memory.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            return -1;
-        }
-        return memory->memory.memcpy(&out, addr, sizeof(out));
+        if HAMSTER_UNLIKELY (addr & 0b11)
+            // unaligned, use slower routine
+            return memory->memory.memcpy(&out, addr, sizeof(out));
+        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::read16(uint32_t addr, uint16_t &out)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        if (!memory->memory.is_allocated(addr) ||
-            !memory->memory.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            return -1;
-        }
-        return memory->memory.memcpy(&out, addr, sizeof(out));
+        if HAMSTER_UNLIKELY (addr & 0b1)
+            return memory->memory.memcpy(&out, addr, sizeof(out));
+        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::read8(uint32_t addr, uint8_t &out)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        if (!memory->memory.is_allocated(addr) ||
-            !memory->memory.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            return -1;
-        }
-        return memory->memory.memcpy(&out, addr, sizeof(out));
+        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::write32(uint32_t addr, uint32_t value)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        // Note that writing to unallocating memory will allocate it
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        if HAMSTER_UNLIKELY (addr & 0b11)
+            return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::write16(uint32_t addr, uint16_t value)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
+        if HAMSTER_UNLIKELY (addr & 0b1)
+            return memory->memory.memcpy(addr, &value, sizeof(value));
 
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::write8(uint32_t addr, uint8_t value)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::readf32(uint32_t addr, float &out)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        if (!memory->memory.is_allocated(addr) ||
-            !memory->memory.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            return -1;
-        }
-        return memory->memory.memcpy(&out, addr, sizeof(out));
+        if HAMSTER_UNLIKELY (addr & 0b11)
+            return memory->memory.memcpy(&out, addr, sizeof(out));
+        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::readf64(uint32_t addr, double &out)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        if (!memory->memory.is_allocated(addr) ||
-            !memory->memory.is_allocated(addr + sizeof(out) - 1))
-        {
-            // Read from unallocated memory
-            return -1;
-        }
-        return memory->memory.memcpy(&out, addr, sizeof(out));
+        if HAMSTER_UNLIKELY (addr & 0b111)
+            return memory->memory.memcpy(&out, addr, sizeof(out));
+        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::writef32(uint32_t addr, float value)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        // Note that writing to unallocating memory will allocate it
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        if HAMSTER_UNLIKELY (addr & 0b11)
+            return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::writef64(uint32_t addr, double value)
     {
-        if (addr < 128)
-            return -1; // Trap NULL
-
-        // Note that writing to unallocating memory will allocate it
-        return memory->memory.memcpy(addr, &value, sizeof(value));
+        if HAMSTER_UNLIKELY (addr & 0b111)
+            return memory->memory.memcpy(addr, &value, sizeof(value));
+        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
     }
-    
-    RiscVEmulator::ExecuteResult RiscVEmulator::execute()
+
+    RiscVEmulator::ExecuteResult
+    RiscVEmulator::run()
     {
-        uint32_t inst;
+        uint32_t instructions_executed = 0;
         ExecuteResult result;
+        result.status = ExecuteResult::Status::Success;
+        while (instructions_executed < HAMSTER_THREAD_TIME_SLICE && result.status == ExecuteResult::Status::Success)
+            instructions_executed += execute_trace(result);
+        total_instructions_executed += instructions_executed;
+        return result;
+    }
 
-        if (!memory)
+    // Computed goto's are a GNU extension, but they are supported by both GCC and Clang.
+    // Note that we use them here to implement direct threading, which is not the same as a switch-case dispatch due
+    // to its branch prediction friendliness and lower overhead.
+    // Thus, we'll disable -Wpedantic.
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+
+#define DISPATCH()                        \
+    do                                    \
+    {                                     \
+        x[0] = 0;                         \
+        goto * (++current_inst)->handler; \
+    } while (0)
+
+#define OPCODE_RETURN_OK()                               \
+    do                                                   \
+    {                                                    \
+        pc += (current_inst - predecoded_insts) * 4 + 4; \
+        return current_inst - predecoded_insts + 1;      \
+    } while (0)
+
+#define OPCODE_RETURN_FAIL()                         \
+    do                                               \
+    {                                                \
+        pc += (current_inst - predecoded_insts) * 4; \
+        return current_inst - predecoded_insts;      \
+    } while (0);
+
+    __attribute__((flatten))
+    uint32_t
+    RiscVEmulator::execute_trace(ExecuteResult &result)
+    {
+        DecodedInst *predecoded_insts = nullptr;
+        size_t decoded_count = 0;
+
+        if (pc == traces[0].pc)
         {
-            result.status = ExecuteResult::Status::Error;
-            return result;
+            predecoded_insts = traces[0].decoded_insts;
+            decoded_count = traces[0].decoded_count;
+        }
+        else if (pc == traces[1].pc)
+        {
+            predecoded_insts = traces[1].decoded_insts;
+            decoded_count = traces[1].decoded_count;
+        }
+        else
+        {
+            last_trace_slot = (last_trace_slot + 1) % 2;
+            predecoded_insts = traces[last_trace_slot].decoded_insts;
+            traces[last_trace_slot].pc = pc;
+
+            static constexpr void *opcode_jumptable[] = {&&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_add, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sub, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lb, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_addi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sb, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mul, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sll, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lh, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sh, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulh, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_slt, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lw, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_slti, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_sw, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhsu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sltu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_sltui, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_mulhu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_xor, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lbu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_xori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_div, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_srl, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srli, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_sra, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_lhu, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_srai, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_divu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_or, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_ori, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_rem, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op,
+                 &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_and, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_flw, &&case_invalid_op, &&case_op_misc_mem, &&case_andi, &&case_op_auipc, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_fsw, &&case_invalid_op, &&case_op_atomic, &&case_remu, &&case_op_lui, &&case_invalid_op, &&case_invalid_op, &&case_op_fmadd, &&case_op_fmsub, &&case_op_fnmsub, &&case_op_fnmadd, &&case_op_freg, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op, &&case_op_branch, &&case_op_jalr, &&case_invalid_op, &&case_op_jal, &&case_op_system, &&case_invalid_op, &&case_invalid_op, &&case_invalid_op};
+
+
+            static constexpr uint_fast8_t should_break[32] = {
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                1, // branch
+                1, // jalr
+                0, 1 // jal
+            };
+
+            // Fetch instructions
+            if (pc & 0b11)
+            {
+                // Unaligned fetch not allowed
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = pc;
+                return 0;
+            }
+            if (memory->memory.check_executable(pc))
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = pc;
+                return 0;
+            }
+
+            for (auto it = memory->memory.make_iterator(pc); !it.is_end(); ++it)
+            {
+                uint32_t inst = *it;
+
+                // Decode instruction
+                DecodedInst &dinst = predecoded_insts[decoded_count];
+                dinst.inst = inst;
+                uint32_t opcode = (inst >> 2) & 0x1F;
+                dinst.handler = opcode_jumptable[(inst & 0x7000) | ((inst >> 20) & 0xFE0) | opcode];
+                ++decoded_count;
+
+                if (should_break[opcode] || decoded_count == HAMSTER_TRACE_SIZE)
+                {
+                    // Control flow change, end of trace
+                    break;
+                }
+            }
+
+            traces[last_trace_slot].decoded_count = decoded_count;
+            predecoded_insts[decoded_count].handler = &&case_end_trace;
         }
 
-        if (read32(pc, inst) != 0)
-        {
-            result.status = ExecuteResult::Status::IllegalLoad;
-            result.illegal_load.address = pc;
-            return result;
-        }
+        DecodedInst *current_inst = predecoded_insts;
+        uint32_t new_pc;
+        uint32_t dummy;
 
-        uint32_t old_pc = pc;
-
+        if (decoded_count == 0)
+            return 0;
         x[0] = 0;
-        switch (extract_opcode(inst))
+        goto * current_inst->handler;
+
+    case_add:
+        // ADD
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] + x[extract_rs2(current_inst->inst)];
+        DISPATCH();
+    case_sub:
+        // SUB
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] - x[extract_rs2(current_inst->inst)];
+        DISPATCH();
+    case_xor:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] ^ x[extract_rs2(current_inst->inst)];
+        DISPATCH();
+    case_or:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] | x[extract_rs2(current_inst->inst)];
+        DISPATCH();
+    case_and:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] & x[extract_rs2(current_inst->inst)];
+        DISPATCH();
+    case_sll:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] << (x[extract_rs2(current_inst->inst)] & 0x1F);
+        DISPATCH();
+    case_srl:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] >> (x[extract_rs2(current_inst->inst)] & 0x1F);
+        DISPATCH();
+    case_sra:
+        x[extract_rd(current_inst->inst)] = (int32_t)x[extract_rs1(current_inst->inst)] >> (x[extract_rs2(current_inst->inst)] & 0x1F);
+        DISPATCH();
+    case_slt:
+        x[extract_rd(current_inst->inst)] = (int32_t)x[extract_rs1(current_inst->inst)] < (int32_t)x[extract_rs2(current_inst->inst)];
+        DISPATCH();
+    case_sltu:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] < x[extract_rs2(current_inst->inst)];
+        DISPATCH();
+    case_mul:
+        x[extract_rd(current_inst->inst)] = (int64_t)x[extract_rs1(current_inst->inst)] * (int64_t)x[extract_rs2(current_inst->inst)];
+        DISPATCH();
+    case_mulh:
+        x[extract_rd(current_inst->inst)] = ((int64_t)x[extract_rs1(current_inst->inst)] * (int64_t)x[extract_rs2(current_inst->inst)]) >> 32;
+        DISPATCH();
+    case_mulhsu:
+        x[extract_rd(current_inst->inst)] = ((int64_t)x[extract_rs1(current_inst->inst)] * (uint64_t)x[extract_rs2(current_inst->inst)]) >> 32;
+        DISPATCH();
+    case_mulhu:
+        x[extract_rd(current_inst->inst)] = ((uint64_t)x[extract_rs1(current_inst->inst)] * (uint64_t)x[extract_rs2(current_inst->inst)]) >> 32;
+        DISPATCH();
+    case_div:
+        if (x[extract_rs2(current_inst->inst)] == 0)
+            x[extract_rd(current_inst->inst)] = 0xFFFFFFFF;
+        else
+            x[extract_rd(current_inst->inst)] = (int32_t)x[extract_rs1(current_inst->inst)] /
+                (int32_t)x[extract_rs2(current_inst->inst)];
+        DISPATCH();
+    case_divu:
+        if (x[extract_rs2(current_inst->inst)] == 0)
+            x[extract_rd(current_inst->inst)] = 0xFFFFFFFF;
+        else
+            x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] / x[extract_rs2(current_inst->inst)];
+        DISPATCH();
+    case_rem:
+        if (x[extract_rs2(current_inst->inst)] == 0)
+            x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)];
+        else
+            x[extract_rd(current_inst->inst)] = (int32_t)x[extract_rs1(current_inst->inst)] %
+                (int32_t)x[extract_rs2(current_inst->inst)];
+        DISPATCH();
+    case_remu:
+        if (x[extract_rs2(current_inst->inst)] == 0)
+            x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)];
+        else
+            x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] % x[extract_rs2(current_inst->inst)];
+
+        DISPATCH();
+    case_addi:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
+        DISPATCH();
+    case_xori:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] ^ extract_imm_i(current_inst->inst);
+        DISPATCH();
+    case_ori:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] | extract_imm_i(current_inst->inst);
+        DISPATCH();
+    case_andi:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] & extract_imm_i(current_inst->inst);
+        DISPATCH();
+    case_slli:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] << (extract_imm_i(current_inst->inst) & 0x1F);
+        DISPATCH();
+    case_srli:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] >> (extract_imm_i(current_inst->inst) & 0x1F);
+        DISPATCH();
+    case_srai:
+        x[extract_rd(current_inst->inst)] = (int32_t)x[extract_rs1(current_inst->inst)] >> (extract_imm_i(current_inst->inst) & 0x1F);
+        DISPATCH();
+    case_slti:
+        x[extract_rd(current_inst->inst)] = (int32_t)x[extract_rs1(current_inst->inst)] < (int32_t)extract_imm_i(current_inst->inst);
+        DISPATCH();
+    case_sltui:
+        x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] < extract_imm_i(current_inst->inst);
+        DISPATCH();
+    case_lb:
+    {
+        uint8_t value;
+        if (read8(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
         {
-        case OP_REG:
+            _trace("RiscVEmulator: LB: Failed to load 8-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst));
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
+            OPCODE_RETURN_FAIL();
+        }
+        x[extract_rd(current_inst->inst)] = sign_extend(value, 8);
+        DISPATCH();
+    }
+    case_lh:
+    {
+        uint16_t value;
+        if (read16(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
         {
-            if ((extract_funct7(inst) & 0x1) == 0)
-                switch (extract_funct3(inst))
+            _trace("RiscVEmulator: LH: Failed to load 16-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst));
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
+            OPCODE_RETURN_FAIL();
+        }
+        x[extract_rd(current_inst->inst)] = sign_extend(value, 16);
+        DISPATCH();
+    }
+    case_lw:
+    {
+        uint32_t value;
+        if (read32(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
+        {
+            _trace("RiscVEmulator: LW: Failed to load 32-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst));
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
+            OPCODE_RETURN_FAIL();
+        }
+        x[extract_rd(current_inst->inst)] = value;
+        DISPATCH();
+    }
+    case_lbu:
+    {
+        uint8_t value;
+        if (read8(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
+        {
+            _trace("RiscVEmulator: LBU: Failed to load 8-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst));
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
+            OPCODE_RETURN_FAIL();
+        }
+        x[extract_rd(current_inst->inst)] = value;
+        DISPATCH();
+    }
+    case_lhu:
+    {
+        uint16_t value;
+        if (read16(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
+        {
+            _trace("RiscVEmulator: LHU: Failed to load 16-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst));
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
+            OPCODE_RETURN_FAIL();
+        }
+        x[extract_rd(current_inst->inst)] = value;
+        DISPATCH();
+    }
+    case_sb:
+    {
+        uint8_t value = x[extract_rs2(current_inst->inst)] & 0xFF;
+        if (write8(x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst), value) != 0)
+        {
+            _trace("RiscVEmulator: SB: Failed to store 8-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst));
+            result.status = ExecuteResult::Status::IllegalStore;
+            result.illegal_store.address = x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst);
+            result.illegal_store.value = value;
+            OPCODE_RETURN_FAIL();
+        }
+        DISPATCH();
+    }
+    case_sh:
+    {
+        uint16_t value = x[extract_rs2(current_inst->inst)] & 0xFFFF;
+        if (write16(x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst), value) != 0)
+        {
+            _trace("RiscVEmulator: SH: Failed to store 16-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst));
+            result.status = ExecuteResult::Status::IllegalStore;
+            result.illegal_store.address = x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst);
+            result.illegal_store.value = value;
+            OPCODE_RETURN_FAIL();
+        }
+        DISPATCH();
+    }
+    case_sw:
+    {
+        uint32_t value = x[extract_rs2(current_inst->inst)];
+        if (write32(x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst), value) != 0)
+        {
+            _trace("RiscVEmulator: SW: Failed to store 32-bit value at 0x%08x\n", x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst));
+            result.status = ExecuteResult::Status::IllegalStore;
+            result.illegal_store.address = x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst);
+            result.illegal_store.value = value;
+            OPCODE_RETURN_FAIL();
+        }
+        DISPATCH();
+    }
+    case_op_branch:
+        pc += decoded_count * 4 - 4;
+        switch (extract_funct3(current_inst->inst))
+        {
+            // Base branch instructions
+        case FUNCT3_BEQ:
+            if (x[extract_rs1(current_inst->inst)] == x[extract_rs2(current_inst->inst)])
+            {
+                auto new_pc = pc + extract_imm_b(current_inst->inst);
+                // Ensure that it is readable
+                if (read32(new_pc, dummy) != 0)
                 {
-                    // Base integer instructions
-                case FUNCT3_ADD_SUB:
-                    if ((extract_funct7(inst) & 0x20) == 0)
-                        // ADD
-                        x[extract_rd(inst)] =
-                            x[extract_rs1(inst)] + x[extract_rs2(inst)];
-                    else
-                        // SUB
-                        x[extract_rd(inst)] =
-                            x[extract_rs1(inst)] - x[extract_rs2(inst)];
-                    break;
-                case FUNCT3_XOR:
-                    x[extract_rd(inst)] =
-                        x[extract_rs1(inst)] ^ x[extract_rs2(inst)];
-                    break;
-                case FUNCT3_OR:
-                    x[extract_rd(inst)] =
-                        x[extract_rs1(inst)] | x[extract_rs2(inst)];
-                    break;
-                case FUNCT3_AND:
-                    x[extract_rd(inst)] =
-                        x[extract_rs1(inst)] & x[extract_rs2(inst)];
-                    break;
-                case FUNCT3_SLL:
-                    x[extract_rd(inst)] =
-                        x[extract_rs1(inst)] << (x[extract_rs2(inst)] & 0x1F);
-                    break;
-                case FUNCT3_SRL_SRA:
-                    if ((extract_funct7(inst) & 0x20) == 0)
-                        // SRL
-                        x[extract_rd(inst)] =
-                            x[extract_rs1(inst)] >> (x[extract_rs2(inst)] & 0x1F);
-                    else
-                    {
-                        // SRA
-                        x[extract_rd(inst)] = (int32_t)x[extract_rs1(inst)] >> (x[extract_rs2(inst)] & 0x1F);
-                    }
-                    break;
-                case FUNCT3_SLT:
-                    x[extract_rd(inst)] =
-                        (int32_t)x[extract_rs1(inst)] < (int32_t)x[extract_rs2(inst)];
-                    break;
-                case FUNCT3_SLTU:
-                    x[extract_rd(inst)] =
-                        x[extract_rs1(inst)] < x[extract_rs2(inst)];
-                    break;
-                default:
-                    // Unknown funct3
-                    result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
+                    _trace("RiscVEmulator: BEQ: Branch to unreadable address 0x%08x\n", new_pc);
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = new_pc;
+                    OPCODE_RETURN_FAIL();
                 }
+                pc = new_pc;
+            }
             else
-                switch (extract_funct3(inst))
+            {
+                pc += 4;
+            }
+            break;
+        case FUNCT3_BNE:
+            if (x[extract_rs1(current_inst->inst)] != x[extract_rs2(current_inst->inst)])
+            {
+                auto new_pc = pc + extract_imm_b(current_inst->inst);
+                // Ensure that it is readable
+                if (read32(new_pc, dummy) != 0)
                 {
-                    // -M extension instructions
-                case FUNCT3_MUL:
-                    x[extract_rd(inst)] =
-                        (int64_t)x[extract_rs1(inst)] * (int64_t)x[extract_rs2(inst)];
+                    _trace("RiscVEmulator: BNE: Branch to unreadable address 0x%08x\n", new_pc);
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = new_pc;
+                    OPCODE_RETURN_FAIL();
+                }
+                pc = new_pc;
+            }
+            else
+            {
+                pc += 4;
+            }
+            break;
+        case FUNCT3_BLT:
+            if ((int32_t)x[extract_rs1(current_inst->inst)] < (int32_t)x[extract_rs2(current_inst->inst)])
+            {
+                auto new_pc = pc + extract_imm_b(current_inst->inst);
+                // Ensure that it is readable
+                if (read32(new_pc, dummy) != 0)
+                {
+                    _trace("RiscVEmulator: BLT: Branch to unreadable address 0x%08x\n", new_pc);
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = new_pc;
+                    OPCODE_RETURN_FAIL();
+                }
+                pc = new_pc;
+            }
+            else
+            {
+                pc += 4;
+            }
+            break;
+        case FUNCT3_BGE:
+            if ((int32_t)x[extract_rs1(current_inst->inst)] >= (int32_t)x[extract_rs2(current_inst->inst)])
+            {
+                auto new_pc = pc + extract_imm_b(current_inst->inst);
+                // Ensure that it is readable
+                if (read32(new_pc, dummy) != 0)
+                {
+                    _trace("RiscVEmulator: BGE: Branch to unreadable address 0x%08x\n", new_pc);
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = new_pc;
+                    OPCODE_RETURN_FAIL();
+                }
+                pc = new_pc;
+            }
+            else
+            {
+                pc += 4;
+            }
+            break;
+        case FUNCT3_BLTU:
+            if (x[extract_rs1(current_inst->inst)] < x[extract_rs2(current_inst->inst)])
+            {
+                auto new_pc = pc + extract_imm_b(current_inst->inst);
+                // Ensure that it is readable
+                if (read32(new_pc, dummy) != 0)
+                {
+                    _trace("RiscVEmulator: BLTU: Branch to unreadable address 0x%08x\n", new_pc);
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = new_pc;
+                    OPCODE_RETURN_FAIL();
+                }
+                pc = new_pc;
+            }
+            else
+            {
+                pc += 4;
+            }
+            break;
+        case FUNCT3_BGEU:
+            if (x[extract_rs1(current_inst->inst)] >= x[extract_rs2(current_inst->inst)])
+            {
+                auto new_pc = pc + extract_imm_b(current_inst->inst);
+                // Ensure that it is readable
+                if (read32(new_pc, dummy) != 0)
+                {
+                    _trace("RiscVEmulator: BGEU: Branch to unreadable address 0x%08x\n", new_pc);
+                    result.status = ExecuteResult::Status::IllegalLoad;
+                    result.illegal_load.address = new_pc;
+                    OPCODE_RETURN_FAIL();
+                }
+                pc = new_pc;
+            }
+            else
+            {
+                pc += 4;
+            }
+            break;
+        default:
+            // Unknown funct3
+            _trace("RiscVEmulator: Unknown funct3 for OP_BRANCH, instruction: 0x%08x\n", current_inst->inst);
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = current_inst->inst;
+            OPCODE_RETURN_FAIL();
+        }
+
+        assert(current_inst == predecoded_insts + decoded_count - 1);
+        ++total_instructions_executed;
+        return decoded_count;
+
+    case_op_jal:
+        // JAL
+        pc += decoded_count * 4 - 4;
+        new_pc = pc + extract_imm_j(current_inst->inst);
+        // Ensure that it is readable
+        if (read32(new_pc, dummy) != 0)
+        {
+            _trace("RiscVEmulator: JAL: Jump to unreadable address 0x%08x\n", new_pc);
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = new_pc;
+            OPCODE_RETURN_FAIL();
+        }
+        x[extract_rd(current_inst->inst)] = pc + 4;
+        pc = new_pc;
+
+        assert(current_inst == predecoded_insts + decoded_count - 1);
+        ++total_instructions_executed;
+        return decoded_count;
+
+    case_op_jalr:
+        // JALR
+        pc += decoded_count * 4 - 4;
+        new_pc = (x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst)) & ~0x1;
+        // Ensure that it is readable
+        if (read32(new_pc, dummy) != 0)
+        {
+            _trace("RiscVEmulator: JALR: Jump to unreadable address 0x%08x\n", new_pc);
+            result.status = ExecuteResult::Status::IllegalLoad;
+            result.illegal_load.address = new_pc;
+            OPCODE_RETURN_FAIL();
+        }
+        x[extract_rd(current_inst->inst)] = pc + 4;
+        pc = new_pc;
+        assert(current_inst == predecoded_insts + decoded_count - 1);
+        ++total_instructions_executed;
+        return decoded_count;
+
+    case_op_lui:
+        // LUI
+        x[extract_rd(current_inst->inst)] = extract_imm_u(current_inst->inst);
+        DISPATCH();
+    case_op_auipc:
+        // AUIPC
+        x[extract_rd(current_inst->inst)] = (current_inst - predecoded_insts) * 4 + pc + extract_imm_u(current_inst->inst);
+        DISPATCH();
+    case_op_system:
+        // System instructions
+        switch (extract_funct3(current_inst->inst))
+        {
+        case FUNCT3_ECALL_EBREAK:
+            if ((extract_imm_i(current_inst->inst) & 0x1) == 0)
+            {
+                // ECALL
+                result.status = ExecuteResult::Status::ECALL;
+                OPCODE_RETURN_OK();
+            }
+            else
+            {
+                // EBREAK
+                result.status = ExecuteResult::Status::EBREAK;
+                OPCODE_RETURN_OK();
+            }
+            break;
+        case FUNCT3_CSRRW:
+            // CSR Read and Write
+            {
+                uint32_t csr = extract_imm_i(current_inst->inst);
+                switch (csr)
+                {
+                case 0x1: // FP Flags
+                    x[extract_rd(current_inst->inst)] = (fcsr & 0x1F);
+                    fcsr &= ~0x1F;
+                    fcsr |= (x[extract_rs1(current_inst->inst)] & 0x1F);
                     break;
-                case FUNCT3_MULH:
-                    x[extract_rd(inst)] =
-                        ((int64_t)x[extract_rs1(inst)] * (int64_t)x[extract_rs2(inst)]) >> 32;
+                case 0x2: // FP default round mode
+                    x[extract_rd(current_inst->inst)] = (fcsr >> 5) & 0b111;
+                    fcsr &= ~(0b111 << 5);
+                    fcsr |= ((x[extract_rs1(current_inst->inst)] & 0b111) << 5);
                     break;
-                case FUNCT3_MULHSU:
-                    x[extract_rd(inst)] =
-                        ((int64_t)x[extract_rs1(inst)] * (uint64_t)x[extract_rs2(inst)]) >> 32;
-                    break;
-                case FUNCT3_MULHU:
-                    x[extract_rd(inst)] =
-                        ((uint64_t)x[extract_rs1(inst)] * (uint64_t)x[extract_rs2(inst)]) >> 32;
-                    break;
-                case FUNCT3_DIV:
-                    if (x[extract_rs2(inst)] == 0)
-                        x[extract_rd(inst)] = 0xFFFFFFFF;
-                    else
-                        x[extract_rd(inst)] =
-                            (int32_t)x[extract_rs1(inst)] /
-                            (int32_t)x[extract_rs2(inst)];
-                    break;
-                case FUNCT3_DIVU:
-                    if (x[extract_rs2(inst)] == 0)
-                        x[extract_rd(inst)] = 0xFFFFFFFF;
-                    else
-                        x[extract_rd(inst)] =
-                            x[extract_rs1(inst)] / x[extract_rs2(inst)];
-                    break;
-                case FUNCT3_REM:
-                    if (x[extract_rs2(inst)] == 0)
-                        x[extract_rd(inst)] = x[extract_rs1(inst)];
-                    else
-                        x[extract_rd(inst)] =
-                            (int32_t)x[extract_rs1(inst)] %
-                            (int32_t)x[extract_rs2(inst)];
-                    break;
-                case FUNCT3_REMU:
-                    if (x[extract_rs2(inst)] == 0)
-                        x[extract_rd(inst)] = x[extract_rs1(inst)];
-                    else
-                        x[extract_rd(inst)] =
-                            x[extract_rs1(inst)] % x[extract_rs2(inst)];
+                case 0x3: // whole FCSR
+                    x[extract_rd(current_inst->inst)] = fcsr;
+                    fcsr = x[extract_rs1(current_inst->inst)] & 0xFFFFFFFF;
                     break;
                 default:
-                    // Unknown funct3
+                    // Unknown CSR
+                    _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", current_inst->inst);
                     result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
+                    result.illegal_instruction.instruction = current_inst->inst;
+                    OPCODE_RETURN_FAIL();
                 }
+            }
+            break;
+        case FUNCT3_CSRRS:
+            // CSR Read and Set
+            {
+                uint32_t csr = extract_imm_i(current_inst->inst);
+                switch (csr)
+                {
+                case 0x1: // FP Flags
+                    x[extract_rd(current_inst->inst)] = (fcsr & 0x1F);
+                    fcsr |= (x[extract_rs1(current_inst->inst)] & 0x1F);
+                    break;
+                case 0x2: // FP default round mode
+                    x[extract_rd(current_inst->inst)] = (fcsr >> 5) & 0b111;
+                    fcsr |= ((x[extract_rs1(current_inst->inst)] & 0b111) << 5);
+                    break;
+                case 0x3: // whole FCSR
+                    x[extract_rd(current_inst->inst)] = fcsr;
+                    fcsr |= (x[extract_rs1(current_inst->inst)] & 0xFFFFFFFF);
+                    break;
+                default:
+                    // Unknown CSR
+                    _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", current_inst->inst);
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = current_inst->inst;
+                    OPCODE_RETURN_FAIL();
+                }
+            }
+            break;
+        case FUNCT3_CSRRC:
+            // CSR Read and Clear
+            {
+                uint32_t csr = extract_imm_i(current_inst->inst);
+                switch (csr)
+                {
+                case 0x1: // FP Flags
+                    x[extract_rd(current_inst->inst)] = (fcsr & 0x1F);
+                    fcsr &= ~(x[extract_rs1(current_inst->inst)] & 0x1F);
+                    break;
+                case 0x2: // FP default round mode
+                    x[extract_rd(current_inst->inst)] = (fcsr >> 5) & 0b111;
+                    fcsr &= ~((x[extract_rs1(current_inst->inst)] & 0b111) << 5);
+                    break;
+                case 0x3: // whole FCSR
+                    x[extract_rd(current_inst->inst)] = fcsr;
+                    fcsr &= ~(x[extract_rs1(current_inst->inst)] & 0xFFFFFFFF);
+                    break;
+                default:
+                    // Unknown CSR
+                    _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", current_inst->inst);
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = current_inst->inst;
+                    OPCODE_RETURN_FAIL();
+                }
+            }
+            break;
+        case FUNCT3_CSRRWI:
+            // CSR Read and Write Immediate
+            {
+                uint32_t csr = extract_imm_i(current_inst->inst);
+                switch (csr)
+                {
+                case 0x1: // FP Flags
+                    x[extract_rd(current_inst->inst)] = (fcsr & 0x1F);
+                    fcsr &= ~0x1F;
+                    fcsr |= (extract_rs1(current_inst->inst) & 0x1F);
+                    break;
+                case 0x2: // FP default round mode
+                    x[extract_rd(current_inst->inst)] = (fcsr >> 5) & 0b111;
+                    fcsr &= ~(0b111 << 5);
+                    fcsr |= ((extract_rs1(current_inst->inst) & 0b111) << 5);
+                    break;
+                case 0x3: // whole FCSR
+                    x[extract_rd(current_inst->inst)] = fcsr;
+                    fcsr = extract_rs1(current_inst->inst) & 0xFFFFFFFF;
+                    break;
+                default:
+                    // Unknown CSR
+                    _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", current_inst->inst);
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = current_inst->inst;
+                    OPCODE_RETURN_FAIL();
+                }
+            }
+            break;
+        case FUNCT3_CSRRSI:
+            // CSR Read and Set Immediate
+            {
+                uint32_t csr = extract_imm_i(current_inst->inst);
+                switch (csr)
+                {
+                case 0x1: // FP Flags
+                    x[extract_rd(current_inst->inst)] = (fcsr & 0x1F);
+                    fcsr |= (extract_rs1(current_inst->inst) & 0x1F);
+                    break;
+                case 0x2: // FP default round mode
+                    x[extract_rd(current_inst->inst)] = (fcsr >> 5) & 0b111;
+                    fcsr |= ((extract_rs1(current_inst->inst) & 0b111) << 5);
+                    break;
+                case 0x3: // whole FCSR
+                    x[extract_rd(current_inst->inst)] = fcsr;
+                    fcsr |= (extract_rs1(current_inst->inst) & 0xFFFFFFFF);
+                    break;
+                default:
+                    // Unknown CSR
+                    _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", current_inst->inst);
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = current_inst->inst;
+                    OPCODE_RETURN_FAIL();
+                }
+            }
+            break;
+        case FUNCT3_CSRRCI:
+            // CSR Read and Clear Immediate
+            {
+                uint32_t csr = extract_imm_i(current_inst->inst);
+                switch (csr)
+                {
+                case 0x1: // FP Flags
+                    x[extract_rd(current_inst->inst)] = (fcsr & 0x1F);
+                    fcsr &= ~(extract_rs1(current_inst->inst) & 0x1F);
+                    break;
+                case 0x2: // FP default round mode
+                    x[extract_rd(current_inst->inst)] = (fcsr >> 5) & 0b111;
+                    fcsr &= ~((extract_rs1(current_inst->inst) & 0b111) << 5);
+                    break;
+                case 0x3: // whole FCSR
+                    x[extract_rd(current_inst->inst)] = fcsr;
+                    fcsr &= ~(extract_rs1(current_inst->inst) & 0xFFFFFFFF);
+                    break;
+                default:
+                    // Unknown CSR
+                    _trace("RiscVEmulator: Unknown CSR access, instruction: 0x%08x\n", current_inst->inst);
+                    result.status = ExecuteResult::Status::IllegalInstruction;
+                    result.illegal_instruction.instruction = current_inst->inst;
+                    OPCODE_RETURN_FAIL();
+                }
+            }
+            break;
+        default:
+            // Unknown funct3
+            _trace("RiscVEmulator: Unknown funct3 for OP_CSR, instruction: 0x%08x\n", current_inst->inst);
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = current_inst->inst;
+            OPCODE_RETURN_FAIL();
+        }
+        DISPATCH();
+    case_op_misc_mem:
+        // FENCE
+        if (extract_funct3(current_inst->inst) == FUNCT3_FENCE)
+        {
+            // No operation
+        }
+        else if (extract_funct3(current_inst->inst) == FUNCT3_FENCE_I)
+        {
+            // FENCE.I
+            // Clear trace cache
+            traces[0].pc = 0;
+            traces[1].pc = 0;
+            // End the current trace early, to re-fetch instructions next time
+            result.status = ExecuteResult::Status::Success;
+            OPCODE_RETURN_OK();
+        }
+        else
+        {
+            // Unknown funct3
+            _trace("RiscVEmulator: Unknown funct3 for OP_MISC_MEM, instruction: 0x%08x\n", current_inst->inst);
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = current_inst->inst;
+            OPCODE_RETURN_FAIL();
+        }
+        DISPATCH();
+    case_op_atomic:
+        if (extract_funct3(current_inst->inst) != 0x2)
+        {
+            // Unknown funct3
+            result.status = ExecuteResult::Status::IllegalInstruction;
+            result.illegal_instruction.instruction = current_inst->inst;
+            OPCODE_RETURN_FAIL();
+        }
+        switch (extract_funct5(current_inst->inst))
+        {
+        case FUNCT5_LR:
+        {
+            // Load Reserved
+            uint32_t val;
+            if (read32(x[extract_rs1(current_inst->inst)], val) != 0)
+            {
+                _trace("RiscVEmulator: LR: Load from unreadable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
+                OPCODE_RETURN_FAIL();
+            }
+            memory->reserved_mem[x[extract_rs1(current_inst->inst)]] = reserved_mem_id;
+            x[extract_rd(current_inst->inst)] = val;
             break;
         }
-        case OP_IMM:
+        case FUNCT5_SC:
         {
-            switch (extract_funct3(inst))
+            // Store Conditional
+            auto it = memory->reserved_mem.find(x[extract_rs1(current_inst->inst)]);
+            if (it == memory->reserved_mem.end() || it->second != reserved_mem_id)
             {
-                // Base integer instructions
-            case FUNCT3_ADD_SUB:
-                // ADDI, there is no SUBI
-                x[extract_rd(inst)] =
-                    x[extract_rs1(inst)] + extract_imm_i(inst);
+                // Not reserved
+                x[extract_rd(current_inst->inst)] = 1;
                 break;
-            case FUNCT3_XOR:
-                x[extract_rd(inst)] =
-                    x[extract_rs1(inst)] ^ extract_imm_i(inst);
-                break;
-            case FUNCT3_OR:
-                x[extract_rd(inst)] =
-                    x[extract_rs1(inst)] | extract_imm_i(inst);
-                break;
-            case FUNCT3_AND:
-                x[extract_rd(inst)] =
-                    x[extract_rs1(inst)] & extract_imm_i(inst);
-                break;
-            case FUNCT3_SLL:
-                x[extract_rd(inst)] =
-                    x[extract_rs1(inst)] << (extract_imm_i(inst) & 0x1F);
-                break;
-            case FUNCT3_SRL_SRA:
-                if ((extract_funct7(inst) & 0x20) == 0)
-                    // SRLI
-                    x[extract_rd(inst)] =
-                        x[extract_rs1(inst)] >> (extract_imm_i(inst) & 0x1F);
-                else
-                {
-                    // SRAI
-                    x[extract_rd(inst)] =
-                        (int32_t)x[extract_rs1(inst)] >> (extract_imm_i(inst) & 0x1F);
-                }
-                break;
-            case FUNCT3_SLT:
-                x[extract_rd(inst)] =
-                    (int32_t)x[extract_rs1(inst)] < (int32_t)extract_imm_i(inst);
-                break;
-            case FUNCT3_SLTU:
-                x[extract_rd(inst)] =
-                    x[extract_rs1(inst)] < extract_imm_i(inst);
-                break;
-            default:
-                // Unknown funct3
-                result.status = ExecuteResult::Status::IllegalInstruction;
-                result.illegal_instruction.instruction = inst;
-                return result;
             }
+            uint32_t val = x[extract_rs2(current_inst->inst)];
+            if (write32(x[extract_rs1(current_inst->inst)], val) != 0)
+            {
+                _trace("RiscVEmulator: SC: Store to bad address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
+                result.illegal_store.value = val;
+                OPCODE_RETURN_FAIL();
+            }
+            memory->reserved_mem.erase(it);
+            x[extract_rd(current_inst->inst)] = 0;
             break;
         }
-        case OP_LOAD:
+        case FUNCT5_AMOSWAP:
         {
-            switch (extract_funct3(inst))
+            // Atomic Swap
+            uint32_t old_val;
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
-                // Base load instructions
-            case FUNCT3_LB:
+                _trace("RiscVEmulator: AMOSWAP: Swap from unreadable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
+                OPCODE_RETURN_FAIL();
+            }
+            uint32_t new_val = x[extract_rs2(current_inst->inst)];
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
             {
-                uint8_t value;
-                if (read8(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
-                    return result;
-                }
-                x[extract_rd(inst)] = sign_extend(value, 8);
+                _trace("RiscVEmulator: AMOSWAP: Swap to unwritable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
+                result.illegal_store.value = new_val;
+                OPCODE_RETURN_FAIL();
             }
-            break;
-            case FUNCT3_LH:
-            {
-                uint16_t value;
-                if (read16(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
-                    return result;
-                }
-                x[extract_rd(inst)] = sign_extend(value, 16);
-            }
-            break;
-            case FUNCT3_LW:
-            {
-                uint32_t value;
-                if (read32(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
-                    return result;
-                }
-                x[extract_rd(inst)] = value;
-            }
-            break;
-            case FUNCT3_LBU:
-            {
-                uint8_t value;
-                if (read8(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
-                    return result;
-                }
-                x[extract_rd(inst)] = value;
-            }
-            break;
-            case FUNCT3_LHU:
-            {
-                uint16_t value;
-                if (read16(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
-                    return result;
-                }
-                x[extract_rd(inst)] = value;
-            }
-            break;
-            default:
-                // Unknown funct3
-                result.status = ExecuteResult::Status::IllegalInstruction;
-                result.illegal_instruction.instruction = inst;
-                return result;
-            }
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
-        case OP_STORE:
+        case FUNCT5_AMOADD:
         {
-            switch (extract_funct3(inst))
+            // Atomic Add
+            uint32_t old_val;
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
-                // Base store instructions
-            case FUNCT3_SB:
+                _trace("RiscVEmulator: AMOADD: Load from unreadable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
+                OPCODE_RETURN_FAIL();
+            }
+            uint32_t new_val = old_val + x[extract_rs2(current_inst->inst)];
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
             {
-                uint8_t value = x[extract_rs2(inst)] & 0xFF;
-                if (write8(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
-                    result.illegal_store.value = value;
-                    return result;
-                }
+                _trace("RiscVEmulator: AMOADD: Store to unwritable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
+                result.illegal_store.value = new_val;
+                OPCODE_RETURN_FAIL();
             }
-            break;
-            case FUNCT3_SH:
-            {
-                uint16_t value = x[extract_rs2(inst)] & 0xFFFF;
-                if (write16(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
-                    result.illegal_store.value = value;
-                    return result;
-                }
-            }
-            break;
-            case FUNCT3_SW:
-            {
-                uint32_t value = x[extract_rs2(inst)];
-                if (write32(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
-                    result.illegal_store.value = value;
-                    return result;
-                }
-            }
-            break;
-            default:
-                // Unknown funct3
-                result.status = ExecuteResult::Status::IllegalInstruction;
-                result.illegal_instruction.instruction = inst;
-                return result;
-            }
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
-        case OP_BRANCH:
+        case FUNCT5_AMOAND:
         {
-            switch (extract_funct3(inst))
+            // Atomic AND
+            uint32_t old_val;
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
-                // Base branch instructions
-            case FUNCT3_BEQ:
-                if (x[extract_rs1(inst)] == x[extract_rs2(inst)])
-                {
-                    auto new_pc = pc + extract_imm_b(inst);
-                    // Ensure that it is readable
-                    uint32_t dummy;
-                    if (read32(new_pc, dummy) != 0)
-                    {
-                        result.status = ExecuteResult::Status::IllegalLoad;
-                        result.illegal_load.address = new_pc;
-                        return result;
-                    }
-                    pc = new_pc;
-                }
-                break;
-            case FUNCT3_BNE:
-                if (x[extract_rs1(inst)] != x[extract_rs2(inst)])
-                {
-                    auto new_pc = pc + extract_imm_b(inst);
-                    // Ensure that it is readable
-                    uint32_t dummy;
-                    if (read32(new_pc, dummy) != 0)
-                    {
-                        result.status = ExecuteResult::Status::IllegalLoad;
-                        result.illegal_load.address = new_pc;
-                        return result;
-                    }
-                    pc = new_pc;
-                }
-                break;
-            case FUNCT3_BLT:
-                if ((int32_t)x[extract_rs1(inst)] < (int32_t)x[extract_rs2(inst)])
-                {
-                    auto new_pc = pc + extract_imm_b(inst);
-                    // Ensure that it is readable
-                    uint32_t dummy;
-                    if (read32(new_pc, dummy) != 0)
-                    {
-                        result.status = ExecuteResult::Status::IllegalLoad;
-                        result.illegal_load.address = new_pc;
-                        return result;
-                    }
-                    pc = new_pc;
-                }
-                break;
-            case FUNCT3_BGE:
-                if ((int32_t)x[extract_rs1(inst)] >= (int32_t)x[extract_rs2(inst)])
-                {
-                    auto new_pc = pc + extract_imm_b(inst);
-                    // Ensure that it is readable
-                    uint32_t dummy;
-                    if (read32(new_pc, dummy) != 0)
-                    {
-                        result.status = ExecuteResult::Status::IllegalLoad;
-                        result.illegal_load.address = new_pc;
-                        return result;
-                    }
-                    pc = new_pc;
-                }
-                break;
-            case FUNCT3_BLTU:
-                if (x[extract_rs1(inst)] < x[extract_rs2(inst)])
-                {
-                    auto new_pc = pc + extract_imm_b(inst);
-                    // Ensure that it is readable
-                    uint32_t dummy;
-                    if (read32(new_pc, dummy) != 0)
-                    {
-                        result.status = ExecuteResult::Status::IllegalLoad;
-                        result.illegal_load.address = new_pc;
-                        return result;
-                    }
-                    pc = new_pc;
-                }
-                break;
-            case FUNCT3_BGEU:
-                if (x[extract_rs1(inst)] >= x[extract_rs2(inst)])
-                {
-                    auto new_pc = pc + extract_imm_b(inst);
-                    // Ensure that it is readable
-                    uint32_t dummy;
-                    if (read32(new_pc, dummy) != 0)
-                    {
-                        result.status = ExecuteResult::Status::IllegalLoad;
-                        result.illegal_load.address = new_pc;
-                        return result;
-                    }
-                    pc = new_pc;
-                }
-                break;
-            default:
-                // Unknown funct3
-                result.status = ExecuteResult::Status::IllegalInstruction;
-                result.illegal_instruction.instruction = inst;
-                return result;
+                _trace("RiscVEmulator: AMOAND: Load from unreadable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
+                OPCODE_RETURN_FAIL();
             }
+            uint32_t new_val = old_val & x[extract_rs2(current_inst->inst)];
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
+            {
+                _trace("RiscVEmulator: AMOAND: Store to unwritable address 0x%08x\n", x[extract_rs1(current_inst->inst)]);
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
+                result.illegal_store.value = new_val;
+                OPCODE_RETURN_FAIL();
+            }
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
-        case OP_JAL:
+        case FUNCT5_AMOOR:
         {
-            // JAL
-            auto new_pc = pc + extract_imm_j(inst);
-            // Ensure that it is readable
-            uint32_t dummy;
-            if (read32(new_pc, dummy) != 0)
+            // Atomic OR
+            uint32_t old_val;
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = new_pc;
-                return result;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
+                OPCODE_RETURN_FAIL();
             }
-            x[extract_rd(inst)] = pc + 4;
-            pc = new_pc;
+            uint32_t new_val = old_val | x[extract_rs2(current_inst->inst)];
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
+                result.illegal_store.value = new_val;
+                OPCODE_RETURN_FAIL();
+            }
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
-        case OP_JALR:
+        case FUNCT5_AMOXOR:
         {
-            // JALR
-            auto new_pc = (x[extract_rs1(inst)] + extract_imm_i(inst)) & ~0x1;
-            // Ensure that it is readable
-            uint32_t dummy;
-            if (read32(new_pc, dummy) != 0)
+            // Atomic XOR
+            uint32_t old_val;
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
-                result.illegal_load.address = new_pc;
-                return result;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
+                OPCODE_RETURN_FAIL();
             }
-            x[extract_rd(inst)] = pc + 4;
-            pc = new_pc;
+            uint32_t new_val = old_val ^ x[extract_rs2(current_inst->inst)];
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
+                result.illegal_store.value = new_val;
+                OPCODE_RETURN_FAIL();
+            }
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
-        case OP_LUI:
+        case FUNCT5_AMOMAX:
         {
-            // LUI
-            x[extract_rd(inst)] = extract_imm_u(inst);
+            // Atomic Max
+            uint32_t old_val;
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
+                OPCODE_RETURN_FAIL();
+            }
+            uint32_t new_val = std::max((int32_t)old_val, (int32_t)x[extract_rs2(current_inst->inst)]);
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
+                result.illegal_store.value = new_val;
+                OPCODE_RETURN_FAIL();
+            }
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
-        case OP_AUIPC:
+        case FUNCT5_AMOMIN:
         {
-            // AUIPC
-            x[extract_rd(inst)] = pc + extract_imm_u(inst);
+            // Atomic Min
+            uint32_t old_val;
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
+                OPCODE_RETURN_FAIL();
+            }
+            uint32_t new_val = std::min((int32_t)old_val, (int32_t)x[extract_rs2(current_inst->inst)]);
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
+                result.illegal_store.value = new_val;
+                OPCODE_RETURN_FAIL();
+            }
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
-        case OP_SYSTEM:
+        case FUNCT5_AMOMAXU:
         {
-            // System instructions
-            switch (extract_funct3(inst))
+            // Atomic Max Unsigned
+            uint32_t old_val;
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
-            case FUNCT3_ECALL_EBREAK:
-                if ((extract_imm_i(inst) & 0x1) == 0)
-                {
-                    // ECALL
-                    pc += 4;
-                    result.status = ExecuteResult::Status::ECALL;
-                    return result;
-                }
-                else
-                {
-                    // EBREAK
-                    pc += 4;
-                    result.status = ExecuteResult::Status::EBREAK;
-                    return result;
-                }
-                break;
-            case FUNCT3_CSRRW:
-                // CSR Read and Write
-                {
-                    uint32_t csr = extract_imm_i(inst);
-                    switch (csr)
-                    {
-                    case 0x1: // FP Flags
-                        x[extract_rd(inst)] = (fcsr & 0x1F);
-                        fcsr &= ~0x1F;
-                        fcsr |= (x[extract_rs1(inst)] & 0x1F);
-                        break;
-                    case 0x2: // FP default round mode
-                        x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
-                        fcsr &= ~(0b111 << 5);
-                        fcsr |= ((x[extract_rs1(inst)] & 0b111) << 5);
-                        break;
-                    case 0x3: // whole FCSR
-                        x[extract_rd(inst)] = fcsr;
-                        fcsr = x[extract_rs1(inst)] & 0xFFFFFFFF;
-                        break;
-                    default:
-                        // Unknown CSR
-                        result.status = ExecuteResult::Status::IllegalInstruction;
-                        result.illegal_instruction.instruction = inst;
-                        return result;
-                    }
-                }
-                break;
-            case FUNCT3_CSRRS:
-                // CSR Read and Set
-                {
-                    uint32_t csr = extract_imm_i(inst);
-                    switch (csr)
-                    {
-                    case 0x1: // FP Flags
-                        x[extract_rd(inst)] = (fcsr & 0x1F);
-                        fcsr |= (x[extract_rs1(inst)] & 0x1F);
-                        break;
-                    case 0x2: // FP default round mode
-                        x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
-                        fcsr |= ((x[extract_rs1(inst)] & 0b111) << 5);
-                        break;
-                    case 0x3: // whole FCSR
-                        x[extract_rd(inst)] = fcsr;
-                        fcsr |= (x[extract_rs1(inst)] & 0xFFFFFFFF);
-                        break;
-                    default:
-                        // Unknown CSR
-                        result.status = ExecuteResult::Status::IllegalInstruction;
-                        result.illegal_instruction.instruction = inst;
-                        return result;
-                    }
-                }
-                break;
-            case FUNCT3_CSRRC:
-                // CSR Read and Clear
-                {
-                    uint32_t csr = extract_imm_i(inst);
-                    switch (csr)
-                    {
-                    case 0x1: // FP Flags
-                        x[extract_rd(inst)] = (fcsr & 0x1F);
-                        fcsr &= ~(x[extract_rs1(inst)] & 0x1F);
-                        break;
-                    case 0x2: // FP default round mode
-                        x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
-                        fcsr &= ~((x[extract_rs1(inst)] & 0b111) << 5);
-                        break;
-                    case 0x3: // whole FCSR
-                        x[extract_rd(inst)] = fcsr;
-                        fcsr &= ~(x[extract_rs1(inst)] & 0xFFFFFFFF);
-                        break;
-                    default:
-                        // Unknown CSR
-                        result.status = ExecuteResult::Status::IllegalInstruction;
-                        result.illegal_instruction.instruction = inst;
-                        return result;
-                    }
-                }
-                break;
-            case FUNCT3_CSRRWI:
-                // CSR Read and Write Immediate
-                {
-                    uint32_t csr = extract_imm_i(inst);
-                    switch (csr)
-                    {
-                    case 0x1: // FP Flags
-                        x[extract_rd(inst)] = (fcsr & 0x1F);
-                        fcsr &= ~0x1F;
-                        fcsr |= (extract_rs1(inst) & 0x1F);
-                        break;
-                    case 0x2: // FP default round mode
-                        x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
-                        fcsr &= ~(0b111 << 5);
-                        fcsr |= ((extract_rs1(inst) & 0b111) << 5);
-                        break;
-                    case 0x3: // whole FCSR
-                        x[extract_rd(inst)] = fcsr;
-                        fcsr = extract_rs1(inst) & 0xFFFFFFFF;
-                        break;
-                    default:
-                        // Unknown CSR
-                        result.status = ExecuteResult::Status::IllegalInstruction;
-                        result.illegal_instruction.instruction = inst;
-                        return result;
-                    }
-                }
-                break;
-            case FUNCT3_CSRRSI:
-                // CSR Read and Set Immediate
-                {
-                    uint32_t csr = extract_imm_i(inst);
-                    switch (csr)
-                    {
-                    case 0x1: // FP Flags
-                        x[extract_rd(inst)] = (fcsr & 0x1F);
-                        fcsr |= (extract_rs1(inst) & 0x1F);
-                        break;
-                    case 0x2: // FP default round mode
-                        x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
-                        fcsr |= ((extract_rs1(inst) & 0b111) << 5);
-                        break;
-                    case 0x3: // whole FCSR
-                        x[extract_rd(inst)] = fcsr;
-                        fcsr |= (extract_rs1(inst) & 0xFFFFFFFF);
-                        break;
-                    default:
-                        // Unknown CSR
-                        result.status = ExecuteResult::Status::IllegalInstruction;
-                        result.illegal_instruction.instruction = inst;
-                        return result;
-                    }
-                }
-                break;
-            case FUNCT3_CSRRCI:
-                // CSR Read and Clear Immediate
-                {
-                    uint32_t csr = extract_imm_i(inst);
-                    switch (csr)
-                    {
-                    case 0x1: // FP Flags
-                        x[extract_rd(inst)] = (fcsr & 0x1F);
-                        fcsr &= ~(extract_rs1(inst) & 0x1F);
-                        break;
-                    case 0x2: // FP default round mode
-                        x[extract_rd(inst)] = (fcsr >> 5) & 0b111;
-                        fcsr &= ~((extract_rs1(inst) & 0b111) << 5);
-                        break;
-                    case 0x3: // whole FCSR
-                        x[extract_rd(inst)] = fcsr;
-                        fcsr &= ~(extract_rs1(inst) & 0xFFFFFFFF);
-                        break;
-                    default:
-                        // Unknown CSR
-                        result.status = ExecuteResult::Status::IllegalInstruction;
-                        result.illegal_instruction.instruction = inst;
-                        return result;
-                    }
-                }
-                break;
-            default:
-                // Unknown funct3
-                result.status = ExecuteResult::Status::IllegalInstruction;
-                result.illegal_instruction.instruction = inst;
-                return result;
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
+                OPCODE_RETURN_FAIL();
             }
+            uint32_t new_val = std::max(old_val, x[extract_rs2(current_inst->inst)]);
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
+                result.illegal_store.value = new_val;
+                OPCODE_RETURN_FAIL();
+            }
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
-        case OP_MISC_MEM:
+        case FUNCT5_AMOMINU:
         {
-            // FENCE
-            if (extract_funct3(inst) == FUNCT3_FENCE)
+            // Atomic Min Unsigned
+            uint32_t old_val;
+            if (read32(x[extract_rs1(current_inst->inst)], old_val) != 0)
             {
-                // No operation
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)];
+                OPCODE_RETURN_FAIL();
             }
-            else if (extract_funct3(inst) == FUNCT3_FENCE_I)
+            uint32_t new_val = std::min(old_val, x[extract_rs2(current_inst->inst)]);
+            if (write32(x[extract_rs1(current_inst->inst)], new_val) != 0)
             {
-                // FENCE.I
-                // No operation
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)];
+                result.illegal_store.value = new_val;
+                OPCODE_RETURN_FAIL();
             }
-            else
-            {
-                // Unknown funct3
-                result.status = ExecuteResult::Status::IllegalInstruction;
-                result.illegal_instruction.instruction = inst;
-                return result;
-            }
-            break;
-        }
-        case OP_ATOMIC:
-        {
-            if (extract_funct3(inst) != 0x2)
-            {
-                // Unknown funct3
-                result.status = ExecuteResult::Status::IllegalInstruction;
-                result.illegal_instruction.instruction = inst;
-                return result;
-            }
-            switch (extract_funct5(inst))
-            {
-            case FUNCT5_LR:
-            {
-                // Load Reserved
-                uint32_t val;
-                if (read32(x[extract_rs1(inst)], val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)];
-                    return result;
-                }
-                memory->reserved_mem[x[extract_rs1(inst)]] = reserved_mem_id;
-                x[extract_rd(inst)] = val;
-                break;
-            }
-            case FUNCT5_SC:
-            {
-                // Store Conditional
-                auto it = memory->reserved_mem.find(x[extract_rs1(inst)]);
-                if (it == memory->reserved_mem.end() || it->second != reserved_mem_id)
-                {
-                    // Not reserved
-                    x[extract_rd(inst)] = 1;
-                    break;
-                }
-                uint32_t val = x[extract_rs2(inst)];
-                if (write32(x[extract_rs1(inst)], val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)];
-                    result.illegal_store.value = val;
-                    return result;
-                }
-                memory->reserved_mem.erase(it);
-                x[extract_rd(inst)] = 0;
-                break;
-            }
-            case FUNCT5_AMOSWAP:
-            {
-                // Atomic Swap
-                uint32_t old_val;
-                if (read32(x[extract_rs1(inst)], old_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)];
-                    return result;
-                }
-                uint32_t new_val = x[extract_rs2(inst)];
-                if (write32(x[extract_rs1(inst)], new_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)];
-                    result.illegal_store.value = new_val;
-                    return result;
-                }
-                x[extract_rd(inst)] = old_val;
-                break;
-            }
-            case FUNCT5_AMOADD:
-            {
-                // Atomic Add
-                uint32_t old_val;
-                if (read32(x[extract_rs1(inst)], old_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)];
-                    return result;
-                }
-                uint32_t new_val = old_val + x[extract_rs2(inst)];
-                if (write32(x[extract_rs1(inst)], new_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)];
-                    result.illegal_store.value = new_val;
-                    return result;
-                }
-                x[extract_rd(inst)] = old_val;
-                break;
-            }
-            case FUNCT5_AMOAND:
-            {
-                // Atomic AND
-                uint32_t old_val;
-                if (read32(x[extract_rs1(inst)], old_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)];
-                    return result;
-                }
-                uint32_t new_val = old_val & x[extract_rs2(inst)];
-                if (write32(x[extract_rs1(inst)], new_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)];
-                    result.illegal_store.value = new_val;
-                    return result;
-                }
-                x[extract_rd(inst)] = old_val;
-                break;
-            }
-            case FUNCT5_AMOOR:
-            {
-                // Atomic OR
-                uint32_t old_val;
-                if (read32(x[extract_rs1(inst)], old_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)];
-                    return result;
-                }
-                uint32_t new_val = old_val | x[extract_rs2(inst)];
-                if (write32(x[extract_rs1(inst)], new_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)];
-                    result.illegal_store.value = new_val;
-                    return result;
-                }
-                x[extract_rd(inst)] = old_val;
-                break;
-            }
-            case FUNCT5_AMOXOR:
-            {
-                // Atomic XOR
-                uint32_t old_val;
-                if (read32(x[extract_rs1(inst)], old_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)];
-                    return result;
-                }
-                uint32_t new_val = old_val ^ x[extract_rs2(inst)];
-                if (write32(x[extract_rs1(inst)], new_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)];
-                    result.illegal_store.value = new_val;
-                    return result;
-                }
-                x[extract_rd(inst)] = old_val;
-                break;
-            }
-            case FUNCT5_AMOMAX:
-            {
-                // Atomic Max
-                uint32_t old_val;
-                if (read32(x[extract_rs1(inst)], old_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)];
-                    return result;
-                }
-                uint32_t new_val = std::max((int32_t)old_val, (int32_t)x[extract_rs2(inst)]);
-                if (write32(x[extract_rs1(inst)], new_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)];
-                    result.illegal_store.value = new_val;
-                    return result;
-                }
-                x[extract_rd(inst)] = old_val;
-                break;
-            }
-            case FUNCT5_AMOMIN:
-            {
-                // Atomic Min
-                uint32_t old_val;
-                if (read32(x[extract_rs1(inst)], old_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)];
-                    return result;
-                }
-                uint32_t new_val = std::min((int32_t)old_val, (int32_t)x[extract_rs2(inst)]);
-                if (write32(x[extract_rs1(inst)], new_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)];
-                    result.illegal_store.value = new_val;
-                    return result;
-                }
-                x[extract_rd(inst)] = old_val;
-                break;
-            }
-            case FUNCT5_AMOMAXU:
-            {
-                // Atomic Max Unsigned
-                uint32_t old_val;
-                if (read32(x[extract_rs1(inst)], old_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)];
-                    return result;
-                }
-                uint32_t new_val = std::max(old_val, x[extract_rs2(inst)]);
-                if (write32(x[extract_rs1(inst)], new_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)];
-                    result.illegal_store.value = new_val;
-                    return result;
-                }
-                x[extract_rd(inst)] = old_val;
-                break;
-            }
-            case FUNCT5_AMOMINU:
-            {
-                // Atomic Min Unsigned
-                uint32_t old_val;
-                if (read32(x[extract_rs1(inst)], old_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)];
-                    return result;
-                }
-                uint32_t new_val = std::min(old_val, x[extract_rs2(inst)]);
-                if (write32(x[extract_rs1(inst)], new_val) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)];
-                    result.illegal_store.value = new_val;
-                    return result;
-                }
-                x[extract_rd(inst)] = old_val;
-                break;
-            }
-            default:
-                // Unknown funct5
-                result.status = ExecuteResult::Status::IllegalInstruction;
-                result.illegal_instruction.instruction = inst;
-                return result;
-            }
-            break;
-        }
-        case OP_FLW:
-        {
-            set_round_mode(ROUND_DYN, fcsr);
-            if (extract_funct3(inst) & 0x1)
-            {
-                // FLD
-                double value;
-                if (readf64(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
-                    return result;
-                }
-                f[extract_rd(inst)] = value;
-            }
-            else
-            {
-                // FLW
-                float value;
-                if (readf32(x[extract_rs1(inst)] + extract_imm_i(inst), value) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalLoad;
-                    result.illegal_load.address = x[extract_rs1(inst)] + extract_imm_i(inst);
-                    return result;
-                }
-                write_float_to_double(value, f[extract_rd(inst)]);
-            }
-            break;
-        }
-        case OP_FSW:
-        {
-            set_round_mode(ROUND_DYN, fcsr);
-            if (extract_funct3(inst) & 0x1)
-            {
-                // FSD
-                if (writef64(x[extract_rs1(inst)] + extract_imm_s(inst), f[extract_rs2(inst)]) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
-                    result.illegal_store.value = f[extract_rs2(inst)];
-                    return result;
-                }
-            }
-            else
-            {
-                // FSW
-                float value = read_float_from_double(f[extract_rs2(inst)]);
-                if (writef32(x[extract_rs1(inst)] + extract_imm_s(inst), value) != 0)
-                {
-                    result.status = ExecuteResult::Status::IllegalStore;
-                    result.illegal_store.address = x[extract_rs1(inst)] + extract_imm_s(inst);
-                    result.illegal_store.value = value;
-                    return result;
-                }
-            }
-            break;
-        }
-        case OP_FMADD:
-        {
-            // FMADD
-            set_round_mode(extract_funct3(inst), fcsr);
-            if (is_double_precision(inst))
-            {
-                double a = f[extract_rs1(inst)];
-                double b = f[extract_rs2(inst)];
-                double c = f[extract_rs3(inst)];
-                f[extract_rd(inst)] = a * b + c;
-            }
-            else
-            {
-                float a = read_float_from_double(f[extract_rs1(inst)]);
-                float b = read_float_from_double(f[extract_rs2(inst)]);
-                float c = read_float_from_double(f[extract_rs3(inst)]);
-                write_float_to_double(a * b + c, f[extract_rd(inst)]);
-            }
-            break;
-        }
-        case OP_FMSUB:
-        {
-            // FMSUB
-            set_round_mode(extract_funct3(inst), fcsr);
-            if (is_double_precision(inst))
-            {
-                double a = f[extract_rs1(inst)];
-                double b = f[extract_rs2(inst)];
-                double c = f[extract_rs3(inst)];
-                f[extract_rd(inst)] = a * b - c;
-            }
-            else
-            {
-                float a = read_float_from_double(f[extract_rs1(inst)]);
-                float b = read_float_from_double(f[extract_rs2(inst)]);
-                float c = read_float_from_double(f[extract_rs3(inst)]);
-                write_float_to_double(a * b - c, f[extract_rd(inst)]);
-            }
-            break;
-        }
-        case OP_FNMADD:
-        {
-            // FNMADD
-            set_round_mode(extract_funct3(inst), fcsr);
-            if (is_double_precision(inst))
-            {
-                double a = f[extract_rs1(inst)];
-                double b = f[extract_rs2(inst)];
-                double c = f[extract_rs3(inst)];
-                f[extract_rd(inst)] = -(a * b) - c;
-            }
-            else
-            {
-                float a = read_float_from_double(f[extract_rs1(inst)]);
-                float b = read_float_from_double(f[extract_rs2(inst)]);
-                float c = read_float_from_double(f[extract_rs3(inst)]);
-                write_float_to_double(-(a * b) - c, f[extract_rd(inst)]);
-            }
-            break;
-        }
-        case OP_FNMSUB:
-        {
-            // FNMSUB
-            set_round_mode(extract_funct3(inst), fcsr);
-            if (is_double_precision(inst))
-            {
-                double a = f[extract_rs1(inst)];
-                double b = f[extract_rs2(inst)];
-                double c = f[extract_rs3(inst)];
-                f[extract_rd(inst)] = -(a * b) + c;
-            }
-            else
-            {
-                float a = read_float_from_double(f[extract_rs1(inst)]);
-                float b = read_float_from_double(f[extract_rs2(inst)]);
-                float c = read_float_from_double(f[extract_rs3(inst)]);
-                write_float_to_double(-(a * b) + c, f[extract_rd(inst)]);
-            }
-            break;
-        }
-        case OP_FREG:
-        {
-            float a, b;
-            double ad, bd;
-            switch (extract_funct7(inst))
-            {
-            case 0b0000000:
-                // FADD.S
-                set_round_mode(extract_funct3(inst), fcsr);
-                a = read_float_from_double(f[extract_rs1(inst)]);
-                b = read_float_from_double(f[extract_rs2(inst)]);
-                write_float_to_double(a + b, f[extract_rd(inst)]);
-                break;
-            case 0b0000100:
-                // FSUB.S
-                set_round_mode(extract_funct3(inst), fcsr);
-                a = read_float_from_double(f[extract_rs1(inst)]);
-                b = read_float_from_double(f[extract_rs2(inst)]);
-                write_float_to_double(a - b, f[extract_rd(inst)]);
-                break;
-            case 0b0001000:
-                // FMUL.S
-                set_round_mode(extract_funct3(inst), fcsr);
-                a = read_float_from_double(f[extract_rs1(inst)]);
-                b = read_float_from_double(f[extract_rs2(inst)]);
-                write_float_to_double(a * b, f[extract_rd(inst)]);
-                break;
-            case 0b0001100:
-                // FDIV.S
-                set_round_mode(extract_funct3(inst), fcsr);
-                a = read_float_from_double(f[extract_rs1(inst)]);
-                b = read_float_from_double(f[extract_rs2(inst)]);
-                write_float_to_double(a / b, f[extract_rd(inst)]);
-                break;
-            case 0b0101100:
-                // FSQRT.S
-                set_round_mode(extract_funct3(inst), fcsr);
-                a = read_float_from_double(f[extract_rs1(inst)]);
-                write_float_to_double(sqrt(a), f[extract_rd(inst)]);
-                break;
-            case 0b0010000:
-                // FSGN*.S
-                set_round_mode(ROUND_DYN, fcsr);
-                a = read_float_from_double(f[extract_rs1(inst)]);
-                b = read_float_from_double(f[extract_rs2(inst)]);
-                switch (extract_funct3(inst))
-                {
-                case 0b000:
-                    // FSGNJ.S
-                    write_float_to_double(b < 0 ? -abs(a) : abs(a),
-                                          f[extract_rd(inst)]);
-                    break;
-                case 0b001:
-                    // FSGNJN.S
-                    write_float_to_double(b < 0 ? abs(a) : -abs(a),
-                                          f[extract_rd(inst)]);
-                    break;
-                case 0b010:
-                    // FSGNJX.S
-                    write_float_to_double(b < 0 ? -a : a,
-                                          f[extract_rd(inst)]);
-                    break;
-                default:
-                    // Unknown funct3
-                    result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
-                }
-                break;
-            case 0b0010100:
-                // F(MIN|MAX).S
-                set_round_mode(ROUND_DYN, fcsr);
-                a = read_float_from_double(f[extract_rs1(inst)]);
-                b = read_float_from_double(f[extract_rs2(inst)]);
-                if (extract_funct3(inst) == 0b000)
-                    // FMIN.S
-                    write_float_to_double(std::min(a, b), f[extract_rd(inst)]);
-                else if (extract_funct3(inst) == 0b001)
-                    // FMAX.S
-                    write_float_to_double(std::max(a, b), f[extract_rd(inst)]);
-                else
-                {
-                    // Unknown funct3
-                    result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
-                }
-                break;
-            case 0b1100000:
-                // FCVT.W*.S
-                set_round_mode(extract_funct3(inst), fcsr);
-                switch (extract_rs2(inst))
-                {
-                case 0b00000:
-                    // FCVT.W.S
-                    a = read_float_from_double(f[extract_rs1(inst)]);
-                    if (a > INT32_MAX || a < INT32_MIN)
-                    {
-                        // NV
-                        fcsr |= 1 << 4;
-                        break;
-                    }
-                    x[extract_rd(inst)] = (int32_t)a;
-                    break;
-                case 0b00001:
-                    // FCVT.WU.S
-                    a = read_float_from_double(f[extract_rs1(inst)]);
-                    if (a > UINT32_MAX || a < 0)
-                    {
-                        // NV
-                        fcsr |= 1 << 4;
-                        break;
-                    }
-                    x[extract_rd(inst)] = (uint32_t)a;
-                    break;
-                default:
-                    // Unknown funct3
-                    result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
-                }
-                break;
-            case 0b1110000:
-                // FMV.X.W or FCLASS.S
-                set_round_mode(ROUND_DYN, fcsr);
-                switch (extract_funct3(inst))
-                {
-                case 0b000:
-                    // FMV.X.W
-                    a = read_float_from_double(f[extract_rs1(inst)]);
-                    memcpy(&x[extract_rd(inst)], &a, sizeof(float));
-                    break;
-                case 0b001:
-                    // FCLASS.S
-                    a = read_float_from_double(f[extract_rs1(inst)]);
-                    x[extract_rd(inst)] = classify_float(a);
-                    break;
-                default:
-                    // Unknown funct3
-                    result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
-                }
-                break;
-            case 0b1010000:
-                // FEQ.S or FLT.S or FLE.S
-                set_round_mode(ROUND_DYN, fcsr);
-                a = read_float_from_double(f[extract_rs1(inst)]);
-                b = read_float_from_double(f[extract_rs2(inst)]);
-                switch (extract_funct3(inst))
-                {
-                case 0b000:
-                    // FEQ.S
-                    x[extract_rd(inst)] = (a == b);
-                    break;
-                case 0b001:
-                    // FLT.S
-                    x[extract_rd(inst)] = (a < b);
-                    break;
-                case 0b010:
-                    // FLE.S
-                    x[extract_rd(inst)] = (a <= b);
-                    break;
-                default:
-                    // Unknown funct3
-                    result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
-                }
-                break;
-            case 0b1101000:
-                // FCVT.S.W*
-                set_round_mode(extract_funct3(inst), fcsr);
-                switch (extract_rs2(inst))
-                {
-                case 0b00000:
-                    // FCVT.S.W
-                    a = (float)(int32_t)x[extract_rs1(inst)];
-                    write_float_to_double(a, f[extract_rd(inst)]);
-                    break;
-                case 0b00001:
-                    // FCVT.S.WU
-                    a = (float)(uint32_t)x[extract_rs1(inst)];
-                    write_float_to_double(a, f[extract_rd(inst)]);
-                    break;
-                default:
-                    // Unknown funct3
-                    result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
-                }
-                break;
-            case 0b1111000:
-                // FMV.W.X
-                set_round_mode(ROUND_DYN, fcsr);
-                memcpy(&a, &x[extract_rs1(inst)], sizeof(float));
-                write_float_to_double(a, f[extract_rd(inst)]);
-                break;
-            case 0b0000001:
-                // FADD.D
-                set_round_mode(extract_funct3(inst), fcsr);
-                ad = f[extract_rs1(inst)];
-                bd = f[extract_rs2(inst)];
-                f[extract_rd(inst)] = ad + bd;
-                break;
-            case 0b0000101:
-                // FSUB.D
-                set_round_mode(extract_funct3(inst), fcsr);
-                ad = f[extract_rs1(inst)];
-                bd = f[extract_rs2(inst)];
-                f[extract_rd(inst)] = ad - bd;
-                break;
-            case 0b0001001:
-                // FMUL.D
-                set_round_mode(extract_funct3(inst), fcsr);
-                ad = f[extract_rs1(inst)];
-                bd = f[extract_rs2(inst)];
-                f[extract_rd(inst)] = ad * bd;
-                break;
-            case 0b0001101:
-                // FDIV.D
-                set_round_mode(extract_funct3(inst), fcsr);
-                ad = f[extract_rs1(inst)];
-                bd = f[extract_rs2(inst)];
-                f[extract_rd(inst)] = ad / bd;
-                break;
-            case 0b0101101:
-                // FSQRT.D
-                set_round_mode(extract_funct3(inst), fcsr);
-                ad = f[extract_rs1(inst)];
-                f[extract_rd(inst)] = sqrt(ad);
-                break;
-            case 0b0010001:
-                // FSGN*.D
-                set_round_mode(ROUND_DYN, fcsr);
-                ad = f[extract_rs1(inst)];
-                bd = f[extract_rs2(inst)];
-                switch (extract_funct3(inst))
-                {
-                case 0b000:
-                    // FSGNJ.D
-                    f[extract_rd(inst)] = bd < 0 ? -abs(ad) : abs(ad);
-                    break;
-                case 0b001:
-                    // FSGNJN.D
-                    f[extract_rd(inst)] = bd < 0 ? abs(ad) : -abs(ad);
-                    break;
-                case 0b010:
-                    // FSGNJX.D
-                    f[extract_rd(inst)] = bd < 0 ? -ad : ad;
-                    break;
-                default:
-                    // Unknown funct3
-                    result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
-                }
-                break;
-            case 0b0010101:
-                // F(MIN|MAX).D
-                set_round_mode(ROUND_DYN, fcsr);
-                ad = f[extract_rs1(inst)];
-                bd = f[extract_rs2(inst)];
-                if (extract_funct3(inst) == 0b000)
-                    // FMIN.D
-                    f[extract_rd(inst)] = std::min(ad, bd);
-                else if (extract_funct3(inst) == 0b001)
-                    // FMAX.D
-                    f[extract_rd(inst)] = std::max(ad, bd);
-                else
-                {
-                    // Unknown funct3
-                    result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
-                }
-                break;
-            case 0b0100000:
-                // FCVT.S.D
-                set_round_mode(extract_funct3(inst), fcsr);
-                ad = f[extract_rs1(inst)];
-                write_float_to_double((float)ad, f[extract_rd(inst)]);
-                break;
-            case 0b0100001:
-                // FCVT.D.S
-                set_round_mode(extract_funct3(inst), fcsr);
-                ad = read_float_from_double(f[extract_rs1(inst)]);
-                f[extract_rd(inst)] = ad;
-                break;
-            case 0b1010001:
-                // FEQ.D or FLT.D or FLE.D
-                set_round_mode(ROUND_DYN, fcsr);
-                ad = f[extract_rs1(inst)];
-                bd = f[extract_rs2(inst)];
-                switch (extract_funct3(inst))
-                {
-                case 0b000:
-                    // FEQ.D
-                    x[extract_rd(inst)] = (ad == bd);
-                    break;
-                case 0b001:
-                    // FLT.D
-                    x[extract_rd(inst)] = (ad < bd);
-                    break;
-                case 0b010:
-                    // FLE.D
-                    x[extract_rd(inst)] = (ad <= bd);
-                    break;
-                default:
-                    // Unknown funct3
-                    result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
-                }
-                break;
-            case 0b1110001:
-                // FCLASS.D
-                set_round_mode(ROUND_DYN, fcsr);
-                ad = f[extract_rs1(inst)];
-                x[extract_rd(inst)] = classify_double(ad);
-                break;
-            case 0b1100001:
-                // FCVT.W.D or FCVT.WU.D
-                set_round_mode(extract_funct3(inst), fcsr);
-                ad = f[extract_rs1(inst)];
-                switch (extract_rs2(inst))
-                {
-                case 0b00000:
-                    // FCVT.W.D
-                    if (ad > INT32_MAX || ad < INT32_MIN)
-                    {
-                        // NV
-                        fcsr |= 1 <<  4;
-                        break;
-                    }
-                    x[extract_rd(inst)] = (int32_t)std::nearbyint(ad);
-                    break;
-                case 0b00001:
-                    // FCVT.WU.D
-                    if (ad > UINT32_MAX || ad < 0)
-                    {
-                        // NV
-                        fcsr |= 1 << 4;
-                        break;
-                    }
-                    x[extract_rd(inst)] = (uint32_t)std::nearbyint(ad);
-                    break;
-                default:
-                    // Unknown funct3
-                    result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
-                }
-                break;
-            case 0b1101001:
-                // FCVT.D.W*
-                set_round_mode(extract_funct3(inst), fcsr);
-                switch (extract_rs2(inst))
-                {
-                case 0b00000:
-                    // FCVT.D.W
-                    ad = (double)(int32_t)x[extract_rs1(inst)];
-                    f[extract_rd(inst)] = ad;
-                    break;
-                case 0b00001:
-                    // FCVT.D.WU
-                    ad = (double)(uint32_t)x[extract_rs1(inst)];
-                    f[extract_rd(inst)] = ad;
-                    break;
-                default:
-                    // Unknown funct3
-                    result.status = ExecuteResult::Status::IllegalInstruction;
-                    result.illegal_instruction.instruction = inst;
-                    return result;
-                }
-            }
+            x[extract_rd(current_inst->inst)] = old_val;
             break;
         }
         default:
-            // Unknown opcode
+            // Unknown funct5
             result.status = ExecuteResult::Status::IllegalInstruction;
-            result.illegal_instruction.instruction = inst;
-            return result;
+            result.illegal_instruction.instruction = current_inst->inst;
+            OPCODE_RETURN_FAIL();
         }
+        DISPATCH();
+    case_op_flw:
+        if (extract_funct3(current_inst->inst) & 0x1)
+        {
+            // FLD
+            double value;
+            if (readf64(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
+                OPCODE_RETURN_FAIL();
+            }
+            f[extract_rd(current_inst->inst)] = value;
+        }
+        else
+        {
+            // FLW
+            float value;
+            if (readf32(x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst), value) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalLoad;
+                result.illegal_load.address = x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst);
+                OPCODE_RETURN_FAIL();
+            }
+            write_float_to_double(value, f[extract_rd(current_inst->inst)]);
+        }
+        DISPATCH();
+    case_op_fsw:
+        if (extract_funct3(current_inst->inst) & 0x1)
+        {
+            // FSD
+            if (writef64(x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst), f[extract_rs2(current_inst->inst)]) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst);
+                result.illegal_store.value = f[extract_rs2(current_inst->inst)];
+                OPCODE_RETURN_FAIL();
+            }
+        }
+        else
+        {
+            // FSW
+            float value = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            if (writef32(x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst), value) != 0)
+            {
+                result.status = ExecuteResult::Status::IllegalStore;
+                result.illegal_store.address = x[extract_rs1(current_inst->inst)] + extract_imm_s(current_inst->inst);
+                result.illegal_store.value = value;
+                OPCODE_RETURN_FAIL();
+            }
+        }
+        DISPATCH();
+    case_op_fmadd:
+        // FMADD
+        if (is_double_precision(current_inst->inst))
+        {
+            double a = f[extract_rs1(current_inst->inst)];
+            double b = f[extract_rs2(current_inst->inst)];
+            double c = f[extract_rs3(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = a * b + c;
+        }
+        else
+        {
+            float a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            float b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            float c = read_float_from_double(f[extract_rs3(current_inst->inst)]);
+            write_float_to_double(a * b + c, f[extract_rd(current_inst->inst)]);
+        }
+        DISPATCH();
+    case_op_fmsub:
+        // FMSUB
+        if (is_double_precision(current_inst->inst))
+        {
+            double a = f[extract_rs1(current_inst->inst)];
+            double b = f[extract_rs2(current_inst->inst)];
+            double c = f[extract_rs3(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = a * b - c;
+        }
+        else
+        {
+            float a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            float b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            float c = read_float_from_double(f[extract_rs3(current_inst->inst)]);
+            write_float_to_double(a * b - c, f[extract_rd(current_inst->inst)]);
+        }
+        DISPATCH();
+    case_op_fnmadd:
+        // FNMADD
+        if (is_double_precision(current_inst->inst))
+        {
+            double a = f[extract_rs1(current_inst->inst)];
+            double b = f[extract_rs2(current_inst->inst)];
+            double c = f[extract_rs3(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = -(a * b) - c;
+        }
+        else
+        {
+            float a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            float b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            float c = read_float_from_double(f[extract_rs3(current_inst->inst)]);
+            write_float_to_double(-(a * b) - c, f[extract_rd(current_inst->inst)]);
+        }
+        DISPATCH();
+    case_op_fnmsub:
+        // FNMSUB
+        if (is_double_precision(current_inst->inst))
+        {
+            double a = f[extract_rs1(current_inst->inst)];
+            double b = f[extract_rs2(current_inst->inst)];
+            double c = f[extract_rs3(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = -(a * b) + c;
+        }
+        else
+        {
+            float a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            float b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            float c = read_float_from_double(f[extract_rs3(current_inst->inst)]);
+            write_float_to_double(-(a * b) + c, f[extract_rd(current_inst->inst)]);
+        }
+        DISPATCH();
+    case_op_freg:
+        float a, b;
+        double ad, bd;
+        switch (extract_funct7(current_inst->inst))
+        {
+        case 0b0000000:
+            // FADD.S
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            write_float_to_double(a + b, f[extract_rd(current_inst->inst)]);
+            break;
+        case 0b0000100:
+            // FSUB.S
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            write_float_to_double(a - b, f[extract_rd(current_inst->inst)]);
+            break;
+        case 0b0001000:
+            // FMUL.S
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            write_float_to_double(a * b, f[extract_rd(current_inst->inst)]);
+            break;
+        case 0b0001100:
+            // FDIV.S
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            write_float_to_double(a / b, f[extract_rd(current_inst->inst)]);
+            break;
+        case 0b0101100:
+            // FSQRT.S
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            write_float_to_double(sqrt(a), f[extract_rd(current_inst->inst)]);
+            break;
+        case 0b0010000:
+            // FSGN*.S
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            switch (extract_funct3(current_inst->inst))
+            {
+            case 0b000:
+                // FSGNJ.S
+                write_float_to_double(b < 0 ? -abs(a) : abs(a),
+                                      f[extract_rd(current_inst->inst)]);
+                break;
+            case 0b001:
+                // FSGNJN.S
+                write_float_to_double(b < 0 ? abs(a) : -abs(a),
+                                      f[extract_rd(current_inst->inst)]);
+                break;
+            case 0b010:
+                // FSGNJX.S
+                write_float_to_double(b < 0 ? -a : a,
+                                      f[extract_rd(current_inst->inst)]);
+                break;
+            default:
+                // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_IMM, instruction: 0x%08x\n", current_inst->inst);
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = current_inst->inst;
+                OPCODE_RETURN_FAIL();
+            }
+            break;
+        case 0b0010100:
+            // F(MIN|MAX).S
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            if (extract_funct3(current_inst->inst) == 0b000)
+                // FMIN.S
+                write_float_to_double(std::min(a, b), f[extract_rd(current_inst->inst)]);
+            else if (extract_funct3(current_inst->inst) == 0b001)
+                // FMAX.S
+                write_float_to_double(std::max(a, b), f[extract_rd(current_inst->inst)]);
+            else
+            {
+                // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_FREG, instruction: 0x%08x\n", current_inst->inst);
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = current_inst->inst;
+                OPCODE_RETURN_FAIL();
+            }
+            break;
+        case 0b1100000:
+            // FCVT.W*.S
+            switch (extract_rs2(current_inst->inst))
+            {
+            case 0b00000:
+                // FCVT.W.S
+                a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+                if (a > INT32_MAX || a < INT32_MIN)
+                {
+                    // NV
+                    fcsr |= 1 << 4;
+                    break;
+                }
+                x[extract_rd(current_inst->inst)] = (int32_t)a;
+                break;
+            case 0b00001:
+                // FCVT.WU.S
+                a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+                if (a > UINT32_MAX || a < 0)
+                {
+                    // NV
+                    fcsr |= 1 << 4;
+                    break;
+                }
+                x[extract_rd(current_inst->inst)] = (uint32_t)a;
+                break;
+            default:
+                // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_FREG, instruction: 0x%08x\n", current_inst->inst);
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = current_inst->inst;
+                OPCODE_RETURN_FAIL();
+            }
+            break;
+        case 0b1110000:
+            // FMV.X.W or FCLASS.S
+            switch (extract_funct3(current_inst->inst))
+            {
+            case 0b000:
+                // FMV.X.W
+                a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+                memcpy(&x[extract_rd(current_inst->inst)], &a, sizeof(float));
+                break;
+            case 0b001:
+                // FCLASS.S
+                a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+                x[extract_rd(current_inst->inst)] = classify_float(a);
+                break;
+            default:
+                // Unknown funct3
+                _trace("RiscVEmulator: Unknown funct3 for OP_FREG, instruction: 0x%08x\n", current_inst->inst);
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = current_inst->inst;
+                OPCODE_RETURN_FAIL();
+            }
+            break;
+        case 0b1010000:
+            // FEQ.S or FLT.S or FLE.S
+            a = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            b = read_float_from_double(f[extract_rs2(current_inst->inst)]);
+            switch (extract_funct3(current_inst->inst))
+            {
+            case 0b000:
+                // FEQ.S
+                x[extract_rd(current_inst->inst)] = (a == b);
+                break;
+            case 0b001:
+                // FLT.S
+                x[extract_rd(current_inst->inst)] = (a < b);
+                break;
+            case 0b010:
+                // FLE.S
+                x[extract_rd(current_inst->inst)] = (a <= b);
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = current_inst->inst;
+                OPCODE_RETURN_FAIL();
+            }
+            break;
+        case 0b1101000:
+            // FCVT.S.W*
+            switch (extract_rs2(current_inst->inst))
+            {
+            case 0b00000:
+                // FCVT.S.W
+                a = (float)(int32_t)x[extract_rs1(current_inst->inst)];
+                write_float_to_double(a, f[extract_rd(current_inst->inst)]);
+                break;
+            case 0b00001:
+                // FCVT.S.WU
+                a = (float)(uint32_t)x[extract_rs1(current_inst->inst)];
+                write_float_to_double(a, f[extract_rd(current_inst->inst)]);
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = current_inst->inst;
+                OPCODE_RETURN_FAIL();
+            }
+            break;
+        case 0b1111000:
+            // FMV.W.X
+            memcpy(&a, &x[extract_rs1(current_inst->inst)], sizeof(float));
+            write_float_to_double(a, f[extract_rd(current_inst->inst)]);
+            break;
+        case 0b0000001:
+            // FADD.D
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = ad + bd;
+            break;
+        case 0b0000101:
+            // FSUB.D
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = ad - bd;
+            break;
+        case 0b0001001:
+            // FMUL.D
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = ad * bd;
+            break;
+        case 0b0001101:
+            // FDIV.D
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = ad / bd;
+            break;
+        case 0b0101101:
+            // FSQRT.D
+            ad = f[extract_rs1(current_inst->inst)];
+            f[extract_rd(current_inst->inst)] = sqrt(ad);
+            break;
+        case 0b0010001:
+            // FSGN*.D
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
+            switch (extract_funct3(current_inst->inst))
+            {
+            case 0b000:
+                // FSGNJ.D
+                f[extract_rd(current_inst->inst)] = bd < 0 ? -abs(ad) : abs(ad);
+                break;
+            case 0b001:
+                // FSGNJN.D
+                f[extract_rd(current_inst->inst)] = bd < 0 ? abs(ad) : -abs(ad);
+                break;
+            case 0b010:
+                // FSGNJX.D
+                f[extract_rd(current_inst->inst)] = bd < 0 ? -ad : ad;
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = current_inst->inst;
+                OPCODE_RETURN_FAIL();
+            }
+            break;
+        case 0b0010101:
+            // F(MIN|MAX).D
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
+            if (extract_funct3(current_inst->inst) == 0b000)
+                // FMIN.D
+                f[extract_rd(current_inst->inst)] = std::min(ad, bd);
+            else if (extract_funct3(current_inst->inst) == 0b001)
+                // FMAX.D
+                f[extract_rd(current_inst->inst)] = std::max(ad, bd);
+            else
+            {
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = current_inst->inst;
+                OPCODE_RETURN_FAIL();
+            }
+            break;
+        case 0b0100000:
+            // FCVT.S.D
+            ad = f[extract_rs1(current_inst->inst)];
+            write_float_to_double((float)ad, f[extract_rd(current_inst->inst)]);
+            break;
+        case 0b0100001:
+            // FCVT.D.S
+            ad = read_float_from_double(f[extract_rs1(current_inst->inst)]);
+            f[extract_rd(current_inst->inst)] = ad;
+            break;
+        case 0b1010001:
+            // FEQ.D or FLT.D or FLE.D
+            ad = f[extract_rs1(current_inst->inst)];
+            bd = f[extract_rs2(current_inst->inst)];
+            switch (extract_funct3(current_inst->inst))
+            {
+            case 0b000:
+                // FEQ.D
+                x[extract_rd(current_inst->inst)] = (ad == bd);
+                break;
+            case 0b001:
+                // FLT.D
+                x[extract_rd(current_inst->inst)] = (ad < bd);
+                break;
+            case 0b010:
+                // FLE.D
+                x[extract_rd(current_inst->inst)] = (ad <= bd);
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = current_inst->inst;
+                OPCODE_RETURN_FAIL();
+            }
+            break;
+        case 0b1110001:
+            // FCLASS.D
+            ad = f[extract_rs1(current_inst->inst)];
+            x[extract_rd(current_inst->inst)] = classify_double(ad);
+            break;
+        case 0b1100001:
+            // FCVT.W.D or FCVT.WU.D
+            ad = f[extract_rs1(current_inst->inst)];
+            switch (extract_rs2(current_inst->inst))
+            {
+            case 0b00000:
+                // FCVT.W.D
+                if (ad > INT32_MAX || ad < INT32_MIN)
+                {
+                    // NV
+                    fcsr |= 1 << 4;
+                    break;
+                }
+                x[extract_rd(current_inst->inst)] = (int32_t)std::nearbyint(ad);
+                break;
+            case 0b00001:
+                // FCVT.WU.D
+                if (ad > UINT32_MAX || ad < 0)
+                {
+                    // NV
+                    fcsr |= 1 << 4;
+                    break;
+                }
+                x[extract_rd(current_inst->inst)] = (uint32_t)std::nearbyint(ad);
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = current_inst->inst;
+                OPCODE_RETURN_FAIL();
+            }
+            break;
+        case 0b1101001:
+            // FCVT.D.W*
+            switch (extract_rs2(current_inst->inst))
+            {
+            case 0b00000:
+                // FCVT.D.W
+                ad = (double)(int32_t)x[extract_rs1(current_inst->inst)];
+                f[extract_rd(current_inst->inst)] = ad;
+                break;
+            case 0b00001:
+                // FCVT.D.WU
+                ad = (double)(uint32_t)x[extract_rs1(current_inst->inst)];
+                f[extract_rd(current_inst->inst)] = ad;
+                break;
+            default:
+                // Unknown funct3
+                result.status = ExecuteResult::Status::IllegalInstruction;
+                result.illegal_instruction.instruction = current_inst->inst;
+                OPCODE_RETURN_FAIL();
+            }
+        }
+        DISPATCH();
 
-        // Increment PC if an instruction didn't change it
-        if (old_pc == pc)
-            pc += 4;
+    case_invalid_op:
+        result.status = ExecuteResult::Status::IllegalInstruction;
+        result.illegal_instruction.instruction = current_inst->inst;
+        OPCODE_RETURN_FAIL();
 
-        result.status = ExecuteResult::Status::Success;
-        return result;
+    case_end_trace:
+        pc += decoded_count * 4;
+        return decoded_count;
     }
 } // namespace Hamster
 
+// ignored -Wpedantic
+#pragma GCC diagnostic pop

@@ -9,7 +9,7 @@
 
 namespace Hamster
 {
-    int sys_getdents64(int32_t fd, uint32_t dirent_loc, uint32_t count)
+    int32_t sys_getdents64(int32_t fd, uint32_t dirent_loc, uint32_t count)
     {
         Task *task = scheduler.get_current_task();
         assert(task != nullptr);
@@ -17,13 +17,13 @@ namespace Hamster
         int vfs_fd = task->get_vfs_fd(fd);
         if (vfs_fd < 0)
         {
-            error = EBADF;
+            error = H_EBADF;
             return cvt_error();
         }
 
         if (!dirent_loc)
         {
-            error = EFAULT; // Bad address
+            error = H_EFAULT; // Bad address
             return cvt_error();
         }
         vfs.seek(vfs_fd, 0, H_SEEK_SET);
@@ -73,15 +73,39 @@ namespace Hamster
             dirent->ino = st.ino;
             dirent->offset = off + bytes_read;
             dirent->reclen = sizeof(sys_dirent) + name_len;
-            dirent->type = st.mode & STAT_IFMT; // Use the file type from mode
+
+            switch (st.mode & STAT_IFMT)
+            {
+            case STAT_IFREG:
+                dirent->type = H_DT_REG;
+                break;
+            case STAT_IFDIR:
+                dirent->type = H_DT_DIR;
+                break;
+            case STAT_IFBLK:
+                dirent->type = H_DT_BLK;
+                break;
+            case STAT_IFCHR:
+                dirent->type = H_DT_CHR;
+                break;
+            case STAT_IFIFO:
+                dirent->type = H_DT_FIFO;
+                break;
+            case STAT_IFLNK:
+                dirent->type = H_DT_LNK;
+                break;
+            case STAT_IFSOCK:
+                dirent->type = H_DT_SOCK;
+                break;
+            }
             
             strcpy(dirent->name, name); // Copy the name into the dirent
 
             // Write the dirent to the user space buffer
-            if (task->memory->obj.memory.memcpy(dirent_loc + bytes_read, dirent, sizeof(sys_dirent) + name_len) < 0)
+            if (task->memory->obj.memory.memcpy_alloc(dirent_loc + bytes_read, dirent, sizeof(sys_dirent) + name_len) < 0)
             {
                 _free(dirent);
-                error = EFAULT;
+                error = H_EFAULT;
                 ok = false;
                 break;
             }

@@ -22,7 +22,7 @@ namespace Hamster
             }
 
             sp -= sizeof(uint32_t);
-            if (mem_sp.memcpy(sp, &data, sizeof(uint32_t)) != 0)
+            if (mem_sp.memcpy_alloc(sp, &data, sizeof(uint32_t)) != 0)
             {
                 // Memory copy failed
                 return -1;
@@ -44,7 +44,7 @@ namespace Hamster
                 if (sp < len)
                     return; // OOM
                 sp -= len;
-                if (mem_sp.memcpy(sp, str, len) < 0)
+                if (mem_sp.memcpy_alloc(sp, str, len) < 0)
                     return; // fail
                 if (locs)
                     locs->push_back(sp);
@@ -69,7 +69,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -103,6 +103,8 @@ namespace Hamster
         leader->is_dead = false;
         leader->is_paused = false;
 
+        leader->process->obj.reset_signal_handlers();
+
         MemorySpace &memory_space = leader->memory->obj.memory;
 
         uint64_t entry_point = 0;
@@ -117,6 +119,12 @@ namespace Hamster
 
         // Load stack
         uint64_t sp = HAMSTER_STACK_TOP;
+
+        // map in an 8 MB stack
+        if (memory_space.map_anonymous(sp - 8 * 1024 * 1024, 8 * 1024 * 1024, PERM_READ | PERM_WRITE | PERM_EXEC) < 0)
+        {
+            return -1;
+        }
 
         // some zeros
         push_stack(memory_space, sp, 0);
@@ -150,7 +158,7 @@ namespace Hamster
         sp -= random_data_size;
 
         for (size_t i = 0; i < random_data_size; ++i)
-            memory_space.write_byte(sp + i, (uint8_t)(rand() % 256));
+            memory_space.memset_alloc(sp + i, (uint8_t)(rand() % 256), 1);
 
         uint64_t random_data_loc = sp;
 
@@ -201,6 +209,17 @@ namespace Hamster
         leader->emulator.pc = entry_point;
         leader->emulator.x[2] = sp;
         leader->emulator.x[1] = 0; // Set return address to 0 (no return)
+        // Set mmap allocation start to the 1/4 point of the free space
+        // 
+        // Before
+        // [ program ] [ free space > < stack ]
+        //
+        // After
+        // [ program ] [ brk space ] [ mmap allocation >*< stack ]
+        //                                              *
+        //                            sliding  boundary *
+        memory_space.set_next_mmap((brk + (HAMSTER_STACK_TOP - brk) / 4) & ~(HAMSTER_PAGE_SIZE - 1));
+
         return 0;
     }
 
@@ -266,7 +285,7 @@ namespace Hamster
             bool has_arg = !arg.empty();
             if (interpreter.empty())
             {
-                error = ENOEXEC;
+                error = H_ENOEXEC;
                 return -1;
             }
 
@@ -291,7 +310,7 @@ namespace Hamster
         else
         {
             // Not a script or ELF file
-            error = ENOEXEC;
+            error = H_ENOEXEC;
             return -1;
         }
     }

@@ -30,7 +30,7 @@ namespace Hamster
         ssize_t read(void *buf, size_t count);
         ssize_t write(const void *buf, size_t count);
 
-        int get_win_sz(sys_winsize *ws);optional_actions
+        int get_win_sz(sys_winsize *ws);
     };
     */
 
@@ -59,12 +59,12 @@ namespace Hamster
 
         int64_t seek(int64_t offset, int whence) override
         {
-            error = ESPIPE; // TTYs do not support seeking
+            error = H_ESPIPE; // TTYs do not support seeking
             return -1;
         }
         int64_t tell() override
         {
-            error = ESPIPE;
+            error = H_ESPIPE;
             return -1;
         }
         int poll(int op) override;
@@ -125,6 +125,7 @@ namespace Hamster
                 void run() override
                 {
                     driver->read_all_pending();
+                    driver->check_winsize();
                 }
             private:
                 BaseTTYDriver *driver;
@@ -161,7 +162,7 @@ namespace Hamster
             if (&pg->session->obj != session)
             {
                 // Not in the same session, so we can't read
-                error = ENOTTY;
+                error = H_ENOTTY;
                 return -1;
             }
 
@@ -193,7 +194,7 @@ namespace Hamster
             if (&pg->session->obj != session)
             {
                 // Not in the same session, so we can't write
-                error = ENOTTY;
+                error = H_ENOTTY;
                 return -1;
             }
 
@@ -207,6 +208,8 @@ namespace Hamster
                 {
                     proc->send_signal(H_SIGTTOU);
                 }
+
+                return 1;
             }
 
             return 0;
@@ -258,22 +261,13 @@ namespace Hamster
         {
             if (!fg_pgroup)
             {
-                error = ENOTTY; // No foreground process group
+                error = H_ENOTTY; // No foreground process group
                 return -1;
             }
 
-            Task *current_task = scheduler.get_current_task();
-
-            sys_siginfo siginfo;
-            siginfo.signo = signo;
-            siginfo.errno_value = 0;
-            siginfo.code = H_SI_USER;
-            siginfo.fields.kill.pid = current_task ? current_task->get_pid() : 0;
-            siginfo.fields.kill.uid = current_task ? current_task->process->obj.uid : 0;
-
             for (Process *proc : fg_pgroup->processes)
             {
-                proc->send_signal(siginfo);
+                proc->send_signal(signo);
             }
             return 0;
         }
@@ -374,6 +368,25 @@ namespace Hamster
             }
         }
 
+        void check_winsize()
+        {
+            // Check if the window size has changed
+            sys_winsize new_size;
+            if (get_win_sz(&new_size) < 0)
+                return;
+
+            if (new_size.col != win_sz.col || new_size.row != win_sz.row ||
+                new_size.xpixel != win_sz.xpixel || new_size.ypixel != win_sz.ypixel)
+            {
+                win_sz = new_size;
+                // Send SIGWINCH to the foreground process group
+                send_sig_to_fg(H_SIGWINCH);
+            }
+
+            // Update the terminal size
+            win_sz = new_size;
+        }
+
         // Ensure they are accessible
 
         using Backend::get_win_sz;
@@ -436,7 +449,7 @@ namespace Hamster
 
         if (to_read == -1)
         {
-            error = EAGAIN;
+            error = H_EAGAIN;
             return -1;
         }
 
@@ -466,7 +479,7 @@ namespace Hamster
         // Check if output is stopped and flow control is enabled
         if (driver->output_stopped && (driver->termios.iflag & H_IXON))
         {
-            error = EAGAIN;
+            error = H_EAGAIN;
             return -1;
         }
 
@@ -549,7 +562,8 @@ namespace Hamster
             driver->termios = *(const sys_termios *)arg.p;
             return 0;
         case H_TIOCGWINSZ:
-            return driver->get_win_sz((sys_winsize *)arg.p);
+            *(sys_winsize *)arg.p = driver->win_sz;
+            return 0;
         case H_TIOCGPGRP:
             *(uint32_t *)arg.p = driver->fg_pgroup ? driver->fg_pgroup->pgid : 0;
             return 0;
@@ -558,13 +572,13 @@ namespace Hamster
             // Set the controlling TTY
             if (driver->session && arg.i == 0)
             {
-                error = EPERM;
+                error = H_EPERM;
                 return -1;
             }
             Task *current_task = scheduler.get_current_task();
             if (!current_task)
             {
-                error = EINVAL;
+                error = H_EINVAL;
                 return -1; // No current task
             }
             if (driver->session)
@@ -577,29 +591,18 @@ namespace Hamster
         }
         case H_TIOCSPGRP:
         {
-            // Check if we are the controlling TTY
-            Task *current_task = scheduler.get_current_task();
-            if (current_task)
-            {
-                int res = driver->check_writable();
-                if (res < 0)
-                    return res;
-                if (res > 0)
-                {
-                    error = EINTR;
-                    return -1; // Not allowed to set the foreground process group
-                }
-            }
             uint32_t pgid = *(uint32_t *)arg.p;
             ProcessGroup *pg = scheduler.get_process_group(pgid);
             if (!pg)
             {
-                error = EPERM;
+                _trace("base_tty: cannot set foreground to nonexistent process group\n");
+                error = H_EPERM;
                 return -1;
             }
             if (&pg->session->obj != driver->session)
             {
-                error = EPERM;
+                _trace("base_tty: cannot set foreground to process group in different session\n");
+                error = H_EPERM;
                 return -1;
             }
             driver->fg_pgroup = pg;
@@ -608,7 +611,7 @@ namespace Hamster
         }
         case H_TIOCSWINSZ:
         default:
-            error = ENOSYS;
+            error = H_ENOSYS;
             return -1;
         }
     }

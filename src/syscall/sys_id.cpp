@@ -45,7 +45,7 @@ namespace Hamster
             Process *process = scheduler.get_process(pid);
             if (!process)
             {
-                error = ESRCH;
+                error = H_ESRCH;
                 return cvt_error();
             }
 
@@ -65,7 +65,7 @@ namespace Hamster
     {
         if (spid < 0 || spgid < 0)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return cvt_error();
         }
 
@@ -85,14 +85,14 @@ namespace Hamster
             process = scheduler.get_process(pid);
             if (process == nullptr)
             {
-                error = ESRCH;
+                error = H_ESRCH;
                 return cvt_error();
             }
 
             // Check if it is the calling process or one of its children
             if (process->pid != current_task->get_pid() && process->ppid != current_task->get_pid())
             {
-                error = ESRCH;
+                error = H_ESRCH;
                 return cvt_error();
             }
         }
@@ -101,14 +101,14 @@ namespace Hamster
             ProcessGroup *pg = scheduler.get_process_group(pgid);
             if (pg == nullptr)
             {
-                error = ESRCH;
+                error = H_ESRCH;
                 return cvt_error();
             }
 
             // Check if the old and new process groups belong to the same session
             if (process->get_sid() != pg->session->obj.sid)
             {
-                error = EPERM;
+                error = H_EPERM;
                 return cvt_error();
             }
 
@@ -129,6 +129,28 @@ namespace Hamster
         return 0;
     }
 
+    int32_t sys_getsid(int32_t pid)
+    {
+        if (pid == 0)
+        {
+            Task *current_task = scheduler.get_current_task();
+            assert(current_task != nullptr);
+
+            return current_task->get_sid();
+        }
+        else
+        {
+            Process *process = scheduler.get_process(pid);
+            if (!process)
+            {
+                error = H_ESRCH;
+                return cvt_error();
+            }
+
+            return process->get_sid();
+        }
+    }
+
     int32_t sys_setsid()
     {
         Task *current_task = scheduler.get_current_task();
@@ -139,7 +161,7 @@ namespace Hamster
         if (process.get_pgid() == process.pid)
         {
             // Already a process group leader
-            error = EPERM;
+            error = H_EPERM;
             return cvt_error();
         }
 

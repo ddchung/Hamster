@@ -58,7 +58,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return File();
         }
 
@@ -92,7 +92,7 @@ namespace Hamster
     {
         if (fd < 0)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
 
@@ -105,7 +105,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -123,7 +123,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -136,7 +136,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -209,7 +209,7 @@ namespace Hamster
     {
         if (!path || !target)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -227,7 +227,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -240,7 +240,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return File();
         }
 
@@ -260,7 +260,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -273,7 +273,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return File();
         }
 
@@ -293,7 +293,7 @@ namespace Hamster
     {
         if (!path || !target)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -306,7 +306,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -319,7 +319,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return File();
         }
 

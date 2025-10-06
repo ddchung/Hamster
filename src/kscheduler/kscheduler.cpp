@@ -23,18 +23,39 @@ namespace Hamster
     {
         if (!task || task->id == 0)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
         auto it = tasks.find(task->id);
         if (it != tasks.end())
         {
-            error = EEXIST;
+            error = H_EEXIST;
             return -1;
         }
 
         tasks[task->id] = task;
+        return 0;
+    }
+
+    int KScheduler::move_task(uint32_t old_id, uint32_t new_id)
+    {
+        auto it = tasks.find(old_id);
+        if (it == tasks.end())
+        {
+            error = H_ESRCH;
+            return -1;
+        }
+
+        if (new_id == 0 || tasks.find(new_id) != tasks.end())
+        {
+            error = H_EEXIST;
+            return -1;
+        }
+
+        it->second->id = new_id;
+        tasks[new_id] = it->second;
+        tasks.erase(it);
         return 0;
     }
 
@@ -43,7 +64,7 @@ namespace Hamster
         auto it = tasks.find(id);
         if (it == tasks.end())
         {
-            error = ESRCH;
+            error = H_ESRCH;
             return -1;
         }
 

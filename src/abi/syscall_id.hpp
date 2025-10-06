@@ -342,28 +342,28 @@ namespace Hamster
              * This system call creates a new directory at the specified path relative to a directory file descriptor
              * @note Userspace sig: `int mkdirat(int dirfd, const char *pathname, mode_t mode);`, `mode_t` = `unsigned int`
              */
-            MKDIRAT = 34,
+            MKDIRAT = 34,//
 
             /**
              * @brief Remove a file or directory from a path relative to a directory file descriptor
              * This system call removes a file or directory at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int unlinkat(int dirfd, const char *pathname, int flags);`
              */
-            UNLINKAT = 35,
+            UNLINKAT = 35,//
 
             /**
              * @brief Create a hard link to a file from a path relative to a directory file descriptor
              * This system call creates a hard link to a file at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags);`
              */
-            LINKAT = 37,
+            LINKAT = 37,//
 
             /**
              * @brief Rename a file or directory from a path relative to a directory file descriptor
              * This system call renames a file or directory at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int renameat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath);`
              */
-            RENAMEAT = 38,
+            RENAMEAT = 38,//
 
             /**
              * @brief Rename a file or directory from a path relative to a directory file descriptor with an additional flag
@@ -371,7 +371,7 @@ namespace Hamster
              * allowing for additional flags to control the operation.
              * @note Userspace sig: `int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, unsigned int flags);`
              */
-            RENAMEAT2 = 276,
+            RENAMEAT2 = 276,//
 
             /**
              * @brief Read the directory entries of a directory file descriptor
@@ -399,7 +399,7 @@ namespace Hamster
              * @brief Check if a file exists, and potentially if it is read|write|execute accessible
              * @note Userspace sig: `long faccessat(int dirfd, const char *pathname, int mode);`
              */
-            FACCESSAT = 48,
+            FACCESSAT = 48,//
 
             /**
              * @brief Check if a file exists, and potentially if it is read|write|execute accessible
@@ -407,7 +407,7 @@ namespace Hamster
              * and potentially checks if it is readable, writable, or executable.
              * @note Userspace sig: `long faccessat2(int dirfd, const char *pathname, int mode, int flags);`
              */
-            FACCESSAT2 = 439,
+            FACCESSAT2 = 439,//
 
             /**
              * @brief Create an unnamed pipe
@@ -415,7 +415,7 @@ namespace Hamster
              * be used for inter-process communication.
              * @note Userspace sig: `int pipe(int pipefd[2], int flags);`
              */
-            PIPE2 = 59,
+            PIPE2 = 59,//
 
             /**
              * @brief Set the program data's end (the break)
@@ -428,7 +428,7 @@ namespace Hamster
              * This system call maps a file or device into memory, allowing it to be accessed as if it were part of the process's address space.
              * @note Userspace sig: `void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);`
              */
-            MMAP2 = 222,
+            MMAP2 = 222,//
 
             /**
              * @brief Remap a memory region
@@ -442,14 +442,14 @@ namespace Hamster
              * This system call unmaps a previously mapped memory region, releasing the resources associated with it.
              * @note Userspace sig: `int munmap(void *addr, size_t length);`
              */
-            MUNMAP = 215,
+            MUNMAP = 215,//
 
             /**
              * @brief Change the protection of a memory region
              * This system call changes the memory protection of a specified memory region, allowing or disallowing access to it.
              * @note Userspace sig: `int mprotect(void *addr, size_t len, int prot);`
              */
-            MPROTECT = 226,
+            MPROTECT = 226,//
 
             /**
              * @brief Extended stat
@@ -605,13 +605,50 @@ namespace Hamster
              * @brief Get info about the system
              * @note Userspace sig: `int uname(struct utsname *buf);`
              */
-            UNAME = 160,
+            UNAME = 160,//
 
             /**
              * @brief Wait for some file descriptors to become ready for a certain operation
              * @note Userspace sig: `int pselect6_time64(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask);`
              */
-            PSELECT6_TIME64 = 413,
+            PSELECT6_TIME64 = 413,//
+
+            /**
+             * @brief Sync a file and its data
+             * @note Userspace sig: `int fsync(int fd);`
+             */
+            FSYNC = 82,
+
+            /**
+             * @brief Sync a file's data, and strictly needed metadata
+             * @note Userspace sig: `int fdatasync(int fd);`
+             */
+            FDATASYNC = 83,
+
+            /**
+             * @brief Get the clock resolution of a specific clock
+             * Right now, all clocks have 1 millisecond resolution.
+             * @note Userspace sig: `int clock_getres_time64(clockid_t clock_id, struct timespec *res);`
+             */
+            CLOCK_GETRES_TIME64 = 406,
+
+            /**
+             * @brief Get the current time of a specific clock
+             * @note Userspace sig: `int clock_gettime64(clockid_t clock_id, struct timespec *tp);`
+             */
+            CLOCK_GETTIME64 = 403,
+
+            /**
+             * @brief Sleep for a certain time
+             * @note Userspace sig: `int clock_nanosleep_time64(clockid_t clock_id, int flags, const struct timespec *req, struct timespec *rem);`
+             */
+            CLOCK_NANOSLEEP_TIME64 = 407,
+
+            /**
+             * @brief Set the time of a specific clock
+             * @note Userspace sig: `int clock_settime64(clockid_t clock_id, const struct timespec *tp);`
+             */
+            CLOCK_SETTIME64 = 404,
         };
     } // namespace SyscallID
 } // namespace Hamster

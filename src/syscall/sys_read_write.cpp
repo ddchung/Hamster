@@ -12,76 +12,111 @@ namespace Hamster
     {
         // Buffer for read/write operations
         char IO_BUFFER[512];
+
+        void poll_read(Task &task)
+        {
+            int32_t blocking_fd = task.blocking_operation_saved[0];
+
+            UserFD *user_fd = task.get_user_fd(blocking_fd);
+            int res;
+
+            if (!user_fd)
+            {
+                res = cvt_error();
+            }
+            else
+            {
+                switch (user_fd->type)
+                {
+                case UserFDType::VFS:
+                    res = vfs.poll(user_fd->vfs_fd, 0x1); // Poll for read
+                    break;
+                case UserFDType::PIPE_READ:
+                    res = user_fd->pipe->poll(0x1); // Poll for read
+                    break;
+                case UserFDType::PIPE_WRITE:
+                case UserFDType::PID:
+                default:
+                    res = -H_EINVAL;
+                    break;
+                }
+            }
+
+            if (res == 0)
+                return; // not ready
+            else if (res == 1)
+            {
+                task.emulator.x[10] = blocking_fd;
+                task.emulator.x[10] = syscall(sys_read);
+                if ((int32_t)task.emulator.x[10] == -H_EAGAIN)
+                    return;
+            }
+            else
+            {
+                // error
+                task.emulator.x[10] = res;
+            }
+
+
+            task.blocking_operation = nullptr;
+        }
+
+        void poll_write(Task &task)
+        {
+            int32_t blocking_fd = task.blocking_operation_saved[0];
+
+            UserFD *user_fd = task.get_user_fd(blocking_fd);
+            int res;
+
+            if (!user_fd)
+            {
+                res = cvt_error();
+            }
+            else
+            {
+                switch (user_fd->type)
+                {
+                case UserFDType::VFS:
+                    res = vfs.poll(user_fd->vfs_fd, 0x2); // Poll for write
+                    break;
+                case UserFDType::PIPE_WRITE:
+                    res = user_fd->pipe->poll(0x2); // Poll for write
+                    break;
+                case UserFDType::PIPE_READ:
+                case UserFDType::PID:
+                default:
+                    res = -H_EINVAL;
+                    break;
+                }
+            }
+
+            if (res == 0)
+                return; // not ready
+            else if (res == 1)
+            {
+                task.emulator.x[10] = blocking_fd;
+                task.emulator.x[10] = syscall(sys_write);
+                if ((int32_t)task.emulator.x[10] == -H_EAGAIN)
+                    return;
+            }
+            else
+            {
+                // error
+                task.emulator.x[10] = res;
+            }
+
+
+            task.blocking_operation = nullptr;
+        }
     } // namespace
-
-    int Task::poll_read()
-    {
-        Task *current_task = scheduler.get_current_task();
-        assert(current_task != nullptr && "No current task");
-        assert(current_task->blocking_operation == BlockingOperation::IO_READ && "Not a blocking read operation");
-        
-        // Call the system call
-
-        // Load the blocking file descriptor
-        current_task->emulator.x[10] = current_task->io_block_fd;
-
-        int32_t result = syscall(sys_read);
-
-        if (result < 0 && result == -EAGAIN)
-        {
-            // Still blocking, do nothing and check again next time
-            return 0;
-        }
-
-        _trace("sys_read: completed read on Thread FD %d, bytes read %d\n",
-               current_task->io_block_fd, result);
-        
-        // Completed successfully
-        // Copy to a0 register (return value)
-
-        current_task->emulator.x[10] = result;
-        current_task->blocking_operation = BlockingOperation::NONE;
-        current_task->io_block_fd = -1; // Reset the blocking FD
-        return 0;
-    }
-
-    int Task::poll_write()
-    {
-        Task *current_task = scheduler.get_current_task();
-        assert(current_task != nullptr && "No current task");
-        assert(current_task->blocking_operation == BlockingOperation::IO_WRITE && "Not a blocking write operation");
-
-        // Call the system call
-
-        // Load the blocking file descriptor
-        current_task->emulator.x[10] = current_task->io_block_fd;
-
-        int32_t result = syscall(sys_write);
-        if (result < 0 && result == -EAGAIN)
-        {
-            // Still blocking, do nothing and check again next time
-            return 0;
-        }
-
-        _trace("sys_write: completed write on Thread FD %d, bytes written %d\n",
-               current_task->io_block_fd, result);
-
-        // Completed successfully
-
-        // Copy to a0 register (return value)
-        current_task->emulator.x[10] = result;
-        current_task->blocking_operation = BlockingOperation::NONE;
-        current_task->io_block_fd = -1; // Reset the blocking FD
-        return 0;
-    }
 
     int32_t sys_read(int32_t fd, uint32_t buf_loc, uint32_t count)
     {
         Task *current_task = scheduler.get_current_task();
         assert(current_task != nullptr && "No current task");
 
-        int vfs_fd = current_task->get_vfs_fd(fd);
-        if (vfs_fd < 0)
+        UserFD *user_fd = current_task->get_user_fd(fd);
+        if (!user_fd)
             return cvt_error();
 
         // Copy as many times as needed
@@ -91,7 +126,24 @@ namespace Hamster
         while (count > 0)
         {
             size_t to_read = std::min(count, (uint32_t)sizeof(IO_BUFFER));
-            ssize_t bytes_read = vfs.read(vfs_fd, IO_BUFFER, to_read);
+
+            ssize_t bytes_read = 0;
+            bool is_open_nonblock = false;
+
+            switch (user_fd->type)
+            {
+            case UserFDType::VFS:
+                bytes_read = vfs.read(user_fd->vfs_fd, IO_BUFFER, to_read);
+                is_open_nonblock = vfs.get_flags(user_fd->vfs_fd) & OPEN_NONBLOCK;
+                break;
+            case UserFDType::PIPE_READ:
+                bytes_read = user_fd->pipe->read(IO_BUFFER, to_read);
+                is_open_nonblock = user_fd->flags & USER_FD_PIPE_NONBLOCK;
+                break;
+            default:
+                return -H_EPERM;
+            }
+
             if (bytes_read < 0)
             {
                 if (total_read > 0)
@@ -100,30 +152,30 @@ namespace Hamster
                     return total_read;
                 }
 
-                if (error == EAGAIN)
+                if (error == H_EAGAIN)
                 {
                     // Blocking read
-                    if ((vfs.get_flags(vfs_fd) & OPEN_NONBLOCK) == 0)
+                    if (!is_open_nonblock)
                     {
-                        if (current_task->blocking_operation == BlockingOperation::NONE)
+                        if (!current_task->blocking_operation)
                             _trace("sys_read: blocking read on Thread FD %d, count %u\n", fd, count);
 
-                        current_task->blocking_operation = BlockingOperation::IO_READ;
-                        current_task->io_block_fd = fd;
+                        current_task->blocking_operation = poll_read;
+                        current_task->blocking_operation_saved[0] = fd;
                     }
 
-                    return -EAGAIN;
+                    return -H_EAGAIN;
                 }
                 return cvt_error(); // Return error if no bytes read
             }
 
             if (bytes_read == 0)
                 break;
-            
+
             // Copy to user memory
-            if (current_task->memory->obj.memory.memcpy(buf_loc + total_read, IO_BUFFER, bytes_read) < 0)
+            if (current_task->memory->obj.memory.memcpy_alloc(buf_loc + total_read, IO_BUFFER, bytes_read) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
             total_read += bytes_read;
@@ -138,8 +190,8 @@ namespace Hamster
         Task *current_task = scheduler.get_current_task();
         assert(current_task != nullptr && "No current task");
 
-        int vfs_fd = current_task->get_vfs_fd(fd);
-        if (vfs_fd < 0)
+        UserFD *user_fd = current_task->get_user_fd(fd);
+        if (!user_fd)
             return cvt_error();
 
         // Copy as many times as needed
@@ -151,11 +203,27 @@ namespace Hamster
             size_t to_write = std::min(count, (uint32_t)sizeof(IO_BUFFER));
             if (current_task->memory->obj.memory.memcpy(IO_BUFFER, buf_loc + total_written, to_write) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
 
-            ssize_t bytes_written = vfs.write(vfs_fd, IO_BUFFER, to_write);
+            ssize_t bytes_written = 0;
+            bool is_open_nonblock = false;
+
+            switch (user_fd->type)
+            {
+            case UserFDType::VFS:
+                bytes_written = vfs.write(user_fd->vfs_fd, IO_BUFFER, to_write);
+                is_open_nonblock = vfs.get_flags(user_fd->vfs_fd) & OPEN_NONBLOCK;
+                break;
+            case UserFDType::PIPE_WRITE:
+                bytes_written = user_fd->pipe->write(IO_BUFFER, to_write);
+                is_open_nonblock = user_fd->flags & USER_FD_PIPE_NONBLOCK;
+                break;
+            default:
+                return -H_EPERM;
+            }
+
             if (bytes_written < 0)
             {
                 if (total_written > 0)
@@ -164,19 +232,18 @@ namespace Hamster
                     return total_written;
                 }
 
-                if (error == EAGAIN)
+                if (error == H_EAGAIN)
                 {
                     // Blocking write
-                    if (current_task->blocking_operation == BlockingOperation::NONE &&
-                        (vfs.get_flags(vfs_fd) & OPEN_NONBLOCK) == 0)
+                    if (!current_task->blocking_operation && !is_open_nonblock)
                     {
                         _trace("sys_write: blocking write on Thread FD %d, count %u\n", fd, count);
 
-                        current_task->blocking_operation = BlockingOperation::IO_WRITE;
-                        current_task->io_block_fd = fd;
+                        current_task->blocking_operation = poll_write;
+                        current_task->blocking_operation_saved[0] = fd;
                     }
 
-                    return -EAGAIN;
+                    return -H_EAGAIN;
                 }
                 return cvt_error(); // Return error if no bytes written
             }
@@ -188,5 +255,3 @@ namespace Hamster
         return total_written;
     }
 } // namespace Hamster
-
-

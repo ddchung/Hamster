@@ -46,12 +46,12 @@ namespace Hamster
     {
         if (fd < 0 || fd >= (int)fds.size())
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
         if (fds[fd].file == nullptr)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
         auto &file = fds[fd].file;
@@ -71,12 +71,12 @@ namespace Hamster
     {
         if (fd < 0 || fd >= (int)fds.size())
         {
-            error = EBADF;
+            error = H_EBADF;
             return nullptr;
         }
         if (fds[fd].file == nullptr)
         {
-            error = EBADF;
+            error = H_EBADF;
             return nullptr;
         }
         return fds[fd].file;

@@ -152,7 +152,7 @@ void test_filesystem()
         {
             if (deque.empty())
             {
-                error = EAGAIN;
+                error = H_EAGAIN;
                 return -1;
             }
             while (count --> 0)
@@ -185,19 +185,19 @@ void test_filesystem()
 
         int ioctl(int flags, IoctlArg arg) override
         {
-            error = ENOTTY;
+            error = H_ENOTTY;
             return -1;
         }
 
         int64_t seek(int64_t offset, int whence) override
         {
-            error = ESPIPE;
+            error = H_ESPIPE;
             return -1;
         }
 
         int64_t tell() override
         {
-            error = ESPIPE;
+            error = H_ESPIPE;
             return -1;
         }
     private:
@@ -242,56 +242,6 @@ void test_filesystem()
     assert(vfs->unmount("/") == 0);
 
     dealloc(vfs);
-
-    vfs = &Hamster::vfs; // Use global VFS instance
-    fs = alloc<RamFs>(1);
-    assert(vfs->mount("/", fs) == 0);
-
-    // Test memory mapping
-
-    int mmap_fd = vfs->open("/file.txt", OPEN_RDWR | OPEN_CREAT, 0644);
-    assert(mmap_fd >= 0);
-    
-
-    MemorySpace mem_space;
-
-    // Map 64 bytes starting at virtual address 10
-    assert(mem_space.mmap(10, 64, 07, MAP_SHARED, mmap_fd, 0) == 0);
-
-    // Write to mapped memory
-    const char *mmap_text = "Mapped Memory! 1234567890abcdefghijklmnopqrstuvwxyz";
-    assert(mem_space.memcpy(10, mmap_text, strlen(mmap_text)) == 0);
-
-    fd = vfs->open("/file.txt", OPEN_RDWR);
-    assert(fd >= 0);
-
-    assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
-    assert(vfs->read(fd, buf, strlen(mmap_text)) == (ssize_t)strlen(mmap_text));
-    assert(strncmp(buf, mmap_text, strlen(mmap_text)) == 0);
-
-    assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
-
-    const char *new_text = "New Text! blah blah blah";
-    const char *expected = "New Text! blah blah blah0abcdefghijklmnopqrstuvwxyz";
-
-    assert(vfs->write(fd, new_text, strlen(new_text)) == (ssize_t)strlen(new_text));
-    assert(mem_space.memcpy(buf, 10, strlen(expected)) == 0);
-
-    assert(strncmp(buf, expected, strlen(expected)) == 0);
-
-    assert(mem_space.munmap(15, 10) == 0); // partially unmap the memory
-
-    new_text = "Partially Unmapping Memory!";
-    expected = "Parti__________ping Memory!cdefghijklmnopqrstuvwxyz";
-
-    assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
-    assert(vfs->write(fd, new_text, strlen(new_text)) == (ssize_t)strlen(new_text));
-    assert(mem_space.memcpy(buf, 10, strlen(expected)) == 0);
-    assert(strncmp(buf, expected, 5) == 0);
-    assert(strncmp(buf + 15, expected + 15, strlen(expected) - 15) == 0);
-
-    assert(vfs->close(fd) == 0);
-    assert(vfs->unmount("/") == 0);
 
     // Remount new ramfs for additional tests
     fs = alloc<RamFs>(1);
@@ -386,19 +336,6 @@ void test_filesystem()
     assert(vfs->remove("/torm2.txt") == 0);
     vfs->close(fd);
 
-    // --- Memory Mapping Edge Cases ---
-    fd = vfs->open("/mmapfile", OPEN_RDWR | OPEN_CREAT, 0644);
-    assert(fd >= 0);
-    MemorySpace ms;
-    // Overlapping mapping
-    assert(ms.mmap(0x1000, 0x100, 07, MAP_SHARED, fd, 0) == 0);
-    assert(ms.mmap(0x1000, 0x100, 07, MAP_SHARED, fd, 0) < 0);
-    // Partial unmap
-    assert(ms.munmap(0x1000, 0x80) == 0);
-    // Permission check
-    assert(ms.check_permissions(0x1000, PROT_READ));
-    vfs->close(fd);
-
     // --- More Regular File Edge Cases ---
     // Test file overwrite
     fd = vfs->open("/overwrite.txt", OPEN_RDWR | OPEN_CREAT, 0644);
@@ -450,13 +387,110 @@ void test_filesystem()
     // Remove non-existent file
     assert(vfs->remove("/noexist.txt") < 0);
 
-    // --- Memory Mapping Error Cases ---
-    // Map with invalid fd
-    assert(ms.mmap(0x2000, 0x100, 07, MAP_SHARED, -1, 0) < 0);
-    // Unmap region not mapped (should succeed or no-op)
-    assert(ms.munmap(0x3000, 0x100) == 0);
-
     dealloc(vfs);
+
+    vfs = &Hamster::vfs;
+    assert(vfs->mount("/", alloc<RamFs>(1)) == 0);
+
+    // --- Memory Mapping ---
+    {
+        Hamster::MemorySpace ms;
+        constexpr uint32_t page_size = HAMSTER_PAGE_SIZE;
+        constexpr uint32_t region_size = page_size * 2;
+        uint8_t perms = Hamster::PERM_READ | Hamster::PERM_WRITE;
+
+        // Create and write to a file
+        const char *mapfile = "/mapped_file.bin";
+        int fd = vfs->open(mapfile, OPEN_RDWR | OPEN_CREAT, 0644);
+        assert(fd >= 0);
+        char filedata[page_size * 2];
+        for (uint32_t i = 0; i < sizeof(filedata); ++i) filedata[i] = (char)(i % 256);
+        assert(vfs->write(fd, filedata, sizeof(filedata)) == (ssize_t)sizeof(filedata));
+        assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
+
+        // Map the file privately into memory
+        assert(ms.map_private_file(0x40000, fd, 0, region_size, perms) == 0);
+        // Check mapping
+        assert(ms.is_mapped(0x40000, region_size) == 1);
+        assert(ms.how_many_mapped(0x40000, region_size) == 2);
+
+        // Read from mapped region and compare to file
+        char buf[page_size * 2] = {0};
+        assert(ms.memcpy(buf, 0x40000, sizeof(buf)) == 0);
+        assert(memcmp(buf, filedata, sizeof(buf)) == 0);
+
+        // Write to mapped region and verify change is private
+        for (uint32_t i = 0; i < sizeof(buf); ++i) buf[i] = (char)(255 - (i % 256));
+        assert(ms.memcpy(0x40000, buf, sizeof(buf)) == 0);
+        // Read back from memory
+        char memcheck[page_size * 2] = {0};
+        assert(ms.memcpy(memcheck, 0x40000, sizeof(memcheck)) == 0);
+        assert(memcmp(memcheck, buf, sizeof(buf)) == 0);
+        // Read from file again to verify file is unchanged
+        assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
+        char filecheck[page_size * 2] = {0};
+        assert(vfs->read(fd, filecheck, sizeof(filecheck)) == (ssize_t)sizeof(filecheck));
+        assert(memcmp(filecheck, filedata, sizeof(filedata)) == 0);
+
+        // Unmap and cleanup
+        assert(ms.unmap(0x40000, region_size) == 0);
+        vfs->close(fd);
+        assert(vfs->remove(mapfile) == 0);
+    }
+
+    // --- Shared File Mapping Test ---
+    {
+        Hamster::MemorySpace ms1, ms2;
+        constexpr uint32_t page_size = HAMSTER_PAGE_SIZE;
+        constexpr uint32_t region_size = page_size * 2;
+        uint8_t perms = Hamster::PERM_READ | Hamster::PERM_WRITE;
+
+        const char *sharedfile = "/shared_map.bin";
+        int fd = vfs->open(sharedfile, OPEN_RDWR | OPEN_CREAT, 0644);
+        assert(fd >= 0);
+        char filedata[region_size];
+        for (uint32_t i = 0; i < sizeof(filedata); ++i) filedata[i] = (char)(i % 256);
+        assert(vfs->write(fd, filedata, sizeof(filedata)) == (ssize_t)sizeof(filedata));
+        assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
+
+        // Map the file shared into ms1
+        assert(ms1.map_shared_file(0x50000, fd, 0, region_size, perms) == 0);
+        // Write to ms1 mapping
+        char newdata[region_size];
+        for (uint32_t i = 0; i < sizeof(newdata); ++i) newdata[i] = (char)(255 - (i % 256));
+        assert(ms1.memcpy(0x50000, newdata, sizeof(newdata)) == 0);
+
+        // Copy ms1 to ms2 (should share the mapping)
+        ms2 = ms1;
+
+        // Read from ms2 and check it sees the new data
+        char readback[region_size];
+        assert(ms2.memcpy(readback, 0x50000, sizeof(readback)) == 0);
+        assert(memcmp(readback, newdata, sizeof(newdata)) == 0);
+
+        // Write different data in ms2
+        for (uint32_t i = 0; i < sizeof(newdata); ++i) newdata[i] = (char)((i * 3) % 256);
+        assert(ms2.memcpy(0x50000, newdata, sizeof(newdata)) == 0);
+
+        // Read from ms1 and check it sees the new data
+        char readback2[region_size];
+        assert(ms1.memcpy(readback2, 0x50000, sizeof(readback2)) == 0);
+        assert(memcmp(readback2, newdata, sizeof(newdata)) == 0);
+
+        // Read from file and check it sees the new data (shared mapping)
+        assert(vfs->seek(fd, 0, H_SEEK_SET) == 0);
+        char filecheck[region_size];
+        assert(vfs->read(fd, filecheck, sizeof(filecheck)) == (ssize_t)sizeof(filecheck));
+        assert(memcmp(filecheck, newdata, sizeof(newdata)) == 0);
+
+        // Cleanup
+        assert(ms1.unmap(0x50000, region_size) == 0);
+        assert(ms2.unmap(0x50000, region_size) == 0);
+        vfs->close(fd);
+        assert(vfs->remove(sharedfile) == 0);
+    }
+
+    assert(vfs->unmount("/") == 0);
 }
 
 #endif // NDEBUG

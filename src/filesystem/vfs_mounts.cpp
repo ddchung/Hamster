@@ -82,7 +82,7 @@ namespace Hamster
         MountPoint &mount = it->second;
         if (!mount.fs)
         {
-            error = ENOENT;
+            error = H_ENOENT;
             dealloc(file);
             return nullptr;
         }
@@ -92,11 +92,11 @@ namespace Hamster
         return dir;
     }
 
-    BaseFile *Mounts::resolve_symlink(BaseSymlink *link, int flags)
+    BaseFile *Mounts::resolve_symlink(BaseSymlink *link, int flags, BaseDirectory *dir)
     {
         if (!link)
         {
-            error = EBADF;
+            error = H_EBADF;
             return nullptr;
         }
         char *target = link->get_target();
@@ -104,7 +104,13 @@ namespace Hamster
         dealloc(link);
         if (!target)
             return nullptr;
-        BaseFile *file = lopen(target, (flags & ~OPEN_DIRECTORY) | OPEN_NOFOLLOW, 0);
+        if (target[0] == '/')
+        {
+            // If the path is absolute, use root directory
+            dealloc(dir);
+            dir = nullptr;
+        }
+        BaseFile *file = lopen(target, (flags & ~OPEN_DIRECTORY & ~OPEN_CREAT & ~OPEN_EXCL) | OPEN_NOFOLLOW, 0, dir);
         dealloc(target);
 
         if (!file)
@@ -115,7 +121,7 @@ namespace Hamster
         if (file_id != -1 && link_id != -1 && file_id == link_id)
         {
             // Self-targeting symlink
-            error = ELOOP;
+            error = H_ELOOP;
             dealloc(file);
             return nullptr;
         }
@@ -125,7 +131,7 @@ namespace Hamster
 
         if (file->type() != FileType::Directory && (flags & OPEN_DIRECTORY))
         {
-            error = ENOTDIR;
+            error = H_ENOTDIR;
             dealloc(file);
             return nullptr;
         }
@@ -136,7 +142,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             dealloc(dir);
             return nullptr;
         }
@@ -144,7 +150,7 @@ namespace Hamster
         {
             if (!root_mount)
             {
-                error = ENOENT;
+                error = H_ENOENT;
                 return nullptr;
             }
             dir = root_mount->fs->open_root(flags);
@@ -158,20 +164,28 @@ namespace Hamster
         const char *next = strchr(path, '/');
         if (!next)
         {
-            BaseFile *file = dir->get(path, flags, mode);
-            dealloc(dir);
+            int get_flags = flags;
+            if ((flags & OPEN_CREAT) == 0) get_flags &= ~OPEN_DIRECTORY;
+            BaseFile *file = dir->get(path, get_flags, mode);
             if (!file)
+            {
+                dealloc(dir);
                 return nullptr;
+            }
             if (file->type() == FileType::Symlink && !(flags & OPEN_NOFOLLOW))
             {
-                file = resolve_symlink((BaseSymlink *)file, flags);
+                file = resolve_symlink((BaseSymlink *)file, flags, dir);
+                dir = nullptr;
                 if (!file)
+                {
                     return nullptr;
+                }
             }
+            dealloc(dir);
             if (file->type() != FileType::Directory && (flags & OPEN_DIRECTORY))
             {
                 dealloc(file);
-                error = ENOTDIR;
+                error = H_ENOTDIR;
                 return nullptr;
             }
             return file->type() == FileType::Directory ? resolve_mount(file) : file;
@@ -179,14 +193,17 @@ namespace Hamster
         else
         {
             String next_name(path, next - path);
-            BaseFile *next_file = dir->get(next_name.c_str(), (flags & ~OPEN_CREAT & ~OPEN_EXCL));
-            dealloc(dir);
+            BaseFile *next_file = dir->get(next_name.c_str(), (flags & ~OPEN_CREAT & ~OPEN_EXCL & ~OPEN_DIRECTORY));
             if (!next_file)
+            {
+                dealloc(dir);
                 return nullptr;
+            }
             switch (next_file->type())
             {
             case FileType::Symlink:
-                next_file = resolve_symlink((BaseSymlink *)next_file, (flags & ~OPEN_CREAT & ~OPEN_EXCL) | OPEN_DIRECTORY);
+                next_file = resolve_symlink((BaseSymlink *)next_file, (flags & ~OPEN_CREAT & ~OPEN_EXCL) | OPEN_DIRECTORY, dir);
+                dir = nullptr;
                 if (!next_file)
                 {
                     return nullptr;
@@ -195,25 +212,25 @@ namespace Hamster
             [[fallthrough]];
             case FileType::Directory:
             {
+                dealloc(dir);
                 BaseDirectory *next_dir = (BaseDirectory *)next_file;
                 next_dir = resolve_mount(next_dir);
                 if (!next_dir)
                 {
                     dealloc(next_file);
-                    error = ENOENT;
+                    error = H_ENOENT;
                     return nullptr;
                 }
                 BaseFile *file = lopen(next, flags, mode, next_dir);
                 return file;
             }
             default:
-            {
-                dealloc(next_file);
-                error = ENOTDIR;
-                return nullptr;
+                break;
             }
-            }
+            // non-directory in middle of path
             dealloc(next_file);
+            dealloc(dir);
+            error = H_ENOTDIR;
             return nullptr;
         }
     }
@@ -222,12 +239,12 @@ namespace Hamster
     {
         if (!path || !fs)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
         if (mounts.size() >= 0xFFFF)
         {
-            error = ENOSPC;
+            error = H_ENOSPC;
             return -1;
         }
         BaseFile *file = lopen(path, OPEN_RDONLY | OPEN_DIRECTORY, 0);
@@ -245,7 +262,7 @@ namespace Hamster
         auto it = mounts.find(id);
         if (it != mounts.end())
         {
-            error = EBUSY;
+            error = H_EBUSY;
             dealloc(file);
             return -1;
         }
@@ -283,12 +300,12 @@ namespace Hamster
     {
         if (!fs)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
         if (root_mount)
         {
-            error = EBUSY;
+            error = H_EBUSY;
             return -1;
         }
         mounts.clear();
@@ -300,7 +317,7 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
         BaseFile *file = lopen(path, OPEN_RDONLY | OPEN_DIRECTORY, 0);
@@ -317,13 +334,13 @@ namespace Hamster
         auto it = mounts.find(id);
         if (it == mounts.end())
         {
-            error = ENOENT;
+            error = H_ENOENT;
             return -1;
         }
 
         if (it->second.children > 0)
         {
-            error = EBUSY;
+            error = H_EBUSY;
             return -1;
         }
 
@@ -338,13 +355,13 @@ namespace Hamster
     {
         if (!root_mount)
         {
-            error = ENOENT;
+            error = H_ENOENT;
             return -1;
         }
 
         if (root_mount->children > 0)
         {
-            error = EBUSY;
+            error = H_EBUSY;
             return -1;
         }
 

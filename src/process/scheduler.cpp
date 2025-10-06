@@ -33,6 +33,13 @@ namespace Hamster
                     continue;
                 }
 
+                // Stop any blocking operation
+                if (task.blocking_operation)
+                {
+                    task.blocking_operation = nullptr;
+                    task.emulator.x[10] = -EINTR;
+                }
+
                 // Call the signal handler
                 SignalHandler handler = task.process->obj.signal_handlers->obj.sig_handlers[signo];
                 handler.fn(&task, &siginfo, &handler.action);
@@ -67,13 +74,12 @@ namespace Hamster
             return 1; // Nothing to handle
         }
     } // namespace
-    
 
     uint32_t Scheduler::add_task(Task *task)
     {
         if (!task)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return 0;
         }
 
@@ -90,7 +96,7 @@ namespace Hamster
         {
             return it->second;
         }
-        error = ESRCH;
+        error = H_ESRCH;
         return nullptr;
     }
 
@@ -101,12 +107,10 @@ namespace Hamster
         {
             current_task = task;
 
-            if (task->is_paused || task->is_dead)
+            if (task->is_dead)
                 continue;
 
             int result = do_tick(*task);
-
-            task->last_tick = _get_sys_time();
 
             if (result < 0)
             {
@@ -146,12 +150,14 @@ namespace Hamster
     {
         if (!path)
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
 
-        if (!argv) argv = empty_strings;
-        if (!envp) envp = empty_strings;
+        if (!argv)
+            argv = empty_strings;
+        if (!envp)
+            envp = empty_strings;
 
         Task *task = alloc<Task>();
 
@@ -195,7 +201,7 @@ namespace Hamster
 
         if (ret < 0)
         {
-            dealloc(task);
+            task->exit(make_wait_terminated_coredump(H_SIGKILL));
             return -1;
         }
 
@@ -236,7 +242,7 @@ namespace Hamster
         }
 
         // Still not found, no process with that PID
-        error = ESRCH;
+        error = H_ESRCH;
         return nullptr;
     }
 
@@ -262,7 +268,7 @@ namespace Hamster
         }
 
         // Still not found, no process group with that PGID
-        error = ESRCH;
+        error = H_ESRCH;
         return nullptr;
     }
 
@@ -288,15 +294,12 @@ namespace Hamster
         }
 
         // Still not found, no session with that SID
-        error = ESRCH;
+        error = H_ESRCH;
         return nullptr;
     }
 
-    int Scheduler::do_tick(Task &task, uint16_t tick_count)
+    int Scheduler::do_tick(Task &task)
     {
-        if (tick_count == 0)
-            return 0;
-
         if (task.is_dead)
             return 0; // Skip dead tasks
 
@@ -315,53 +318,41 @@ namespace Hamster
             return signal_result == 1 ? 0 : -1;
         }
 
-        if (task.blocking_operation == BlockingOperation::IO_READ)
+        if (task.is_paused)
+            return 0;
+
+        if (task.blocking_operation)
         {
-            return task.poll_read();
-        }
-        else if (task.blocking_operation == BlockingOperation::IO_WRITE)
-        {
-            return task.poll_write();
-        }
-        else if (task.blocking_operation == BlockingOperation::WAIT)
-        {
-            return task.poll_wait();
+            // Limit blocking calls to once every millisecond
+            if (_get_sys_time() > task.last_tick)
+                task.blocking_operation(task);
+            return 0;
         }
 
         // Execute the task's instruction
-        auto result = task.emulator.execute();
-        if (result.status == RiscVEmulator::ExecuteResult::Status::Success)
-        {
-            // Successful execution, continue
-            return do_tick(task, tick_count - 1);
-        }
-        else if (result.status == RiscVEmulator::ExecuteResult::Status::ECALL)
+        sys_siginfo siginfo = {};
+        
+        auto result = task.emulator.run();
+        if (result.status == RiscVEmulator::ExecuteResult::Status::ECALL)
         {
             // Handle system call
             int32_t syscall_id = task.emulator.x[17]; // a7 is syscall ID
             int32_t syscall_result = Hamster::syscall(syscall_id);
             task.emulator.x[10] = syscall_result; // a0 is syscall return value
-            return 0;
         }
         else if (result.status == RiscVEmulator::ExecuteResult::Status::EBREAK)
         {
             // TODO: Handle EBREAK
-            return 0;
         }
-
-        sys_siginfo siginfo = {};
-
-        if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalInstruction)
+        else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalInstruction)
         {
             siginfo.signo = H_SIGILL;
             siginfo.errno_value = 0;
             siginfo.code = H_ILL_ILLOPC;
 
-            // - 4, because the PC was incremented
-            siginfo.fields.fault.addr = task.emulator.pc - 4;
+            siginfo.fields.fault.addr = task.emulator.pc;
 
             task.send_signal(siginfo);
-            return 0;
         }
         else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalLoad)
         {
@@ -369,11 +360,9 @@ namespace Hamster
             siginfo.errno_value = 0;
             siginfo.code = H_SEGV_MAPERR;
 
-            // - 4, because the PC was incremented
-            siginfo.fields.fault.addr = task.emulator.pc - 4;
+            siginfo.fields.fault.addr = task.emulator.pc;
 
             task.send_signal(siginfo);
-            return 0;
         }
         else if (result.status == RiscVEmulator::ExecuteResult::Status::IllegalStore)
         {
@@ -381,11 +370,9 @@ namespace Hamster
             siginfo.errno_value = 0;
             siginfo.code = H_SEGV_ACCERR;
 
-            // - 4, because the PC was incremented
-            siginfo.fields.fault.addr = task.emulator.pc - 4;
+            siginfo.fields.fault.addr = task.emulator.pc;
 
             task.send_signal(siginfo);
-            return 0;
         }
         else if (result.status == RiscVEmulator::ExecuteResult::Status::Error)
         {
@@ -394,7 +381,8 @@ namespace Hamster
             return -1;
         }
 
-        return -1;
+        task.last_tick = _get_sys_time();
+
+        return 0;
     }
 } // namespace Hamster
-

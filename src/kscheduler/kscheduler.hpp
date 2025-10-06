@@ -67,10 +67,18 @@ namespace Hamster
          * @param task The task to add
          * @return 0 on success, -1 on failure and set `error`
          * @note This takes ownership of the task, and will `dealloc` it when it is removed
-         * @note If the ID is already in use, this fails with `EEXIST`
+         * @note If the ID is already in use, this fails with `H_EEXIST`
          * @note The task's ID must be already set
          */
         int add_task(BaseKTask *task);
+
+        /**
+         * @brief Change an existing task's ID
+         * @param old_id The current ID of the task
+         * @param new_id The new ID to assign to the task
+         * @return 0 on success, -1 on failure and set `error`
+         */
+        int move_task(uint32_t old_id, uint32_t new_id);
 
         /**
          * @brief Manually remove a task from the kernel scheduler

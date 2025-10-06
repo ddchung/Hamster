@@ -15,7 +15,7 @@ namespace Hamster
 
         if (buf_loc == 0)
         {
-            error = EFAULT; // Bad address
+            error = H_EFAULT; // Bad address
             return cvt_error();
         }
 
@@ -30,14 +30,14 @@ namespace Hamster
         size_t cwd_length = strlen(cwd_str);
         if (size < cwd_length + 1)
         {
-            error = ERANGE; // Buffer too small
+            error = H_ERANGE; // Buffer too small
             return cvt_error();
         }
 
         // Copy the CWD to the buffer
-        if (current_task->memory->obj.memory.memcpy(buf_loc, cwd_str, cwd_length + 1) < 0)
+        if (current_task->memory->obj.memory.memcpy_alloc(buf_loc, cwd_str, cwd_length + 1) < 0)
         {
-            error = EFAULT; // Bad address
+            error = H_EFAULT; // Bad address
             return cvt_error();
         }
 

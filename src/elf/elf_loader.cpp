@@ -12,9 +12,11 @@ namespace Hamster
     {
         int load_elf32(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk)
         {
+            mem_space.unmap_all();
+
             if (file.seek(0, H_SEEK_SET) < 0)
             {
-                error = EIO;
+                error = H_EIO;
                 return -1;
             }
 
@@ -23,39 +25,39 @@ namespace Hamster
 
             if (file.read(&ehdr, sizeof(ehdr)) != sizeof(ehdr))
             {
-                error = EIO;
+                error = H_EIO;
                 return -1;
             }
 
             // Check ELF header
             if (memcmp(ehdr.e_ident, ELFMAG, SELFMAG) != 0)
             {
-                error = ENOEXEC;
+                error = H_ENOEXEC;
                 return -1;
             }
 
             if (ehdr.e_ident[EI_CLASS] != ELFCLASS32)
             {
-                error = ENOEXEC;
+                error = H_ENOEXEC;
                 return -1;
             }
 
             if (ehdr.e_ident[EI_DATA] != ELFDATA2LSB)
             {
-                error = ENOEXEC;
+                error = H_ENOEXEC;
                 return -1;
             }
 
             if (ehdr.e_type != ET_EXEC)
             {
                 // TODO: Dynamic linking is not supported yet
-                error = ENOEXEC;
+                error = H_ENOEXEC;
                 return -1;
             }
 
             if (ehdr.e_machine != EM_RISCV)
             {
-                error = ENOEXEC;
+                error = H_ENOEXEC;
                 return -1;
             }
 
@@ -64,11 +66,6 @@ namespace Hamster
             brk = 0;
 
             // Load program headers
-            if (file.seek(ehdr.e_phoff, H_SEEK_SET) < 0)
-            {
-                error = EIO;
-                return -1;
-            }
 
             for (int i = 0; i < ehdr.e_phnum; ++i)
             {
@@ -76,20 +73,13 @@ namespace Hamster
 
                 if (file.seek(ehdr.e_phoff + i * ehdr.e_phentsize, H_SEEK_SET) < 0)
                 {
-                    error = EIO;
+                    error = H_EIO;
                     return -1;
                 }
 
                 if (file.read(&phdr, sizeof(phdr)) != sizeof(phdr))
                 {
-                    error = EIO;
-                    return -1;
-                }
-
-                // Copy the program header to the memory space
-                if (mem_space.memcpy(HAMSTER_STACK_TOP + 1 + i * sizeof(phdr), &phdr, sizeof(phdr)) != 0)
-                {
-                    error = EIO;
+                    error = H_EIO;
                     return -1;
                 }
 
@@ -98,46 +88,34 @@ namespace Hamster
                     // Load segment
                     if (file.seek(phdr.p_offset, H_SEEK_SET) < 0)
                     {
-                        error = EIO;
+                        error = H_EIO;
                         return -1;
                     }
 
                     uint64_t top = phdr.p_vaddr + phdr.p_memsz;
                     if (top > brk)
                         brk = top;
+                    
+                    // Map segment
 
-                    static uint8_t buf[64];
-                    size_t bytes_to_read = phdr.p_filesz;
-                    size_t bytes_read = 0;
-                    while (bytes_to_read > 0)
-                    {
-                        size_t chunk_size = bytes_to_read < sizeof(buf) ? bytes_to_read : sizeof(buf);
-                        ssize_t ret = file.read(buf, chunk_size);
-                        if (ret < 0)
-                        {
-                            error = EIO;
-                            return -1;
-                        }
-
-                        mem_space.memcpy(phdr.p_vaddr + bytes_read, buf, ret);
-                        bytes_read += ret;
-                        bytes_to_read -= ret;
-                    }
-
-                    // Zero out the rest of the segment
+                    _trace("%s:%d load_elf32: mapping private region, vaddr=0x%08x, fd=%d, offset=%d, filesz=0x%08x\n", __FILE__, __LINE__, phdr.p_vaddr, file.get_fd(), phdr.p_offset, phdr.p_filesz);
+                    int res = mem_space.map_private_file(phdr.p_vaddr, file.get_fd(), phdr.p_offset, phdr.p_filesz, phdr.p_flags & 07);
+                    if (res < 0)
+                        _trace("%s:%d load_elf32: map_private_file failed: error %d\n", __FILE__, __LINE__, error);
+                    
                     if (phdr.p_memsz > phdr.p_filesz)
                     {
-                        size_t zero_size = phdr.p_memsz - phdr.p_filesz;
-                        mem_space.memset(phdr.p_vaddr + bytes_read, 0, zero_size);
+                        // Zero out rest
+                        if (mem_space.memset_alloc(phdr.p_vaddr + phdr.p_filesz, 0, phdr.p_memsz - phdr.p_filesz) < 0)
+                        {
+                            error = H_EIO;
+                            return -1;
+                        }
                     }
                 }
             }
 
-            _trace("Loaded elf with brk: %lx\n", brk);
-
             brk = (brk + (HAMSTER_PAGE_SIZE - 1)) & ~((uint64_t)HAMSTER_PAGE_SIZE - 1);
-
-            _trace("Adjusted brk to: %lx\n", brk);
 
             // done loading
             return 0;
@@ -150,7 +128,7 @@ namespace Hamster
         // Prepare file
         if (file.seek(0, H_SEEK_SET) < 0)
         {
-            error = EIO;
+            error = H_EIO;
             return -1;
         }
 
@@ -159,14 +137,14 @@ namespace Hamster
 
         if (file.read(e_ident, EI_NIDENT) != EI_NIDENT)
         {
-            error = EIO;
+            error = H_EIO;
             return -1;
         }
 
         // Check ELF magic number
         if (memcmp(e_ident, ELFMAG, SELFMAG) != 0)
         {
-            error = ENOEXEC;
+            error = H_ENOEXEC;
             return -1;
         }
 
@@ -176,7 +154,7 @@ namespace Hamster
         }
         else
         {
-            error = ENOEXEC;
+            error = H_ENOEXEC;
             return -1;
         }
     }

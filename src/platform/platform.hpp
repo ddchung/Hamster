@@ -27,12 +27,6 @@ namespace Hamster
     // please either write all or don't write at all
     int _swap_in(int index, uint8_t *data);
 
-    // Remove a swap page
-    int _swap_rm(int index);
-
-    // Removes all swap pages
-    int _swap_rm_all();
-
     // Allocate some memory on heap
     // returns nullptr on failure
     void *_malloc(size_t size);
@@ -47,10 +41,15 @@ namespace Hamster
     // This behaves like the `CLOCK_MONOTONIC` clock in POSIX
     uint64_t _get_sys_time();
 
+    // Get the remaining free memory
+    // Returns the amount of free memory in bytes
+    size_t _get_free_memory();
+
     // Log
     int _log(const char * msg);
     int _log(char c);
 
+#ifndef NTRACE
     // Trace
     // This is a debug function, by default it does nothing
     // If overridden, it is **VERY IMPORTANT** that it traces to a different
@@ -61,4 +60,10 @@ namespace Hamster
     // because of potential usages of uncommon format specifiers (like "%.*s")
     __attribute__((format(printf, 1, 2)))
     void _trace(const char *fmt, ...);
+#else
+    inline void _trace(const char *fmt, ...) {}
+#endif
+
+    // Initialize any allocator
+    void _init_allocator();
 }

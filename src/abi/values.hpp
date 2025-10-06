@@ -1,6 +1,15 @@
-// ABI values
+/**
+ * This file contains constants from the RISC-V linux headers
+ * 
+ * The values here were transformed from marcos from linux's include/asm and include/asm-generic into
+ * `inline constexpr int`s
+ * 
+ * The names were also altered, as to not conflict with any host C library
+ */
 
 #pragma once
+
+#include <cstdint>
 
 namespace Hamster
 {
@@ -212,7 +221,9 @@ namespace Hamster
 
     inline constexpr int H_FD_CLOEXEC = 1; // Close-on-exec flag
 
-    inline constexpr int H_AT_FDCWD = -100; // Special value for current working directory
+    inline constexpr int H_AT_FDCWD = -100;      // Special value for current working directory
+    inline constexpr int H_AT_REMOVEDIR = 0x200; // unlinkat(2) flag to remove directories instead of files
+    inline constexpr int H_AT_EACCESS = 0x200;   // faccessat2(2) flag to use EUID/EGID instead of UID/GID for permission checking
 
     inline constexpr int H_SIGHUP = 1;
     inline constexpr int H_SIGINT = 2;
@@ -375,6 +386,191 @@ namespace Hamster
     inline constexpr int H_SIG_BLOCK = 0;
     inline constexpr int H_SIG_UNBLOCK = 1;
     inline constexpr int H_SIG_SETMASK = 2;
+
+    inline constexpr int H_SA_NOCLDSTOP = 0x00000001; /* Don't send SIGCHLD when children stop.  */
+    inline constexpr int H_SA_NOCLDWAIT = 0x00000002; /* Don't create zombie on child death.  */
+    inline constexpr int H_SA_SIGINFO = 0x00000004;
+    inline constexpr int H_SA_RESTORER = 0x04000000;
+    inline constexpr int H_SA_ONSTACK = 0x08000000;   /* Use signal stack by using `sa_restorer'. */
+    inline constexpr int H_SA_RESTART = 0x10000000;   /* Restart syscall on signal return.  */
+    inline constexpr int H_SA_NODEFER = 0x40000000;   /* Don't automatically block the signal when its handler is being executed.  */
+    inline constexpr int H_SA_RESETHAND = 0x80000000; /* Reset to default handler on signal return. */
+
+    inline constexpr int H_PROT_READ = 0x1;             /* page can be read */
+    inline constexpr int H_PROT_WRITE = 0x2;            /* page can be written */
+    inline constexpr int H_PROT_EXEC = 0x4;             /* page can be executed */
+    inline constexpr int H_PROT_SEM = 0x8;              /* page may be used for atomic ops */
+    inline constexpr int H_PROT_NONE = 0x0;             /* page can not be accessed */
+    inline constexpr int H_PROT_GROWSDOWN = 0x01000000; /* mprotect flag: extend change to start of growsdown vma */
+    inline constexpr int H_PROT_GROWSUP = 0x02000000;   /* mprotect flag: extend change to end of growsup vma */
+
+    inline constexpr int H_MAP_TYPE = 0x0f;      /* Mask for type of mapping */
+    inline constexpr int H_MAP_FIXED = 0x10;     /* Interpret addr exactly */
+    inline constexpr int H_MAP_ANONYMOUS = 0x20; /* don't use a file */
+
+    inline constexpr int H_MAP_POPULATE = 0x008000;        /* populate (prefault) pagetables */
+    inline constexpr int H_MAP_NONBLOCK = 0x010000;        /* do not block on IO */
+    inline constexpr int H_MAP_STACK = 0x020000;           /* give out an address that is best suited for process/thread stacks */
+    inline constexpr int H_MAP_HUGETLB = 0x040000;         /* create a huge page mapping */
+    inline constexpr int H_MAP_SYNC = 0x080000;            /* perform synchronous page faults for the mapping */
+    inline constexpr int H_MAP_FIXED_NOREPLACE = 0x100000; /* MAP_FIXED which doesn't unmap underlying mapping */
+    inline constexpr int H_MAP_UNINITIALIZED = 0x4000000;  /* For anonymous mmap, memory could be
+                                                            * uninitialized */
+    inline constexpr int H_MAP_SHARED = 0x01;              /* Share changes */
+    inline constexpr int H_MAP_PRIVATE = 0x02;             /* Changes are private */
+    inline constexpr int H_MAP_SHARED_VALIDATE = 0x03;     /* share + validate extension flags */
+    inline constexpr int H_MAP_DROPPABLE = 0x08;           /* Zero memory under memory pressure. */
+
+    inline constexpr int H_CLOCK_REALTIME = 0;
+    inline constexpr int H_CLOCK_MONOTONIC = 1;
+
+    inline constexpr int H_TIMER_ABSTIME = 1;
+
+    inline constexpr int H_DT_UNKNOWN = 0;
+    inline constexpr int H_DT_FIFO = 1;
+    inline constexpr int H_DT_CHR = 2;
+    inline constexpr int H_DT_DIR = 4;
+    inline constexpr int H_DT_BLK = 6;
+    inline constexpr int H_DT_REG = 8;
+    inline constexpr int H_DT_LNK = 10;
+    inline constexpr int H_DT_SOCK = 12;
+    inline constexpr int H_DT_WHT = 14;
+
+    inline constexpr int H_EPERM = 1;         /* Operation not permitted */
+    inline constexpr int H_ENOENT = 2;        /* No such file or directory */
+    inline constexpr int H_ESRCH = 3;         /* No such process */
+    inline constexpr int H_EINTR = 4;         /* Interrupted system call */
+    inline constexpr int H_EIO = 5;           /* I/O error */
+    inline constexpr int H_ENXIO = 6;         /* No such device or address */
+    inline constexpr int H_E2BIG = 7;         /* Argument list too long */
+    inline constexpr int H_ENOEXEC = 8;       /* Exec format error */
+    inline constexpr int H_EBADF = 9;         /* Bad file number */
+    inline constexpr int H_ECHILD = 10;       /* No child processes */
+    inline constexpr int H_EAGAIN = 11;       /* Try again */
+    inline constexpr int H_ENOMEM = 12;       /* Out of memory */
+    inline constexpr int H_EACCES = 13;       /* Permission denied */
+    inline constexpr int H_EFAULT = 14;       /* Bad address */
+    inline constexpr int H_ENOTBLK = 15;      /* Block device required */
+    inline constexpr int H_EBUSY = 16;        /* Device or resource busy */
+    inline constexpr int H_EEXIST = 17;       /* File exists */
+    inline constexpr int H_EXDEV = 18;        /* Cross-device link */
+    inline constexpr int H_ENODEV = 19;       /* No such device */
+    inline constexpr int H_ENOTDIR = 20;      /* Not a directory */
+    inline constexpr int H_EISDIR = 21;       /* Is a directory */
+    inline constexpr int H_EINVAL = 22;       /* Invalid argument */
+    inline constexpr int H_ENFILE = 23;       /* File table overflow */
+    inline constexpr int H_EMFILE = 24;       /* Too many open files */
+    inline constexpr int H_ENOTTY = 25;       /* Not a typewriter */
+    inline constexpr int H_ETXTBSY = 26;      /* Text file busy */
+    inline constexpr int H_EFBIG = 27;        /* File too large */
+    inline constexpr int H_ENOSPC = 28;       /* No space left on device */
+    inline constexpr int H_ESPIPE = 29;       /* Illegal seek */
+    inline constexpr int H_EROFS = 30;        /* Read-only file system */
+    inline constexpr int H_EMLINK = 31;       /* Too many links */
+    inline constexpr int H_EPIPE = 32;        /* Broken pipe */
+    inline constexpr int H_EDOM = 33;         /* Math argument out of domain of func */
+    inline constexpr int H_ERANGE = 34;       /* Math result not representable */
+    inline constexpr int H_EDEADLK = 35;      /* Resource deadlock would occur */
+    inline constexpr int H_ENAMETOOLONG = 36; /* File name too long */
+    inline constexpr int H_ENOLCK = 37;       /* No record locks available */
+    inline constexpr int H_ENOSYS = 38;       /* Invalid system call number */
+    inline constexpr int H_ENOTEMPTY = 39;    /* Directory not empty */
+    inline constexpr int H_ELOOP = 40;        /* Too many symbolic links encountered */
+    inline constexpr int H_EWOULDBLOCK = 11;  /* Operation would block */
+    inline constexpr int H_ENOMSG = 42;       /* No message of desired type */
+    inline constexpr int H_EIDRM = 43;        /* Identifier removed */
+    inline constexpr int H_ECHRNG = 44;       /* Channel number out of range */
+    inline constexpr int H_EL2NSYNC = 45;     /* Level 2 not synchronized */
+    inline constexpr int H_EL3HLT = 46;       /* Level 3 halted */
+    inline constexpr int H_EL3RST = 47;       /* Level 3 reset */
+    inline constexpr int H_ELNRNG = 48;       /* Link number out of range */
+    inline constexpr int H_EUNATCH = 49;      /* Protocol driver not attached */
+    inline constexpr int H_ENOCSI = 50;       /* No CSI structure available */
+    inline constexpr int H_EL2HLT = 51;       /* Level 2 halted */
+    inline constexpr int H_EBADE = 52;        /* Invalid exchange */
+    inline constexpr int H_EBADR = 53;        /* Invalid request descriptor */
+    inline constexpr int H_EXFULL = 54;       /* Exchange full */
+    inline constexpr int H_ENOANO = 55;       /* No anode */
+    inline constexpr int H_EBADRQC = 56;      /* Invalid request code */
+    inline constexpr int H_EBADSLT = 57;      /* Invalid slot */
+    inline constexpr int H_EDEADLOCK = 35;
+    inline constexpr int H_EBFONT = 59;           /* Bad font file format */
+    inline constexpr int H_ENOSTR = 60;           /* Device not a stream */
+    inline constexpr int H_ENODATA = 61;          /* No data available */
+    inline constexpr int H_ETIME = 62;            /* Timer expired */
+    inline constexpr int H_ENOSR = 63;            /* Out of streams resources */
+    inline constexpr int H_ENONET = 64;           /* Machine is not on the network */
+    inline constexpr int H_ENOPKG = 65;           /* Package not installed */
+    inline constexpr int H_EREMOTE = 66;          /* Object is remote */
+    inline constexpr int H_ENOLINK = 67;          /* Link has been severed */
+    inline constexpr int H_EADV = 68;             /* Advertise error */
+    inline constexpr int H_ESRMNT = 69;           /* Srmount error */
+    inline constexpr int H_ECOMM = 70;            /* Communication error on send */
+    inline constexpr int H_EPROTO = 71;           /* Protocol error */
+    inline constexpr int H_EMULTIHOP = 72;        /* Multihop attempted */
+    inline constexpr int H_EDOTDOT = 73;          /* RFS specific error */
+    inline constexpr int H_EBADMSG = 74;          /* Not a data message */
+    inline constexpr int H_EOVERFLOW = 75;        /* Value too large for defined data type */
+    inline constexpr int H_ENOTUNIQ = 76;         /* Name not unique on network */
+    inline constexpr int H_EBADFD = 77;           /* File descriptor in bad state */
+    inline constexpr int H_EREMCHG = 78;          /* Remote address changed */
+    inline constexpr int H_ELIBACC = 79;          /* Can not access a needed shared library */
+    inline constexpr int H_ELIBBAD = 80;          /* Accessing a corrupted shared library */
+    inline constexpr int H_ELIBSCN = 81;          /* .lib section in a.out corrupted */
+    inline constexpr int H_ELIBMAX = 82;          /* Attempting to link in too many shared libraries */
+    inline constexpr int H_ELIBEXEC = 83;         /* Cannot exec a shared library directly */
+    inline constexpr int H_EILSEQ = 84;           /* Illegal byte sequence */
+    inline constexpr int H_ERESTART = 85;         /* Interrupted system call should be restarted */
+    inline constexpr int H_ESTRPIPE = 86;         /* Streams pipe error */
+    inline constexpr int H_EUSERS = 87;           /* Too many users */
+    inline constexpr int H_ENOTSOCK = 88;         /* Socket operation on non-socket */
+    inline constexpr int H_EDESTADDRREQ = 89;     /* Destination address required */
+    inline constexpr int H_EMSGSIZE = 90;         /* Message too long */
+    inline constexpr int H_EPROTOTYPE = 91;       /* Protocol wrong type for socket */
+    inline constexpr int H_ENOPROTOOPT = 92;      /* Protocol not available */
+    inline constexpr int H_EPROTONOSUPPORT = 93;  /* Protocol not supported */
+    inline constexpr int H_ESOCKTNOSUPPORT = 94;  /* Socket type not supported */
+    inline constexpr int H_EOPNOTSUPP = 95;       /* Operation not supported on transport endpoint */
+    inline constexpr int H_ENOTSUP = 95;          /* Operation not supported */
+    inline constexpr int H_EPFNOSUPPORT = 96;     /* Protocol family not supported */
+    inline constexpr int H_EAFNOSUPPORT = 97;     /* Address family not supported by protocol */
+    inline constexpr int H_EADDRINUSE = 98;       /* Address already in use */
+    inline constexpr int H_EADDRNOTAVAIL = 99;    /* Cannot assign requested address */
+    inline constexpr int H_ENETDOWN = 100;        /* Network is down */
+    inline constexpr int H_ENETUNREACH = 101;     /* Network is unreachable */
+    inline constexpr int H_ENETRESET = 102;       /* Network dropped connection because of reset */
+    inline constexpr int H_ECONNABORTED = 103;    /* Software caused connection abort */
+    inline constexpr int H_ECONNRESET = 104;      /* Connection reset by peer */
+    inline constexpr int H_ENOBUFS = 105;         /* No buffer space available */
+    inline constexpr int H_EISCONN = 106;         /* Transport endpoint is already connected */
+    inline constexpr int H_ENOTCONN = 107;        /* Transport endpoint is not connected */
+    inline constexpr int H_ESHUTDOWN = 108;       /* Cannot send after transport endpoint shutdown */
+    inline constexpr int H_ETOOMANYREFS = 109;    /* Too many references: cannot splice */
+    inline constexpr int H_ETIMEDOUT = 110;       /* Connection timed out */
+    inline constexpr int H_ECONNREFUSED = 111;    /* Connection refused */
+    inline constexpr int H_EHOSTDOWN = 112;       /* Host is down */
+    inline constexpr int H_EHOSTUNREACH = 113;    /* No route to host */
+    inline constexpr int H_EALREADY = 114;        /* Operation already in progress */
+    inline constexpr int H_EINPROGRESS = 115;     /* Operation now in progress */
+    inline constexpr int H_ESTALE = 116;          /* Stale file handle */
+    inline constexpr int H_EUCLEAN = 117;         /* Structure needs cleaning */
+    inline constexpr int H_ENOTNAM = 118;         /* Not a XENIX named type file */
+    inline constexpr int H_ENAVAIL = 119;         /* No XENIX semaphores available */
+    inline constexpr int H_EISNAM = 120;          /* Is a named type file */
+    inline constexpr int H_EREMOTEIO = 121;       /* Remote I/O error */
+    inline constexpr int H_EDQUOT = 122;          /* Quota exceeded */
+    inline constexpr int H_ENOMEDIUM = 123;       /* No medium found */
+    inline constexpr int H_EMEDIUMTYPE = 124;     /* Wrong medium type */
+    inline constexpr int H_ECANCELED = 125;       /* Operation Canceled */
+    inline constexpr int H_ENOKEY = 126;          /* Required key not available */
+    inline constexpr int H_EKEYEXPIRED = 127;     /* Key has expired */
+    inline constexpr int H_EKEYREVOKED = 128;     /* Key has been revoked */
+    inline constexpr int H_EKEYREJECTED = 129;    /* Key was rejected by service */
+    inline constexpr int H_EOWNERDEAD = 130;      /* Owner died */
+    inline constexpr int H_ENOTRECOVERABLE = 131; /* State not recoverable */
+    inline constexpr int H_ERFKILL = 132;         /* Operation not possible due to RF-kill */
+    inline constexpr int H_EHWPOISON = 133;       /* Memory page has hardware error */
+
 
     inline constexpr uint8_t H_SIGHAND_TRAMPOLINE[] = {
         // li a7,139 # SyscallID::RT_SIGRETURN

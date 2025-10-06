@@ -97,10 +97,52 @@ namespace Hamster
     {
         VFS,
         PID,
+        PIPE_READ,
+        PIPE_WRITE
     };
+
+    struct UserFDPipe
+    {
+        Deque<char> buffer;
+        uint8_t readers;
+        uint8_t writers;
+
+        /**
+         * @brief When closing the pipe, use this to check
+         *      * whether there are still references to the pipe.
+         * @return true if the pipe can be destroyed, false otherwise
+         */
+        bool is_destroyable();
+
+        /**
+         * @brief Write to the pipe
+         * @param buf The buffer to write
+         * @param size The size of the buffer
+         * @return The number of bytes read, or -1 on error and sets `error`
+         */
+        ssize_t write(const void *buf, size_t size);
+
+        /**
+         * @brief Read from the pipe
+         * @param buf The buffer to read into
+         * @param size The size of the buffer
+         * @return The number of bytes read, or -1 on error and sets `error`
+         */
+        ssize_t read(void *buf, size_t size);
+
+        /**
+         * @brief Poll the pipe
+         * @param op The events to poll for. Bitmask of 0x1 (read) and 0x2 (write)
+         * @return 1 if ready, 0 if not ready, -1 on error and set `error`
+         */
+        int poll(int op);
+    };
+
+    inline constexpr int USER_FD_PIPE_NONBLOCK = 0x2;
 
     struct UserFD
     {
+        // FD_CLOEXEC, and for pipes only USER_FD_PIPE_NONBLOCK;
         int flags;
         UserFDType type;
 
@@ -112,6 +154,8 @@ namespace Hamster
             int vfs_fd;
 
             uint32_t pid;
+
+            UserFDPipe *pipe;
         };
     };
 
@@ -282,6 +326,14 @@ namespace Hamster
          * @note This will set it to the default handler, such as terminating for SIGINT, or doing nothing for SIGCHLD
          */
         int default_signal(int signo);
+        
+        /**
+         * @brief Reset all custom signal handlers to the default
+         * @return 0 on success, -1 on failure and set `error`
+         * @note This will only affect signals that have custom handlers set, and
+         *       SIG_DFL and SIG_IGN will remain unchanged
+         */
+        int reset_signal_handlers();
 
         /**
          * @brief Load an ELF executable into the process memory space
@@ -330,14 +382,6 @@ namespace Hamster
         uint32_t gid, egid, sgid;
     };
 
-    enum class BlockingOperation : uint8_t
-    {
-        NONE,
-        IO_READ,
-        IO_WRITE,
-        WAIT,
-    };
-
     class Task
     {
     public:
@@ -372,24 +416,6 @@ namespace Hamster
          * @note Forwards to one of: poll_read, poll_write, or poll_wait
          */
         int poll_block();
-
-        /**
-         * @brief Poll a blocking read operation
-         * @return -1 on an error, 0 otherwise
-         */
-        int poll_read();
-
-        /**
-         * @brief Poll a blocking write operation
-         * @return -1 on an error, 0 otherwise
-         */
-        int poll_write();
-
-        /**
-         * @brief Poll a blocking wait operation
-         * @return -1 on an error, 0 otherwise
-         */
-        int poll_wait();
 
         /**
          * @brief Do the exit routine for the task
@@ -453,7 +479,7 @@ namespace Hamster
         template <typename T>
         int copy_to_user(const T &obj, uint32_t addr, size_t size = sizeof(T))
         {
-            return get_memory().memcpy(addr, &obj, size);
+            return get_memory().memcpy_alloc(addr, &obj, size);
         }
 
         /**
@@ -532,6 +558,19 @@ namespace Hamster
          */
         char *process_user_path(char *user_path);
 
+        /**
+         * @brief Close a file descriptor
+         * @param fd The thread file descriptor to close
+         * @return 0 on success, -1 on error
+         */
+        int close(int fd);
+
+        /**
+         * @brief Close all file descriptors marked FD_CLOEXEC
+         * @return 0 on success, -1 on error
+         */
+        int close_cloexec_fds();
+
         TaskMember<EmulatorMemory> *memory;
         TaskMember<uint32_t> *program_brk;
         TaskMember<FDTable> *fd_table;
@@ -539,6 +578,7 @@ namespace Hamster
         PendingSignalQueue pending_signals;
         RiscVEmulator emulator;
 
+        
         // Last time the task was scheduled
         // Value is the systick (see platform/platform.hpp)
         uint64_t last_tick = 0;
@@ -548,17 +588,22 @@ namespace Hamster
         // This is the opposite of the `sigprocmask` behavior, so be careful
         uint64_t sig_mask = 0xFFFFFFFFFFFFFFFF;
         
+        // Blocking operation
+        // If not nullptr, this is called and the tick is skipped
+        // Must set itself to nullptr when done
+        void (*blocking_operation)(Task &);
+
+        // Blocking operation saved data
+        uint32_t blocking_operation_saved[2];
+
         uint32_t tid = 0;
         uint32_t ptid = 0;
-        
-        int io_block_fd = -1;
 
         // (code << 8) | (status & 0xFF)
         uint16_t exit_code = 0;
         
         // Sent to the parent process on exit, if we are the leader of the task group
         uint8_t exit_signal = 0;
-        BlockingOperation blocking_operation = BlockingOperation::NONE;
         bool is_paused : 1 = false;
         bool is_dead : 1 = false;
     };

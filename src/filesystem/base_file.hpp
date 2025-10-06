@@ -122,6 +122,22 @@ namespace Hamster
          * @return 0 on success, or on error return -1 and set `error`
          */
         virtual int set_flags(int flags) = 0;
+
+        /**
+         * @brief Sync potentially cached changes to the file
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note By default, this will do nothing
+         * @note Also see POSIX `fsync`
+         */
+        virtual int sync() { return 0; }
+
+        /**
+         * @brief Sync file data, and strictly necessary metadata
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note By default does nothing
+         * @note Also see POSIX `fdatasync`
+         */
+        virtual int datasync() { return 0; }
     };
 
     class BaseRegularFile : public BaseFile
@@ -329,7 +345,7 @@ namespace Hamster
          * @param file The target file
          * @param name The name of the hard link
          * @return 0 on success, -1 on error and set `error`
-         * @note If the file is not part of this filesystem, set `errno` to `EXDEV`
+         * @note If the file is not part of this filesystem, set `errno` to `H_EXDEV`
          */
         virtual int link(BaseFile *file, const char *name) = 0;
 

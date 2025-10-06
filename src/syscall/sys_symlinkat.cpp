@@ -16,7 +16,7 @@ namespace Hamster
         char *target_str = task->memory->obj.memory.get_string(target_loc);
         if (!target_str)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
 
@@ -25,7 +25,7 @@ namespace Hamster
         if (!linkpath_str)
         {
             dealloc(target_str);
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
 

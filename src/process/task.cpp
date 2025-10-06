@@ -231,19 +231,8 @@ namespace Hamster
             // Clean up resources
             if (fd_table->refcount == 1)
             {
-                for (auto &fd : fd_table->obj.fds)
-                {
-                    if (fd.type == UserFDType::VFS && fd.vfs_fd >= 0)
-                    {
-                        fd_refcount[fd.vfs_fd]--;
-                        if (fd_refcount[fd.vfs_fd] == 0)
-                        {
-                            vfs.close(fd.vfs_fd);
-                            fd_refcount.erase(fd.vfs_fd);
-                        }
-                        fd.vfs_fd = -1; // Mark as closed
-                    }
-                }
+                for (size_t i = 0; i < fd_table->obj.fds.size(); ++i)
+                    close(i);
                 fd_table->obj.fds.clear();
             }
         }
@@ -279,8 +268,8 @@ namespace Hamster
         std::swap(tid, other.tid);
         std::swap(ptid, other.ptid);
         std::swap(sig_mask, other.sig_mask);
-        std::swap(io_block_fd, other.io_block_fd);
         std::swap(blocking_operation, other.blocking_operation);
+        std::swap(blocking_operation_saved, other.blocking_operation_saved);
         std::swap(exit_code, other.exit_code);
         std::swap(exit_signal, other.exit_signal);
 
@@ -363,7 +352,7 @@ namespace Hamster
     {
         if (siginfo.signo < 0 || siginfo.signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 
@@ -398,14 +387,14 @@ namespace Hamster
     {
         if (signo < 0 || signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 
         // Check for unblockable signals
         if (signo == H_SIGKILL || signo == H_SIGSTOP || signo == H_SIGCONT)
         {
-            error = EPERM; // Cannot set handler for unblockable signals
+            error = H_EPERM; // Cannot set handler for unblockable signals
             return -1;
         }
 
@@ -417,7 +406,7 @@ namespace Hamster
     {
         if (signo < 0 || signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 
@@ -430,12 +419,25 @@ namespace Hamster
     {
         if (signo < 0 || signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 
         // Set the handler to the default handler
         signal_handlers->obj.sig_handlers[signo] = default_signal_handlers[signo];
+        return 0;
+    }
+
+    int Process::reset_signal_handlers()
+    {
+        for (int signo = 1; signo < 64; ++signo)
+        {
+            if (signal_handlers->obj.sig_handlers[signo].action.handler != H_SIG_DFL &&
+                signal_handlers->obj.sig_handlers[signo].action.handler != H_SIG_IGN)
+            {
+                signal_handlers->obj.sig_handlers[signo] = default_signal_handlers[signo];
+            }
+        }
         return 0;
     }
 
@@ -541,17 +543,9 @@ namespace Hamster
 
     int Task::poll_block()
     {
-        switch (blocking_operation)
-        {
-            case BlockingOperation::IO_READ:
-                return poll_read();
-            case BlockingOperation::IO_WRITE:
-                return poll_write();
-            case BlockingOperation::WAIT:
-                return poll_wait();
-            default:
-                return 0; // No blocking operation
-        }
+        if (blocking_operation)
+            blocking_operation(*this);
+        return 0;
     }
 
     int Task::get_vfs_fd(int fd)
@@ -559,7 +553,7 @@ namespace Hamster
         assert(fd_table);
         if (fd < 0 || fd >= (int)fd_table->obj.fds.size())
         {
-            error = EBADF; // Invalid file descriptor
+            error = H_EBADF; // Invalid file descriptor
             return -1;
         }
 
@@ -567,13 +561,13 @@ namespace Hamster
 
         if (user_fd.type != UserFDType::VFS)
         {
-            error = EBADF; // Not a VFS file descriptor
+            error = H_EBADF; // Not a VFS file descriptor
             return -1;
         }
 
         if (user_fd.vfs_fd < 0)
         {
-            error = EBADF; // Closed or invalid file descriptor
+            error = H_EBADF; // Closed or invalid file descriptor
             return -1;
         }
 
@@ -602,7 +596,7 @@ namespace Hamster
         assert(fd_table);
         if (fd < 0 || fd >= (int)fd_table->obj.fds.size())
         {
-            error = EBADF; // Invalid file descriptor
+            error = H_EBADF; // Invalid file descriptor
             return nullptr;
         }
 
@@ -616,8 +610,7 @@ namespace Hamster
         new_task->ptid = tid; // Set the parent thread ID
         new_task->tid = 0;
         new_task->sig_mask = sig_mask; // Copy the signal mask
-        new_task->io_block_fd = -1;
-        new_task->blocking_operation = BlockingOperation::NONE;
+        new_task->blocking_operation = nullptr;
         new_task->exit_code = 0;
         new_task->exit_signal = exit_signal;
         new_task->is_paused = is_paused;
@@ -634,9 +627,19 @@ namespace Hamster
         {
             for (UserFD &file : new_task->fd_table->obj.fds)
             {
-                if (file.type == UserFDType::VFS && file.vfs_fd >= 0)
+                switch (file.type)
                 {
-                    fd_refcount[file.vfs_fd]++;
+                case UserFDType::VFS:
+                    ++fd_refcount[file.vfs_fd];
+                    break;
+                case UserFDType::PIPE_READ:
+                    ++file.pipe->readers;
+                    break;
+                case UserFDType::PIPE_WRITE:
+                    ++file.pipe->writers;
+                    break;
+                default:
+                    break;
                 }
             }
         }
@@ -672,7 +675,10 @@ namespace Hamster
     int Task::init_tid(int new_id)
     {
         if (tid == 0)
+        {
             tid = new_id;
+            emulator.reserved_mem_id = tid;
+        }
 
         Process &proc = process->obj;
 
@@ -708,7 +714,7 @@ namespace Hamster
     {
         if (!path || path[0] == '\0')
         {
-            error = EINVAL; // Invalid path
+            error = H_EINVAL; // Invalid path
             return -1;
         }
 
@@ -728,7 +734,7 @@ namespace Hamster
         {
             if (thread_at_fd < 0 || thread_at_fd >= (int)fd_table->obj.fds.size())
             {
-                error = EBADF; // Invalid file descriptor
+                error = H_EBADF; // Invalid file descriptor
                 return -1;
             }
 
@@ -736,7 +742,7 @@ namespace Hamster
 
             if (user_fd.type != UserFDType::VFS || user_fd.vfs_fd < 0)
             {
-                error = EBADF; // Not a valid VFS file descriptor
+                error = H_EBADF; // Not a valid VFS file descriptor
                 return -1;
             }
 
@@ -752,7 +758,7 @@ namespace Hamster
         if (!user_path || user_path[0] == '\0')
         {
             dealloc(user_path);
-            error = EINVAL; // Invalid path
+            error = H_EINVAL; // Invalid path
             return nullptr;
         }
 
@@ -783,7 +789,7 @@ namespace Hamster
     {
         if (siginfo.signo < 1 || siginfo.signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 
@@ -807,11 +813,69 @@ namespace Hamster
         return 0;
     }
 
+    int Task::close(int fd)
+    {
+        UserFD *p_user_fd = get_user_fd(fd);
+        if (!p_user_fd)
+            return -1;
+        UserFD &user_fd = *p_user_fd;
+
+        switch (user_fd.type)
+        {
+        case UserFDType::VFS:
+        {
+            // Close the VFS file descriptor
+            int vfs_fd = user_fd.vfs_fd;
+
+            user_fd.vfs_fd = -1; // Reset the VFS file descriptor
+            
+            if (--fd_refcount[vfs_fd] == 0)
+            {
+                fd_refcount.erase(vfs_fd);
+
+                return vfs.close(vfs_fd);
+            }
+            break;
+        }
+        case UserFDType::PID:
+            // Mark as closed
+
+            user_fd.type = UserFDType::VFS;
+            user_fd.vfs_fd = -1; // Reset the VFS file descriptor
+            break;
+        case UserFDType::PIPE_READ:
+        case UserFDType::PIPE_WRITE:
+            if (user_fd.type == UserFDType::PIPE_READ)
+                --user_fd.pipe->readers;
+            else
+                --user_fd.pipe->writers;
+            
+            if (user_fd.pipe->is_destroyable())
+                dealloc(user_fd.pipe);
+            user_fd.type = UserFDType::VFS;
+            user_fd.vfs_fd = -1;
+        }
+
+        return 0;
+    }
+
+    int Task::close_cloexec_fds()
+    {
+        for (size_t i = 0; i < fd_table->obj.fds.size(); i++)
+        {
+            if (fd_table->obj.fds[i].flags & H_FD_CLOEXEC)
+            {
+                close(i);
+            }
+        }
+        return 0;
+    }
+
     int Task::is_signal_blocked(int signo)
     {
         if (signo < 1 || signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 
@@ -828,7 +892,7 @@ namespace Hamster
     {
         if (signo < 1 || signo >= 64)
         {
-            error = EINVAL; // Invalid signal number
+            error = H_EINVAL; // Invalid signal number
             return -1;
         }
 

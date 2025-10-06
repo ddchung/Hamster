@@ -97,7 +97,7 @@ namespace Hamster
 
     private:
         
-        int do_tick(Task &, uint16_t tick_count = HAMSTER_THREAD_TIME_SLICE);
+        int do_tick(Task &);
 
         // TID to task
         Map<uint32_t, Task *> tasks;

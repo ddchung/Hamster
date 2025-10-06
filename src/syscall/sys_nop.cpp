@@ -17,6 +17,6 @@ namespace Hamster
                           uint32_t arg5)
     {
         // Do nothing for now
-        return -EINVAL;
+        return -H_EINVAL;
     }
 } // namespace Hamster

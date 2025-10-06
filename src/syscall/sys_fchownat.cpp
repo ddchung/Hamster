@@ -15,13 +15,13 @@ namespace Hamster
         // Check if the path is valid
         if (path_loc == 0)
         {
-            return -EFAULT;
+            return -H_EFAULT;
         }
 
         char *path = current_task->get_memory().get_string(path_loc);
         if (!path)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
 

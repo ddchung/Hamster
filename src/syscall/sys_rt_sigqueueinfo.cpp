@@ -16,7 +16,7 @@ namespace Hamster
 
         if (sig < 1 || sig >= H_SIGRTMAX)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return cvt_error();
         }
 
@@ -24,7 +24,7 @@ namespace Hamster
 
         if (current_task->copy_from_user(siginfo, info_loc) < 0)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
 
@@ -34,7 +34,7 @@ namespace Hamster
         if (siginfo.code >= 0 || siginfo.code == H_SI_TKILL)
         {
             // Invalid code
-            return -EPERM;
+            return -H_EPERM;
         }
 
         // Send to process
@@ -42,7 +42,7 @@ namespace Hamster
         Process *process = scheduler.get_process(tgid);
         if (!process)
         {
-            error = ESRCH;
+            error = H_ESRCH;
             return cvt_error();
         }
 
@@ -56,7 +56,7 @@ namespace Hamster
 
         if (sig < 1 || sig >= H_SIGRTMAX)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return cvt_error();
         }
 
@@ -64,7 +64,7 @@ namespace Hamster
 
         if (current_task->copy_from_user(siginfo, info_loc) < 0)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return cvt_error();
         }
 
@@ -74,7 +74,7 @@ namespace Hamster
         if (siginfo.code >= 0 || siginfo.code == H_SI_TKILL)
         {
             // Invalid code
-            return -EPERM;
+            return -H_EPERM;
         }
 
         // Send to thread
@@ -82,7 +82,7 @@ namespace Hamster
         Task *task = scheduler.get_task(tid);
         if (!task)
         {
-            error = ESRCH;
+            error = H_ESRCH;
             return cvt_error();
         }
 

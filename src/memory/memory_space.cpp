@@ -1,663 +1,372 @@
-// Hamster memory space
+// Hamster memory space implementation
 
-#include <memory/page_manager.hpp>
 #include <memory/memory_space.hpp>
+#include <memory/page_manager.hpp>
 #include <memory/allocator.hpp>
 #include <filesystem/vfs.hpp>
-#include <platform/config.hpp>
 #include <errno/errno.h>
-#include <cstdint>
+#include <algorithm>
 #include <cassert>
+#include <cstring>
 
+// Helpers
+
+#define ROUND_DOWN_PAGE(addr) ((addr) & ~(HAMSTER_PAGE_SIZE - 1))
+#define ROUND_UP_PAGE(addr) (ROUND_DOWN_PAGE((addr) + HAMSTER_PAGE_SIZE - 1))
 
 namespace Hamster
 {
-    namespace
-    {
-        uint64_t get_page_start(uint64_t addr)
-        {
-            return addr & ~(HAMSTER_PAGE_SIZE - 1);
-        }
-
-        uint64_t get_page_offset(uint64_t addr)
-        {
-            return addr & (HAMSTER_PAGE_SIZE - 1);
-        }
-    } // namespace
-
     MemorySpace::MemorySpace(const MemorySpace &other)
-        : MemorySpace()
+        : page_table(other.page_table), free_ranges(), next_mmap(other.next_mmap)
     {
-        // Deep-copy all pages
-        for (const auto &page_pair : other.pages)
-        {
-            const uint64_t page_start = page_pair.first;
-            const Page &page = page_pair.second;
-            pages[page_start] = Page(page); // Copy the page
-        }
-        swapped_on_pages = other.swapped_on_pages; // Copy the list of swapped pages
-
-        mappings.reserve(other.mappings.size());
-        
-        // Copy mappings and duplicate file descriptors
-        for (const auto &mapping : other.mappings)
-        {
-            MmapEntry new_mapping = mapping;
-            if (mapping.fd >= 0)
-            {
-                new_mapping.fd = vfs.dup(mapping.fd);
-            }
-            mappings.push_back(new_mapping);
-        }
-    }
-
-    MemorySpace::~MemorySpace()
-    {
-        // Clear all pages
-        pages.clear();
-        swapped_on_pages.clear();
-
-        // Close all memory-mapped files
-        for (const auto &entry : mappings)
-        {
-            if (entry.fd >= 0)
-                vfs.close(entry.fd);
-        }
     }
 
     MemorySpace &MemorySpace::operator=(const MemorySpace &other)
     {
         if (this != &other)
         {
-            // Close existing mappings
-            for (const auto &entry : mappings)
-            {
-                if (entry.fd >= 0)
-                    vfs.close(entry.fd);
-            }
-            
-            // Clear current state
-            pages.clear();
-            swapped_on_pages.clear();
-            mappings.clear();
-
-            // Deep-copy all pages
-            for (const auto &page_pair : other.pages)
-            {
-                const uint64_t page_start = page_pair.first;
-                const Page &page = page_pair.second;
-                pages[page_start] = Page(page); // Copy the page
-            }
-            swapped_on_pages = other.swapped_on_pages; // Copy the list of swapped pages
-            
-            // Copy mappings and duplicate file descriptors
-
-            mappings.reserve(other.mappings.size());
-            for (const auto &mapping : other.mappings)
-            {
-                MmapEntry new_mapping = mapping;
-                if (mapping.fd >= 0)
-                {
-                    new_mapping.fd = vfs.dup(mapping.fd);
-                }
-                mappings.push_back(new_mapping);
-            }
+            page_table = other.page_table;
+            free_ranges.clear();
+            next_mmap = other.next_mmap;
         }
         return *this;
     }
 
-    MemorySpace::MemorySpace(MemorySpace &&other)
-        : pages(std::move(other.pages)), swapped_on_pages(std::move(other.swapped_on_pages)),
-          mappings(std::move(other.mappings))
+    int MemorySpace::memcpy(void *dest, uint32_t src, uint32_t len)
     {
-        other.pages.clear();
-        other.swapped_on_pages.clear();
-        other.mappings.clear();
-    }
+        assert(dest);
 
-    MemorySpace &MemorySpace::operator=(MemorySpace &&other)
-    {
-        if (this != &other)
+        for (uint32_t addr = src; addr < src + len; addr = ROUND_UP_PAGE(addr + 1))
         {
-            // Close existing mappings
-            for (const auto &entry : mappings)
-            {
-                if (entry.fd >= 0)
-                    vfs.close(entry.fd);
-            }
-            
-            pages = std::move(other.pages);
-            swapped_on_pages = std::move(other.swapped_on_pages);
-            mappings = std::move(other.mappings);
-            other.pages.clear();
-            other.swapped_on_pages.clear();
-            other.mappings.clear();
+            uint32_t chunk_size = std::min<uint32_t>(HAMSTER_PAGE_SIZE, src + len - addr);
+            if (do_read(addr, (uint8_t *)dest + (addr - src), chunk_size) < 0)
+                return -1;
         }
-        return *this;
+
+        return 0;
     }
 
-    int MemorySpace::write_byte(uint64_t addr, uint8_t value)
+    int MemorySpace::memcpy(uint32_t dest, const void *src, uint32_t len)
     {
-        // try to find a mapping for the address
-        
-        MmapEntry *mapping = nullptr;
-        for (auto &entry : mappings)
+        assert(src);
+
+        for (uint32_t addr = dest; addr < dest + len; addr = ROUND_UP_PAGE(addr + 1))
         {
-            if (addr >= entry.addr && addr < entry.addr + entry.size && entry.shared &&
-                entry.fd >= 0) // Don't consider anonymous/private mappings, as they will be handled just like
-                               // normal memory
-            {
-                mapping = &entry;
+            uint32_t chunk_size = std::min<uint32_t>(HAMSTER_PAGE_SIZE, dest + len - addr);
+            if (do_write(addr, (const uint8_t *)src + (addr - dest), chunk_size) < 0)
+                return -1;
+        }
+
+        return 0;
+    }
+
+    int MemorySpace::memcpy_alloc(uint32_t dest, const void *src, uint32_t len)
+    {
+        if (is_mapped(dest, len) == 0)
+        {
+            if (map_anonymous(dest, len, PERM_READ | PERM_WRITE) < 0)
+                return -1;
+        }
+        return memcpy(dest, src, len);
+    }
+
+    int MemorySpace::memset(uint32_t loc, uint8_t byte, uint32_t len)
+    {
+        static uint8_t buf[HAMSTER_PAGE_SIZE];
+        ::memset(buf, byte, sizeof(buf));
+        for (uint32_t addr = loc; addr < loc + len; addr += sizeof(buf))
+        {
+            size_t chunk_size = std::min<uint32_t>(sizeof(buf), loc + len - addr);
+            if (do_write(addr, buf, chunk_size) < 0)
+                return -1;
+        }
+        return 0;
+    }
+
+    int MemorySpace::memset_alloc(uint32_t addr, uint8_t value, uint32_t len)
+    {
+        if (is_mapped(addr, len) == 0)
+        {
+            if (map_anonymous(addr, len, PERM_READ | PERM_WRITE) < 0)
+                return -1;
+        }
+        return memset(addr, value, len);
+    }
+
+    int MemorySpace::is_mapped(uint32_t loc, uint32_t size) const
+    {
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        for (; loc < end; ++loc)
+        {
+            if (page_table.get_page_direct(loc) == PageTable::PAGE_ID_UNUSED)
+                return 0;
+        }
+        return 1;
+    }
+
+    char *MemorySpace::read_until_zero(uint32_t addr)
+    {
+        size_t len = 0;
+
+        for (uint32_t it = addr;; ++it)
+        {
+            char c;
+            if (do_read(it, &c, 1) != 1)
+                return nullptr;
+            ++len;
+            if (c == '\0')
                 break;
-            }
         }
 
-        if (mapping)
+        char *result = alloc<char>(len);
+
+        result[len - 1] = '\0';
+
+        if (memcpy(result, addr, len) < 0)
         {
-            if (!(mapping->perms & 02)) // 02 = write
-            {
-                error = EACCES;
-                return -1;
-            }
-
-            uint64_t offset = addr - mapping->addr + mapping->offset;
-            if (vfs.seek(mapping->fd, offset, H_SEEK_SET) < 0)
-            {
-                error = EIO;
-                return -1;
-            }
-
-            if (vfs.write(mapping->fd, &value, 1) < 0)
-            {
-                error = EIO;
-                return -1;
-            }
-
-            return 0;
-        }
-        else
-        {
-            if (!check_permissions(addr, 02)) // 02 = write
-            {
-                error = EACCES;
-                return -1;
-            }
-
-            // No mapping found, write to the page directly
-            if (ensure_page(addr) < 0)
-            {
-                return -1; // Error already set in ensure_page
-            }
-
-            pages[get_page_start(addr)][get_page_offset(addr)] = value;
-            return 0;
-        }
-    }
-
-    int MemorySpace::read_byte(uint64_t addr, uint8_t &out)
-    {
-        // try to find a mapping for the address
-        
-        MmapEntry *mapping = nullptr;
-        for (auto &entry : mappings)
-        {
-            if (addr >= entry.addr && addr < entry.addr + entry.size && entry.shared &&
-                entry.fd >= 0) // Don't consider anonymous mappings, as they will be handled just like
-                               // normal memory
-            {
-                mapping = &entry;
-                break;
-            }
-        }
-
-        if (mapping)
-        {
-            if (!(mapping->perms & 04)) // 04 = read
-            {
-                error = EACCES;
-                return -1;
-            }
-
-            uint64_t offset = addr - mapping->addr + mapping->offset;
-            if (vfs.seek(mapping->fd, offset, H_SEEK_SET) < 0)
-            {
-                error = EIO;
-                return -1;
-            }
-
-            if (vfs.read(mapping->fd, &out, 1) < 0)
-            {
-                error = EIO;
-                return -1;
-            }
-
-            return 0;
-        }
-        else
-        {
-            if (!check_permissions(addr, 04)) // 04 = read
-            {
-                error = EACCES;
-                return -1;
-            }
-
-            // No mapping found, read from the page directly
-            if (ensure_page(addr) < 0)
-            {
-                return -1; // Error already set in ensure_page
-            }
-
-            out = pages[get_page_start(addr)][get_page_offset(addr)];
-            return 0;
-        }
-    }
-
-    int MemorySpace::memcpy(uint64_t addr, const void *buffer, size_t size)
-    {
-        if (!check_permissions(addr, 02, size)) // 02 = write
-        {
-            error = EACCES;
-            return -1;
-        }
-
-        // TODO: More efficient implementation
-        for (size_t i = 0; i < size; i++)
-        {
-            if (write_byte(addr + i, ((const uint8_t *)buffer)[i]) < 0)
-            {
-                return -1; // Error already set in write_byte
-            }
-        }
-        return 0;
-    }
-
-    int MemorySpace::memcpy(void *buffer, uint64_t addr, size_t size)
-    {
-        if (!check_permissions(addr, 04, size)) // 04 = read
-        {
-            error = EACCES;
-            return -1;
-        }
-        
-        // TODO: More efficient implementation
-        for (size_t i = 0; i < size; i++)
-        {
-            if (read_byte(addr + i, ((uint8_t *)buffer)[i]) < 0)
-            {
-                return -1; // Error already set in read_byte
-            }
-        }
-        return 0;
-    }
-
-    int MemorySpace::memcpy(uint64_t src, uint64_t dst, size_t size)
-    {
-        if (!check_permissions(src, 04, size)) // 04 = read
-        {
-            error = EACCES;
-            return -1;
-        }
-        if (!check_permissions(dst, 02, size)) // 02 = write
-        {
-            error = EACCES;
-            return -1;
-        }
-        
-        // TODO: More efficient implementation
-        for (size_t i = 0; i < size; i++)
-        {
-            uint8_t value;
-            if (read_byte(src + i, value) < 0)
-            {
-                return -1; // Error already set in read_byte
-            }
-            if (write_byte(dst + i, value) < 0)
-            {
-                return -1; // Error already set in write_byte
-            }
-        }
-        return 0;
-    }
-
-    int MemorySpace::memset(uint64_t addr, uint8_t value, size_t size)
-    {
-        if (!check_permissions(addr, 02, size)) // 02 = write
-        {
-            error = EACCES;
-            return -1;
-        }
-        
-        for (size_t i = 0; i < size; i++)
-        {
-            if (write_byte(addr + i, value) < 0)
-            {
-                return -1; // Error already set in write_byte
-            }
-        }
-        return 0;
-    }
-
-    char *MemorySpace::get_string(uint64_t addr)
-    {
-        if (!check_permissions(addr, 04, 1)) // 04 = read
-        {
-            error = EACCES;
+            dealloc(result);
             return nullptr;
         }
 
-        size_t length = 0;
-
-        uint8_t byte;
-
-        for (uint64_t it = addr;; it++)
-        {
-            if (read_byte(it, byte) < 0)
-            {
-                return nullptr; // Error already set in read_byte
-            }
-
-            if (byte == '\0')
-            {
-                break; // Found the null terminator
-            }
-
-            length++;
-        }
-        
-        char *str = alloc<char>(length + 1);
-
-        str[length] = '\0'; // Null-terminate the string
-
-        int res = memcpy(str, addr, length);
-        if (res < 0)
-        {
-            dealloc(str);
-            return nullptr;
-        }
-        return str;
+        return result;
     }
 
-    bool MemorySpace::is_allocated(uint64_t addr)
+    ssize_t MemorySpace::how_many_mapped(uint32_t loc, uint32_t size) const
     {
-        return pages.find(get_page_start(addr)) != pages.end();
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        ssize_t count = 0;
+        for (uint32_t i = loc; i < end; i++)
+        {
+            if (page_table.get_page_direct(i) != PageTable::PAGE_ID_UNUSED)
+                count++;
+        }
+        return count;
     }
 
-    int MemorySpace::deallocate_page(uint64_t addr)
+    int MemorySpace::map_anonymous(uint32_t loc, uint32_t size, uint8_t perms)
     {
-        auto it = pages.find(get_page_start(addr));
-        if (it == pages.end())
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+        next_mmap = std::max<uint32_t>(next_mmap, end << HAMSTER_PAGE_SIZE_BITS);
+
+        for (; loc < end; ++loc)
         {
-            error = EINVAL;
+            if (page_table.get_page_direct(loc) == PageTable::PAGE_ID_UNUSED)
+                page_table.set_page_direct(loc, page_manager.allocate_page(perms));
+        }
+        return 0;
+    }
+
+    int MemorySpace::map_shared_anonymous(uint32_t loc, uint32_t size, uint8_t perms)
+    {
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+        next_mmap = std::max<uint32_t>(next_mmap, end << HAMSTER_PAGE_SIZE_BITS);
+
+        for (; loc < end; ++loc)
+        {
+            if (page_table.get_page_direct(loc) == PageTable::PAGE_ID_UNUSED)
+            {
+                uint32_t page = page_manager.allocate_page(perms);
+                page_manager.make_shared(page);
+                page_table.set_page_direct(loc, page);
+            }
+        }
+        return 0;
+    }
+
+    int MemorySpace::map_private_file(uint32_t loc, int fd, uint32_t offset, uint32_t size, uint8_t perms)
+    {
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        // Correctly account for attempts to map in the middle of a page
+        offset = ROUND_DOWN_PAGE(offset);
+
+        next_mmap = std::max<uint32_t>(next_mmap, loc + size);
+
+        FileMappingFD *fmfd = alloc<FileMappingFD>();
+        fmfd->fd = vfs.dup(fd);
+        fmfd->refcount = 0;
+
+        if (fmfd->fd < 0)
+        {
+            dealloc(fmfd);
             return -1;
         }
 
-        pages.erase(it);
-
-        // also remove from swapped on pages, if any
-        swapped_on_pages.remove(get_page_start(addr));
+        for (; loc < end; ++loc)
+        {
+            // note: set_page automatically frees an existing entry, if present
+            page_table.set_page_direct(loc, page_manager.mmap_private(fmfd, offset, perms));
+            offset += HAMSTER_PAGE_SIZE;
+        }
         return 0;
     }
 
-    int MemorySpace::set_permissions(uint64_t addr, uint8_t mode, size_t size)
+    int MemorySpace::map_shared_file(uint32_t loc, int fd, uint32_t offset, uint32_t size, uint8_t perms)
     {
-        for (uint64_t it = get_page_start(addr); it <= get_page_start(addr + size); it += HAMSTER_PAGE_SIZE)
-            if (set_permissions(it, mode) < 0)
-            {
-                return -1; // Error already set in set_permissions
-            }
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        // Correctly account for attempts to map in the middle of a page
+        offset = ROUND_DOWN_PAGE(offset);
+
+        next_mmap = std::max<uint32_t>(next_mmap, loc + size);
+
+        FileMappingFD *fmfd = alloc<FileMappingFD>();
+        fmfd->fd = vfs.dup(fd);
+        fmfd->refcount = 0;
+
+        if (fmfd->fd < 0)
+        {
+            dealloc(fmfd);
+            return -1;
+        }
+
+        for (; loc < end; ++loc)
+        {
+            // note: set_page automatically frees an existing entry, if present
+            uint32_t page = page_manager.mmap_private(fmfd, offset, perms);
+            page_manager.make_shared(page);
+            page_table.set_page_direct(loc, page);
+            offset += HAMSTER_PAGE_SIZE;
+        }
         return 0;
     }
 
-    int MemorySpace::set_permissions(uint64_t addr, uint8_t mode)
+    int MemorySpace::unmap(uint32_t loc, uint32_t size)
     {
-        // Try to find a mapping for the address
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
 
-        MmapEntry *mapping = nullptr;
-        for (auto &entry : mappings)
-        {
-            if (addr >= entry.addr && addr < entry.addr + entry.size &&
-                entry.fd >= 0) // Don't consider anonymous mappings, as they will be handled just like
-                               // normal memory
-            {
-                mapping = &entry;
-                break;
-            }
-        }
+        uint32_t free_range_start = loc << HAMSTER_PAGE_SIZE_BITS;
+        uint32_t free_range_size = 0;
 
-        if (mapping)
+        for (; loc < end; ++loc)
         {
-            mapping->perms = mode & 07;
-            return 0;
-        }
-        else
-        {
-            auto it = pages.find(get_page_start(addr));
-            if (it == pages.end())
+            if (page_table.get_page_direct(loc) == PageTable::PAGE_ID_UNUSED)
             {
-                // Not allocated
-                error = EFAULT;
-                return -1;
+                if (free_range_size)
+                    deallocate(free_range_start, free_range_size);
+                free_range_start = (loc << HAMSTER_PAGE_SIZE_BITS) + HAMSTER_PAGE_SIZE;
+                free_range_size = 0;
             }
 
-            it->second.get_flags() &= ~07; // Clear the permissions
-            it->second.get_flags() |= (mode & 07); // Set the new permissions
-            return 0;
+            free_range_size += HAMSTER_PAGE_SIZE;
+
+            page_table.set_page_direct(loc, PageTable::PAGE_ID_UNUSED);
         }
+
+        if (free_range_size)
+            deallocate(free_range_start, free_range_size);
+
+        return 0;
     }
 
-    bool MemorySpace::check_permissions(uint64_t addr, uint8_t req_perms, size_t size)
+    int MemorySpace::unmap_all()
     {
-        for (uint64_t it = get_page_start(addr); it <= get_page_start(addr + size); it += HAMSTER_PAGE_SIZE)
-            if (!check_permissions(it, req_perms))
-            {
-                return false; // If any page does not have the required permissions, return false
-            }
-        return true;
+        page_table.clear();
+        return 0;
     }
 
-    bool MemorySpace::check_permissions(uint64_t addr, uint8_t req_perms)
+    int MemorySpace::mprotect(uint32_t loc, uint32_t size, uint8_t perms)
     {
-        // Try to find a mapping for the address
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
 
-        MmapEntry *mapping = nullptr;
-        for (auto &entry : mappings)
+        for (; loc < end; ++loc)
         {
-            if (addr >= entry.addr && addr < entry.addr + entry.size &&
-                entry.fd >= 0) // Don't consider anonymous mappings, as they will be handled just like
-                               // normal memory
-            {
-                mapping = &entry;
-                break;
-            }
-        }
-
-        if (mapping)
-        {
-            return (mapping->perms & req_perms) == req_perms; // Check if the required permissions are set
-        }
-        else
-        {
-            auto it = pages.find(get_page_start(addr));
-            if (it == pages.end())
-            {
-                return true; // Not allocated, so it has the default permissions of 0b00000rwx
-            }
-
-            return (it->second.get_flags() & req_perms) == req_perms; // Check the page's permissions
-        }
-    }
-
-    int MemorySpace::swap_out_all()
-    {
-        for (auto it = pages.begin(); it != pages.end(); ++it)
-        {
-            if (it->second.is_swapped())
-            {
+            if (page_table.get_page_direct(loc) == PageTable::PAGE_ID_UNUSED)
                 continue;
-            }
-            if (it->second.swap_out() < 0)
-            {
-                error = EIO;
+
+            if (page_manager.set_permissions(page_table.get_page_direct(loc), perms) < 0)
                 return -1;
-            }
         }
-        swapped_on_pages.clear();
         return 0;
     }
 
-    int MemorySpace::ensure_page(uint64_t addr)
+    uint32_t MemorySpace::allocate(uint32_t size)
     {
-        auto it = pages.find(get_page_start(addr));
-        if (it == pages.end())
+        size = ROUND_UP_PAGE(size);
+
+        for (uint32_t i = 0; i < free_ranges.size(); ++i)
         {
-            // create a new page
+            FreeRange &range = free_ranges.front();
+            assert(range.size % HAMSTER_PAGE_SIZE == 0);
+            assert(range.addr % HAMSTER_PAGE_SIZE == 0);
+            if (range.size >= size)
+            {
+                range.size -= size;
+                uint32_t addr = range.addr;
+                range.addr += size;
 
-            // default construct
-            pages[get_page_start(addr)].get_flags() = 07;
+                if (range.size == 0)
+                    free_ranges.pop();
 
-            it = pages.find(get_page_start(addr));
-
-            assert(it != pages.end());
+                return addr;
+            }
+            free_ranges.advance();
         }
 
-        if (it->second.is_swapped() && it->second.swap_in() < 0)
+        assert(next_mmap % HAMSTER_PAGE_SIZE == 0);
+        uint32_t addr = next_mmap;
+        next_mmap += size;
+        return addr;
+    }
+
+    int8_t MemorySpace::get_permissions(uint32_t loc, uint32_t size)
+    {
+        uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
+        loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        uint8_t perms = 07; // Start with all
+
+        for (; loc < end; ++loc)
         {
-            error = EIO;
-            return -1;
-        }
-
-        swapped_on_pages.remove(get_page_start(addr));
-        swapped_on_pages.push_back(get_page_start(addr));
-
-        while (swapped_on_pages.size() > HAMSTER_CONCUR_PAGES)
-        {
-            // Need to swap out pages
-            uint64_t page_addr = swapped_on_pages.front();
-            it = pages.find(page_addr);
-
-            swapped_on_pages.pop_front();
-
-            if (it == pages.end())
+            auto page_id = page_table.get_page_direct(loc);
+            if (page_id == PageTable::PAGE_ID_UNUSED)
                 continue;
-            
-            it->second.swap_out();
-        }
 
-        return 0;
-    }
-
-    int MemorySpace::mmap(uint64_t addr, uint64_t size, uint8_t perms, int flags, int fd, uint64_t offset)
-    {
-        // Ensure that no other mapping overlaps with this one
-        for (const auto &entry : mappings)
-        {
-            if (addr < entry.addr + entry.size && entry.addr < addr + size)
-            {
-                error = EADDRINUSE;
-                return -1; // Overlapping mapping found
-            }
-        }
-
-        if (fd < 0)
-        {
-            error = EINVAL;
-            return -1;
-        }
-        else if (flags & MAP_PRIVATE)
-        {
-            // Copy the mapping to memory
-            if (vfs.seek(fd, offset, H_SEEK_SET) < 0)
-            {
-                error = EIO;
+            int8_t page_perms = page_manager.get_permissions(page_id);
+            if (page_perms < 0)
                 return -1;
-            }
-            for (uint64_t it = 0; it < size; it++)
-            {
-                uint8_t byte = 0;
-                if (vfs.read(fd, &byte, 1) < 0)
-                {
-                    error = EIO;
-                    return -1; // Error reading from file
-                }
-                if (write_byte(addr + it, byte) < 0)
-                {
-                    return -1; // Error writing to memory
-                }
-            }
-        }
 
-        mappings.push_back(MmapEntry{addr, size, offset, fd, (uint8_t)(perms & 07), (flags & MAP_SHARED) != 0});
-        return 0;
+            perms &= page_perms;
+        }
+        return perms;
     }
+    
 
-    int MemorySpace::munmap(uint64_t addr, uint64_t size)
+    void MemorySpace::deallocate(uint32_t addr, uint32_t size)
     {
-        for (auto it = mappings.begin(); it != mappings.end(); /* no increment */)
+        assert(addr % HAMSTER_PAGE_SIZE == 0);
+        assert(size % HAMSTER_PAGE_SIZE == 0);
+
+        for (size_t i = 0; i < free_ranges.size(); ++i)
         {
-            MmapEntry &mapping = *it;
-            // Check if it overlaps
-            if (addr < mapping.addr + mapping.size && mapping.addr < addr + size)
+            // Attempt to merge into an existing range if possible
+            FreeRange &range = free_ranges.front();
+            free_ranges.advance();
+            assert(range.size % HAMSTER_PAGE_SIZE == 0);
+            assert(range.addr % HAMSTER_PAGE_SIZE == 0);
+            if (range.addr + range.size == addr)
             {
-                // Unmap the overlapping region
-
-                uint64_t start_off = mapping.addr < addr ? addr - mapping.addr : 0;
-
-                // reverse offset
-                uint64_t r_end_off = mapping.addr + mapping.size > addr + size ? 
-                    mapping.addr + mapping.size - (addr + size) : 0;
-
-                if (start_off == 0 && r_end_off == 0)
-                {
-                    // Unmap the whole mapping
-                    if (mapping.fd >= 0)
-                    {
-                        vfs.close(mapping.fd);
-                    }
-                    
-                    it = mappings.erase(it);
-                }
-                else if (start_off > 0 && r_end_off == 0)
-                {
-                    // Unmap the end of the mapping
-                    mapping.size = start_off;
-                    ++it;
-                }
-                else if (start_off == 0 && r_end_off > 0)
-                {
-                    // Unmap the start of the mapping
-                    mapping.addr = mapping.addr + mapping.size - r_end_off;
-                    mapping.size = r_end_off;
-                    mapping.offset = mapping.offset + mapping.size - r_end_off;
-                    ++it;
-                }
-                else
-                {
-                    // Unmap the middle of the mapping
-                    MmapEntry new_mapping;
-
-                    // new_mapping is the higher segment (addresses bigger)
-
-                    new_mapping.addr = mapping.addr + mapping.size - r_end_off;
-                    new_mapping.size = r_end_off;
-                    new_mapping.offset = mapping.offset + mapping.size - r_end_off;
-                    new_mapping.fd = vfs.dup(mapping.fd);
-                    new_mapping.shared = mapping.shared;
-                    new_mapping.perms = mapping.perms;
-
-                    mapping.size = start_off;
-
-                    it = mappings.insert(it + 1, new_mapping);
-                    // it now points to the newly inserted element, increment to continue
-                    ++it;
-                }
+                range.size += size;
+                return;
             }
-            else
+            if (addr + size == range.addr)
             {
-                ++it;
+                range.addr = addr;
+                range.size += size;
+                return;
             }
         }
-
-        return 0;
+        free_ranges.push(FreeRange{addr, size});
     }
 } // namespace Hamster
 

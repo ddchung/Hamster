@@ -24,8 +24,20 @@ namespace Hamster
 
         *new_fd = *user_fd;
 
-        if (user_fd->type == UserFDType::VFS)
-            fd_refcount[user_fd->vfs_fd]++;
+        switch (user_fd->type)
+        {
+        case UserFDType::VFS:
+            ++fd_refcount[user_fd->vfs_fd];
+            break;
+        case UserFDType::PIPE_READ:
+            ++user_fd->pipe->readers;
+            break;
+        case UserFDType::PIPE_WRITE:
+            ++user_fd->pipe->writers;
+            break;
+        default:
+            break;
+        }
         
         // Clear FD_CLOEXEC
         new_fd->flags &= ~H_FD_CLOEXEC;
@@ -39,7 +51,7 @@ namespace Hamster
         assert(current_task != nullptr);
 
         if (oldfd == newfd)
-            return -EINVAL;
+            return -H_EINVAL;
 
         UserFD *old_user_fd = current_task->get_user_fd(oldfd);
         if (!old_user_fd)
@@ -53,8 +65,20 @@ namespace Hamster
             return cvt_error();
         *new_user_fd = *old_user_fd;
 
-        if (old_user_fd->type == UserFDType::VFS)
-            fd_refcount[old_user_fd->vfs_fd]++;
+        switch (old_user_fd->type)
+        {
+        case UserFDType::VFS:
+            ++fd_refcount[old_user_fd->vfs_fd];
+            break;
+        case UserFDType::PIPE_READ:
+            ++old_user_fd->pipe->readers;
+            break;
+        case UserFDType::PIPE_WRITE:
+            ++old_user_fd->pipe->writers;
+            break;
+        default:
+            break;
+        }
         
         new_user_fd->flags &= ~H_FD_CLOEXEC; // Clear FD_CLOEXEC
         if (flags & OPEN_CLOEXEC) // Note: OPEN_CLOEXEC isn't FD_CLOEXEC!

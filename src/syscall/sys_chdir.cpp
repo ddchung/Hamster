@@ -17,7 +17,7 @@ namespace Hamster
         const char *path = current_task->memory->obj.memory.get_string(path_loc);
         if (!path)
         {
-            error = EFAULT; // Bad address
+            error = H_EFAULT; // Bad address
             return cvt_error();
         }
 

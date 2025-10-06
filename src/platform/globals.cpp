@@ -19,14 +19,18 @@ namespace Hamster
 
     /* These don't have any dependencies, put first */
 
+    __attribute__((weak))
+    void _init_allocator() {}
+
     /**
-     * Allocated Pointers
+     * Allocator
      * requires: none
      * provides: allocator
      */
-#ifndef NDEBUG
-    std::unordered_set<void *> allocated_pointers;
-#endif // NDEBUG
+    static bool _dummy = []() {
+        _init_allocator();
+        return true;
+    }();
 
     /**
      * Error
@@ -34,6 +38,20 @@ namespace Hamster
      * provides: error
      */
     int error{0};
+
+    /**
+     * CLOCK_REALTIME
+     * requires: none
+     * provides: clock_rt_offset
+     */
+    int32_t clock_rt_offset{0};
+
+    /**
+     * Emulator monitor
+     * requires: none
+     * provides: total_instructions_executed
+     */
+    uint64_t total_instructions_executed{0};
 
     /**
      * Kernel Scheduler

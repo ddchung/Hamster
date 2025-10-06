@@ -510,7 +510,7 @@ namespace Hamster
          * @brief Check if a special file is a TTY
          * @param fd The file descriptor of the special file
          * @return 1 if it is, 0 if it's not, and on error return -1 and set `error`
-         * @note On a non-special file, this will return -1 and set `error` to ENOTTY
+         * @note On a non-special file, this will return -1 and set `error` to H_ENOTTY
          */
         int is_tty(int fd);
 
@@ -536,6 +536,28 @@ namespace Hamster
          * @return 1 if ready, 0 if not ready, -1 on error and set `error`
          */
         int poll(int fd, int op);
+
+        /**
+         * @brief Check if a file descriptor is valid
+         * @return true if it is, false otherwise
+         */
+        bool is_valid_fd(int fd);
+
+        /**
+         * @brief Sync cached changes
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This might do nothing, depending on underlying filesystem support
+         * @note This is equivalent to POSIX `fsync`
+         */
+        int sync(int fd);
+
+        /**
+         * @brief Sync file data, and strictly necessary metadata
+         * @return 0 on success, or on error return -1 and set `error`
+         * @note This might do nothing, depending on underlying filesystem support
+         * @note This is equivalent to POSIX `fdatasync`
+         */
+        int datasync(int fd);
 
     private:
         VFSData *data;

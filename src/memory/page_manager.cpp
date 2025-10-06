@@ -1,211 +1,282 @@
-// implementation of page manager
+// Hamster page manager implementation
 
 #include <memory/page_manager.hpp>
 #include <memory/allocator.hpp>
+#include <filesystem/vfs.hpp>
 #include <platform/platform.hpp>
-#include <platform/config.hpp>
-#include <utility>
+#include <errno/errno.h>
+#include <cstring>
 
 namespace Hamster
 {
-    PageManager::PageImpl::PageImpl()
-        : data(nullptr), flags(0), used(false), swapped(false)
+    PageManager::~PageManager()
     {
-        allocate();
-    }
-
-    PageManager::PageImpl::~PageImpl()
-    {
-        deallocate();
-    }
-
-    PageManager::PageImpl::PageImpl(PageImpl &&other)
-        : data(other.data), flags(other.flags), used(other.used), swapped(other.swapped)
-    {
-        other.data = nullptr;
-        other.used = false;
-        other.swapped = true;
-    }
-
-    PageManager::PageImpl &PageManager::PageImpl::operator=(PageImpl &&other)
-    {
-        if (this != &other)
+        for (PageEntry *entry : page_table)
         {
-            std::swap(data, other.data);
-            std::swap(flags, other.flags);
-
-            bool tmp = used;
-            used = other.used;
-            other.used = tmp;
-
-            tmp = swapped;
-            swapped = other.swapped;
-            other.swapped = tmp;
-        }
-        return *this;
-    }
-
-    void PageManager::PageImpl::allocate()
-    {
-        deallocate();
-        data = alloc<uint8_t>(HAMSTER_PAGE_SIZE);
-    }
-
-    void PageManager::PageImpl::deallocate()
-    {
-        dealloc(data);
-        data = nullptr;
-    }
-
-    int PageManager::PageImpl::swap_in(int swp_idx)
-    {   
-        allocate();
-
-        int ret = _swap_in(swp_idx, data);
-
-        if (ret < 0)
-        {
-            deallocate();
-            return ret;
-        }
-
-        swapped = false;
-        return 0;
-    }
-
-    int PageManager::PageImpl::swap_out(int swp_idx)
-    {
-        int ret = _swap_out(swp_idx, data);
-        if (ret < 0)
-            return ret;
-        deallocate();
-        swapped = true;
-        return 0;
-    }
-
-    int PageManager::swap_out(int32_t page)
-    {
-        if (page < 0 || (size_t)page >= pages.size())
-            return -1;
-
-        return pages[page].swap_out(page);
-    }
-
-    int PageManager::swap_in(int32_t page)
-    {
-        if (page < 0 || (size_t)page >= pages.size())
-            return -1;
-
-        return pages[page].swap_in(page);
-    }
-
-    bool PageManager::is_swapped(int32_t page)
-    {
-        if (page < 0 || (size_t)page >= pages.size())
-            return false;
-
-        return pages[page].is_swapped();
-    }
-
-    int32_t PageManager::open_page()
-    {
-        for (size_t i = 0; i < pages.size(); ++i)
-        {
-            if (!pages[i].is_used())
+            if (entry && --entry->refcount == 0)
             {
-                pages[i].set_used(true);
-                return i;
+                
+                _free(entry->data);
+                if (entry->fd && --entry->fd->refcount == 0)
+                {
+                    // Note: we cannot close the file descriptors here
+                    // since `vfs` might be destroyed before us
+                    // but we still have to free the FileMappingFD's
+                    dealloc(entry->fd);
+                }
+                dealloc(entry);
             }
         }
-
-        if (pages.size() >= HAMSTER_MAX_PAGES)
-            // out of memory
-            return -1;
-        
-        // no free page
-        pages.emplace_back();
-        pages.back().set_used(true);
-        return pages.size() - 1;
+        page_table.clear();
     }
 
-    int PageManager::close_page(int32_t page)
+    uint32_t PageManager::allocate_page(uint8_t perms)
     {
-        if (page < 0 || (size_t)page >= pages.size())
+        uint32_t id;
+        if (free_pages.empty())
+        {
+            id = page_table.size();
+            page_table.push_back(nullptr);
+        }
+        else
+        {
+            id = free_pages.front();
+            free_pages.pop_front();
+        }
+
+        PageEntry *&entry = page_table[id];
+        
+        // Initialize the page entry
+        assert(entry == nullptr);
+        entry = alloc<PageEntry>();
+        entry->data = nullptr;
+        entry->fd = nullptr;
+        entry->eviction_queue_count = 0;
+        entry->swapped = 1;
+        entry->dirty = 0;
+        entry->perms = perms;
+        entry->refcount = 1;
+        entry->zero = 1;
+        entry->shared = 0;
+        return id;
+    }
+
+    uint32_t PageManager::mmap_private(FileMappingFD *fd, int64_t offset, uint8_t perms)
+    {
+        // Check if the file descriptor is valid
+        if (vfs.seek(fd->fd, offset, H_SEEK_SET) < 0)
+            return 0;
+
+        uint32_t id = allocate_page(perms);
+        PageEntry *entry = page_table[id];
+        entry->fd = fd;
+        fd->refcount++;
+        entry->offset = offset;
+
+        // clear zero, since this is a file mapping, 
+        // and swap_in skips everything else if `zero` is set
+        entry->zero = 0;
+
+        return id;
+    }
+
+    void PageManager::make_shared(uint32_t id)
+    {
+        PageEntry *entry = page_table[id];
+
+        entry->shared = 1;
+
+        // Note: clear swapped on shared file mappings since operations
+        //       simply get forwarded to the file. It also won't ever
+        //       get swapped out since we didn't put it in the queue,
+        //       and this is good because swapping out would be meaningless
+        if (entry->fd)
+            entry->swapped = 0;
+    }
+
+    void PageManager::free_page(uint32_t id)
+    {
+        // Free the page entry
+        PageEntry *&entry = page_table[id];
+
+        if (--entry->refcount == 0)
+        {
+            _free(entry->data);
+            if (entry->fd && --entry->fd->refcount == 0)
+            {
+                vfs.close(entry->fd->fd);
+                dealloc(entry->fd);
+            }
+            dealloc(entry);
+        }
+        entry = nullptr;
+        free_pages.push_back(id);
+    }
+
+    uint32_t PageManager::copy(uint32_t id)
+    {
+        PageEntry *entry = page_table[id];
+        entry->refcount++;
+
+        // Find a new id
+        
+        uint32_t new_id;
+        if (free_pages.empty())
+        {
+            new_id = page_table.size();
+            page_table.push_back(nullptr);
+        }
+        else
+        {
+            new_id = free_pages.front();
+            free_pages.pop_front();
+        }
+
+        page_table[new_id] = entry;
+        return new_id;
+    }
+
+    int PageManager::swap_in(uint32_t id)
+    {
+        PageEntry *entry = page_table[id];
+        if (!entry->swapped)
+            return -1;
+        
+        // Swap out pages if more memory is needed
+        if (should_evict() == 1)
+            evict_pages();
+
+        // Swap in the page
+
+        assert(entry->data == nullptr);
+
+        // Ensure that if it is a file mapping, the file descriptor is OK
+        if (entry->fd && vfs.seek(entry->fd->fd, entry->offset, H_SEEK_SET) < 0)
             return -1;
 
-        pages[page].set_used(false);
+        // use _malloc instead of alloc<uint8_t> to avoid
+        // the allocator's overhead
+        entry->data = (uint8_t *)_malloc(HAMSTER_PAGE_SIZE);
+        entry->swapped = 0;
+
+        if (entry->eviction_queue_count <= 3)
+        {
+            eviction_queue.push_back(id);
+            ++entry->eviction_queue_count;
+        }
+
+        if (entry->zero)
+        {
+            entry->zero = 0;
+            memset(entry->data, 0, HAMSTER_PAGE_SIZE);
+            return 0;
+        }
+
+        if (!entry->fd)
+        {
+            // Anonymous mapping
+            // Swap in the page
+            _swap_in(id, entry->data);
+            return 0;
+        }
+        else
+        {
+            assert(entry->shared == 0);
+            // Private file mapping
+            if (vfs.read(entry->fd->fd, entry->data, HAMSTER_PAGE_SIZE) < 0)
+                return -1;
+            // Convert to anonymous mapping, since it behaves like one now
+
+            if (--entry->fd->refcount == 0)
+            {
+                vfs.close(entry->fd->fd);
+                dealloc(entry->fd);
+            }
+            entry->fd = nullptr;
+            return 0;
+        }
+    }
+
+    int PageManager::swap_out(uint32_t id)
+    {
+        PageEntry *entry = page_table[id];
+        if (entry->swapped)
+            return -1;
+        
+        assert(entry->data != nullptr);
+
+        if (entry->dirty && _swap_out(id, entry->data) < 0)
+            return -1;
+        
+        entry->swapped = 1;
+        entry->dirty = 0;
+        _free(entry->data);
+        entry->data = nullptr;
+
         return 0;
     }
 
-    int PageManager::set_byte(int32_t page, uint32_t offset, uint8_t value)
+    int PageManager::set_permissions(uint32_t id, uint8_t perms)
     {
-        if (page < 0 || (size_t)page >= pages.size())
-            return -1;
-        if (offset + 1 > HAMSTER_PAGE_SIZE)
-            return -2;
-        
-        PageImpl &p = pages[page];
-
-        if (p.is_swapped())
-            return -3;
-        if (!p.is_used())
-            return -4;
-        
-        p.get_data()[offset] = value;
+        page_table[id]->perms = perms;
         return 0;
     }
 
-    static uint8_t byte_dummy;
-
-    uint8_t &PageManager::get_byte(int32_t page, uint32_t offset)
+    void PageManager::mark_page_dirty(uint32_t id)
     {
-        if (page < 0 || (size_t)page >= pages.size())
-            return byte_dummy;
-        if (offset + 1 > HAMSTER_PAGE_SIZE)
-            return byte_dummy;
+        PageEntry *&entry = page_table[id];
+        assert(!entry->swapped);
 
-        PageImpl &p = pages[page];
+        // Don't split shared pages to properly implement the sharing
+        if (entry->refcount > 1 && !entry->shared)
+        {
+            // copy the page
+            entry->refcount--;
 
-        if (p.is_swapped())
-            return byte_dummy;
-        if (!p.is_used())
-            return byte_dummy;
+            // copy-construct
+            PageEntry *new_entry = alloc<PageEntry>(1, *entry);
 
-        return p.get_data()[offset];
+            // copy data
+            new_entry->data = (uint8_t *)_malloc(HAMSTER_PAGE_SIZE);
+            memcpy(new_entry->data, entry->data, HAMSTER_PAGE_SIZE);
+
+            // set refcount
+            new_entry->refcount = 1;
+
+            entry = new_entry;
+        }
+
+        entry->dirty = 1;
     }
 
-    uint8_t &PageManager::get_byte_dummy()
+    bool PageManager::is_id_valid(uint32_t id) const
     {
-        return byte_dummy;
+        return id < page_table.size() && page_table[id] != nullptr;
     }
 
-    static uint16_t flag_dummy;
-
-    uint16_t &PageManager::get_flags(int32_t page)
+    int PageManager::should_evict()
     {
-        if (page < 0 || (size_t)page >= pages.size())
-            return flag_dummy;
-        return pages[page].get_flags();
+        return _get_free_memory() < HAMSTER_TARGET_FREE_RAM ? 1 : 0;
     }
 
-    uint16_t &PageManager::get_flag_dummy()
+    void PageManager::evict_pages()
     {
-        return flag_dummy;
-    }
+        while (should_evict())
+        {
+            if (eviction_queue.empty())
+                break;
 
-    uint8_t *PageManager::get_data(int32_t page)
-    {
-        if (page < 0 || (size_t)page >= pages.size())
-            return nullptr;
+            uint32_t victim = eviction_queue.front();
+            eviction_queue.pop_front();
 
-        PageImpl &p = pages[page];
+            assert(victim < page_table.size());
 
-        if (p.is_swapped())
-            return nullptr;
-        if (!p.is_used())
-            return nullptr;
+            PageEntry *entry = page_table[victim];
+            if (!entry || --entry->eviction_queue_count > 0)
+                continue;
 
-        return p.get_data();
+            // Evict the page
+            swap_out(victim);
+        }
     }
 } // namespace Hamster
-

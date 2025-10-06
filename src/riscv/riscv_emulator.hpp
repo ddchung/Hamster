@@ -8,6 +8,8 @@
 
 namespace Hamster
 {
+    extern uint64_t total_instructions_executed;
+
     struct EmulatorMemory
     {
         MemorySpace memory;
@@ -16,12 +18,24 @@ namespace Hamster
 
     class RiscVEmulator
     {
+        struct DecodedInst
+        {
+            void *handler;
+            uint32_t inst;
+        };
+
+        struct DecodedTrace
+        {
+            uint32_t pc;
+            DecodedInst decoded_insts[HAMSTER_TRACE_SIZE + 1];
+            size_t decoded_count;
+        };
     public:
         uint32_t x[32];
         double f[32];
         uint32_t fcsr;
         uint32_t pc;
-        
+
         int reserved_mem_id;
 
         EmulatorMemory *memory;
@@ -41,7 +55,7 @@ namespace Hamster
 
             Status status;
 
-            union 
+            union
             {
                 struct
                 {
@@ -62,12 +76,12 @@ namespace Hamster
         };
 
         /**
-         * @brief Executes a single instruction at the current PC
-         * @return ExecuteResult indicating the outcome of the execution
+         * @brief Execute HAMSTER_THREAD_TIME_SLICE instructions, or until an exception occurs
+         * @return An ExecuteResult struct containing the result of the execution
          */
-        ExecuteResult execute();
+        ExecuteResult run();
+
     private:
-        
         int read8(uint32_t addr, uint8_t &out);
         int read16(uint32_t addr, uint16_t &out);
         int read32(uint32_t addr, uint32_t &out);
@@ -78,6 +92,10 @@ namespace Hamster
         int write32(uint32_t addr, uint32_t value);
         int writef32(uint32_t addr, float value);
         int writef64(uint32_t addr, double value);
+
+        uint32_t execute_trace(ExecuteResult &result);
+
+        DecodedTrace traces[2] = {};
+        uint32_t last_trace_slot = 0;
     };
 } // namespace Hamster
-

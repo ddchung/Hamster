@@ -9,46 +9,46 @@
 
 namespace Hamster
 {
-    int Task::poll_wait()
+    namespace
     {
-        Task *current_task = scheduler.get_current_task();
-        assert(current_task != nullptr && "No current task");
-        assert(current_task->blocking_operation == BlockingOperation::WAIT && "Not a blocking wait operation");
-
-        // Call either waitid or wait4 syscall
-        int32_t result;
-
-        int32_t syscall_id = current_task->emulator.x[17]; // a7 register contains syscall ID
-
-        // Restore argument 0 that is in io_block_fd
-        current_task->emulator.x[10] = current_task->io_block_fd;
-
-        switch (syscall_id)
+        void poll_wait(Task &)
         {
-        case SyscallID::WAITID:
-            result = syscall(sys_waitid);
-            break;
-        case SyscallID::WAIT4:
-            result = syscall(sys_wait4);
-            break;
-        default:
-            result = -ENOSYS;
-            break;
-        }
+            Task *current_task = scheduler.get_current_task();
+            assert(current_task != nullptr && "No current task");
 
-        if (result < 0 && result == -EAGAIN)
-        {
-            // Still blocking, do nothing and check again next time
-            return 0;
-        }
-        _trace("sys_wait: completed wait operation, result %d\n", result);
+            // Call either waitid or wait4 syscall
+            int32_t result;
 
-        // Completed successfully
-        // Copy to a0 register (return value)
-        current_task->emulator.x[10] = result;
-        current_task->blocking_operation = BlockingOperation::NONE;
-        current_task->io_block_fd = -1; // Reset the blocking FD
-        return 0;
+            int32_t syscall_id = current_task->emulator.x[17]; // a7 register contains syscall ID
+
+            // Restore argument 0 that is in io_block_fd
+            current_task->emulator.x[10] = current_task->blocking_operation_saved[0];
+
+            switch (syscall_id)
+            {
+            case SyscallID::WAITID:
+                result = syscall(sys_waitid);
+                break;
+            case SyscallID::WAIT4:
+                result = syscall(sys_wait4);
+                break;
+            default:
+                result = -H_ENOSYS;
+                break;
+            }
+
+            if (result < 0 && result == -H_EAGAIN)
+            {
+                // Still blocking, do nothing and check again next time
+                return;
+            }
+            _trace("sys_wait: completed wait operation, result %d\n", result);
+
+            // Completed successfully
+            // Copy to a0 register (return value)
+            current_task->emulator.x[10] = result;
+            current_task->blocking_operation = nullptr;
+        }
     }
 
     int32_t sys_waitid(int32_t idtype, int32_t id, uint32_t infop_loc,
@@ -73,12 +73,12 @@ namespace Hamster
         {
             if (id < 0 || (size_t)id >= current_task->fd_table->obj.fds.size())
             {
-                return -EINVAL; // Invalid PIDFD
+                return -H_EINVAL; // Invalid PIDFD
             }
             UserFD &fd = current_task->fd_table->obj.fds[id];
             if (fd.type != UserFDType::PID)
             {
-                return -EINVAL; // Not a PIDFD
+                return -H_EINVAL; // Not a PIDFD
             }
             pid = fd.pid; // Get PID from PIDFD
         }
@@ -87,7 +87,7 @@ namespace Hamster
             pid = 0; // Wait for any child process
             break;
         default:
-            return -EINVAL; // Invalid idtype
+            return -H_EINVAL; // Invalid idtype
         }
 
         Map<uint32_t, ProcessStateChange> &state_changes = current_process.children_state_changes;
@@ -172,7 +172,7 @@ namespace Hamster
             if (!found)
             {
                 // No child processes to wait for
-                return -ECHILD;
+                return -H_ECHILD;
             }
 
             if (options & H_WNOHANG)
@@ -181,18 +181,18 @@ namespace Hamster
                 return 0;
             }
             
-            if (current_task->blocking_operation != BlockingOperation::WAIT)
+            if (!current_task->blocking_operation)
                 _trace("sys_waitid: blocking on Thread PID %d, idtype %d, id %d, options %d\n",
                        current_task->get_pid(), idtype, id, options);
 
             // Block until a matching process state change occurs
-            current_task->blocking_operation = BlockingOperation::WAIT;
+            current_task->blocking_operation = poll_wait;
 
-            // Save argument 0 in io_block_fd, as it will be overwritten by the return handler
-            current_task->io_block_fd = idtype;
+            // Save argument 0, as it will be overwritten by the return handler
+            current_task->blocking_operation_saved[0] = idtype;
 
 
-            return -EAGAIN;
+            return -H_EAGAIN;
         }
 
         // We have a matching process state change
@@ -227,9 +227,9 @@ namespace Hamster
             info.fields.child.utime = 0; // Not implemented, set to 0
             info.fields.child.stime = 0; // Not implemented, set to 0
 
-            if (current_task->memory->obj.memory.memcpy(infop_loc, &info, sizeof(sys_siginfo)) < 0)
+            if (current_task->memory->obj.memory.memcpy_alloc(infop_loc, &info, sizeof(sys_siginfo)) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
         }
@@ -237,9 +237,9 @@ namespace Hamster
         if (ru_loc != 0)
         {
             // Not implemented, set to 0
-            if (current_task->memory->obj.memory.memset(ru_loc, 0, sizeof(sys_rusage)) < 0)
+            if (current_task->memory->obj.memory.memset_alloc(ru_loc, 0, sizeof(sys_rusage)) < 0)
             {
-                error = EFAULT;
+                error = H_EFAULT;
                 return cvt_error();
             }
         }

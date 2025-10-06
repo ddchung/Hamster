@@ -1,197 +1,261 @@
-// Memory Space
+// Hamster memory space
 
 #pragma once
 
-#include <memory/page.hpp>
-#include <memory/stl_map.hpp>
-#include <memory/stl_sequential.hpp>
+#include <memory/page_table.hpp>
+#include <memory/page_manager.hpp> // for PERM_*
+#include <memory/circular_buffer.hpp>
+#include <sys/types.h>
 #include <cstdint>
 #include <cstddef>
-#include <unistd.h>
-
-// Protection flags
-#define PROT_NONE  0x0
-#define PROT_READ  0x1
-#define PROT_WRITE 0x2
-#define PROT_EXEC  0x4
-
-// Mapping flags
-#define MAP_SHARED    0x01
-#define MAP_PRIVATE   0x02
-#define MAP_FIXED     0x10
-#define MAP_ANONYMOUS 0x20
 
 namespace Hamster
 {
     class MemorySpace
     {
-        // memory mapping
-        struct MmapEntry
+        struct FreeRange
         {
-            uint64_t addr;
-            uint64_t size;
-            uint64_t offset;
-            int fd; // File descriptor, -1 if anonymous mapping
-            uint8_t perms : 3; //0brwx
-            bool shared : 1;
+            uint32_t addr, size;
         };
     public:
         MemorySpace() = default;
-        ~MemorySpace();
-        MemorySpace(const MemorySpace &);
-        MemorySpace &operator=(const MemorySpace &);
-        MemorySpace(MemorySpace &&);
-        MemorySpace &operator=(MemorySpace &&);
+        MemorySpace(const MemorySpace &other);
+        MemorySpace &operator=(const MemorySpace &other);
+        MemorySpace(MemorySpace &&other) = default;
+        MemorySpace &operator=(MemorySpace &&other) = default;
+        ~MemorySpace() = default;
+        // Copy to/from external buffers into the virtual memory
+        // These will fail if the memory is not mapped
+
+        int memcpy(void *dest, uint32_t src, uint32_t len);
+        int memcpy(uint32_t dest, const void *src, uint32_t len);
+
+        // backwards compatibility
+        int memset(uint32_t addr, uint8_t value, uint32_t len);
+
+        // copy, but if it doesn't exist, map an anonymous page
+        int memcpy_alloc(uint32_t dest, const void *src, uint32_t len);
+
+        int memset_alloc(uint32_t addr, uint8_t value, uint32_t len);
+
+        // faster read/write that require small, aligned objects
+        int fast_read_aligned(uint32_t addr, void *buf, size_t size)
+        {
+            assert(buf != nullptr);
+            assert((addr % size) == 0);
+            assert(size <= 32);
+            assert((size & (size - 1)) == 0);
+
+            // (size == size) - 1
+            // true - 1
+            // 1 - 1
+            // 0
+            //
+            // (-1 == size) - 1
+            // false - 1
+            // 0 - 1
+            // -1
+            return (do_read(addr, buf, size) == (ssize_t)size) - 1;
+        }
+
+        int fast_write_aligned(uint32_t addr, const void *buf, size_t size)
+        {
+            assert(buf != nullptr);
+            assert((addr % size) == 0);
+            assert(size <= 32);
+            assert((size & (size - 1)) == 0);
+
+            return (do_write(addr, buf, size) == (ssize_t)size) - 1;
+        }
 
         /**
-         * @brief Write to a given byte
-         * @param addr The address to write to
-         * @param value The value to write
-         * @return 0 on success, -1 on error
+         * @brief Get an instruction iterator
+         * @param addr The initial address that it points to. Must be aligned to 4 bytes, and exist.
+         * @return The instruction iterator. This iterator traverses within a single page only.
+         * @note Page must be executable
          */
-        int write_byte(uint64_t addr, uint8_t value);
+        PageManager::InstructionIterator make_iterator(uint32_t addr)
+        {
+            assert(addr % 4 == 0);
+
+            uint32_t id = page_table.get_page(addr);
+            assert(id != PageTable::PAGE_ID_UNUSED);
+
+            return page_manager.make_iterator(id, addr % HAMSTER_PAGE_SIZE);
+        }
 
         /**
-         * @brief Read a byte from the given address
-         * @param addr The address to read from
-         * @param out The output variable to store the read byte
-         * @return 0 on success, -1 on error
-         */
-        int read_byte(uint64_t addr, uint8_t &out);
-
-        /**
-         * @brief Copy a block of memory from the given address to the given buffer.
-         * @param addr The address to copy from
-         * @param buffer The buffer to copy to
-         * @param size The size of the buffer
-         * @return 0 on success, -1 on error
-         */
-        int memcpy(void *buffer, uint64_t addr, size_t size);
-
-        /**
-         * @brief Copy a block of memory from the given buffer to the given address.
-         * @param addr The address to copy to
-         * @param buffer The buffer to copy from
-         * @param size The size of the buffer
-         * @return 0 on success, -1 on error
-         */
-        int memcpy(uint64_t addr, const void *buffer, size_t size);
-
-        /**
-         * @brief Copy a one block of memory to another
-         * @param src The source address
-         * @param dst The destination address
-         * @param size The size of the block
-         * @return 0 on success, -1 on error
-         */
-        int memcpy(uint64_t src, uint64_t dst, size_t size);
-
-        /**
-         * @brief Fill a block of memory with the given value.
-         * @param addr The address to fill
-         * @param value The value to fill with
-         * @param size The size of the block
-         * @return 0 on success, -1 on error
-         */
-        int memset(uint64_t addr, uint8_t value, size_t size);
-
-        /**
-         * @brief Get a string from the given address.
-         * @param addr The address to get the string from
-         * @return A newly allocated string with the same contents, or nullptr on error
-         * @note Remember to free the string when done
-         * @warning Ensure that the string isn't too long, or the program might run out of memory
-         */
-        char *get_string(uint64_t addr);
-
-        /**
-         * @brief Check if the given address is allocated
+         * @brief Check if a location is executable
          * @param addr The address to check
-         * @return true if the address is allocated, false otherwise
-         * @note ALL addresses are valid, but they are allocated the first time they are accessed
+         * @return 0 if it is, 1 otherwise
          */
-        bool is_allocated(uint64_t addr);
+        int check_executable(uint32_t addr)
+        {
+            uint32_t id = page_table.get_page(addr);
+            return id == PageTable::PAGE_ID_UNUSED || (page_manager.get_permissions(id) & PERM_EXEC) == 0;
+        }
 
         /**
-         * @brief Deallocate a page at the given address
-         * @param addr The address to deallocate
-         * @return 0 on success, -1 on error
-         * @note This will delete the page and all its contents, but any accesses to the addresses will make a new page
+         * @brief Read from a memory region, up until, and including, a zero byte
+         * @param addr The address of the memory region to read from
+         * @return A newly allocated buffer containing the data on success, or nullptr on failure and set `error`
+         * @note May be used to get a C-string
          */
-        int deallocate_page(uint64_t addr);
+        char *read_until_zero(uint32_t addr);
+
+        // backwards compatibility
+        char *get_string(uint32_t addr)
+        { return read_until_zero(addr); }
 
         /**
-         * @brief Set permissions for a page range
-         * @param addr Any address in the first page of the range
-         * @param mode A bitmask of permissions 0b00000rwx
-         * @param size The size of the range, in bytes
-         * @return 0 on success, -1 on error
-         * @note This will change the permissions for all pages that the range occupies
+         * @brief Check if a memory region is mapped
+         * @param loc The starting address of the memory region
+         * @param size The size of the memory region
+         * @return 1 if it is mapped, 0 if it's not, -1 on fail and set `error`
+         * @note `loc` is rounded down to the page boundary, while size is rounded up to the page boundary
          */
-        int set_permissions(uint64_t addr, uint8_t mode, size_t size);
+        int is_mapped(uint32_t loc, uint32_t size) const;
 
         /**
-         * @brief Set the permissions for a single page
-         * @param addr The address of the page
-         * @param mode A bitmask of permissions 0b00000rwx
-         * @return 0 on success, -1 on error
-         * @note This will change the permissions for the page that the address belongs to
+         * @brief Check how many pages in a region are mapped
+         * @param loc The starting address of the memory region
+         * @param size The size of the memory region
+         * @return The number of mapped pages, or -1 on failure
+         * @note `loc` is rounded down to the page boundary, while size is rounded up to the page boundary
          */
-        int set_permissions(uint64_t addr, uint8_t mode);
+        ssize_t how_many_mapped(uint32_t loc, uint32_t size) const;
 
         /**
-         * @brief Check if a page range has at least the given permissions
-         * @param addr Any address in the first page of the range
-         * @param req_perms The required permissions, in a bitmask 0b00000rwx
-         * @param size The size of the range, in bytes
-         * @return true if all the pages in the range have at least the given permissions, false otherwise
+         * @brief Map a new anonymous memory region, at the specified region
+         * @param loc The starting address of the memory region to map
+         * @param size The size of the memory region to map, rounded up to the nearest page size
+         * @param perms The permissions for the memory region, composed by bitwise-ORing `PERM_*` flags
+         * @return 0 on success, or -1 and set `error` on failiure
+         * @note `loc`, if specified, is rounded down to the nearest page boundary
          */
-        bool check_permissions(uint64_t addr, uint8_t req_perms, size_t size);
+        int map_anonymous(uint32_t loc, uint32_t size, uint8_t perms);
 
         /**
-         * @brief Check if a single page has at least the given permissions
-         * @param addr The address of the page
-         * @param req_perms The required permissions, in a bitmask 0b00000rwx
-         * @return true if the page has at least the given permissions, false otherwise
-         * @note This will return true if the page is not allocated, as it has the default permissions of 0b00000rwx
+         * @brief Map a new shared anonymous memory region, at the specified region
+         * @param loc The starting address of the memory region to map
+         * @param size The size of the memory region to map, rounded up to the nearest page size
+         * @param perms The permissions for the memory region, composed by bitwise-ORing `PERM_*` flags
+         * @return 0 on success, or -1 and set `error` on failiure
+         * @note `loc`, if specified, is rounded down to the nearest page boundary
          */
-        bool check_permissions(uint64_t addr, uint8_t req_perms);
+        int map_shared_anonymous(uint32_t loc, uint32_t size, uint8_t perms);
 
         /**
-         * @brief Swap out all the currently swapped in pages
-         * @return 0 on success, -1 on error
+         * @brief Map a new private file, at the specified location
+         * @param loc The starting address of the memory region to map
+         * @param fd The file descriptor of the file to map
+         * @param offset The offset within the file to map. Not rounded
+         * @param size The size of the memory region to map, rounded up to the nearest page size
+         * @param perms The permissions for the memory region, composed by bitwise-ORing `PERM_*` flags
+         * @return 0 on success, or -1 and set `error` on failiure
+         * @note `loc`, if specified, is rounded down to the nearest page boundary
          */
-        int swap_out_all();
+        int map_private_file(uint32_t loc, int fd, uint32_t offset, uint32_t size, uint8_t perms);
 
         /**
-         * @brief Map a file to a region of memory
-         * @param addr The starting address
+         * @brief Map a new shared file, at the specified location
+         * @param loc The starting address of the memory to map
+         * @param fd The file to map
+         * @param offset The offset within the file
+         * @param size How many bytes to map
+         * @param perms The permissions of the new memory
+         * @return 0 on success, -1 on error and set `error`
+         */
+        int map_shared_file(uint32_t loc, int fd, uint32_t offset, uint32_t size, uint8_t perms);
+
+        /**
+         * @brief Change the permissions of a region
+         * @param loc The starting address of the memory region
+         * @param size The size of the memory region, rounded up to the page boundary
+         * @param perms The new permissions for the memory region, composed by bitwise-ORing `PERM_*` flags
+         * @return 0 on success, or -1 and set `error` on failiure
+         * @note If the region is not completely mapped, this will skip over the holes
+         */
+        int mprotect(uint32_t loc, uint32_t size, uint8_t perms);
+
+        /**
+         * @brief Unmap a region
+         * @param loc The starting address of the memory region to unmap
+         * @param size The size of the memory region to unmap, rounded up to the page boundary
+         * @return 0 on success, or -1 and set `error` on failiure
+         * @note This will still succeed if some, but not all, of the pages in the region aren't mapped already
+         */
+        int unmap(uint32_t loc, uint32_t size);
+
+        /**
+         * @brief Unmap all regions
+         * @return 0 on success, or -1 and set `error` on failiure
+         */
+        int unmap_all();
+
+        /**
+         * @brief Set the next mmap address
+         * @param addr The address to set
+         * @note This will be used and incremented if all free ranges are exhausted
+         */
+        void set_next_mmap(uint32_t addr)
+        { next_mmap = addr; }
+
+        /**
+         * @brief Get the permissions of a page range
+         * @param loc The starting address of the memory region
+         * @param size The size of the memory region
+         * @return The permissions of the memory region, or -1 on failure
+         * @note Permissions are a mask of `PERM_*` flags
+         * @note The returned permissions is the conjunction of all page permissions in the range
+         * @note This will fail if any of the pages in the range aren't mapped
+         */
+        int8_t get_permissions(uint32_t loc, uint32_t size = 1);
+
+        /**
+         * @brief Allocate a new free region
          * @param size The size of the region
-         * @param perms The permissions of the region. bitmask of 0brwx
-         * @param flags The type of mapping. One of MAP_PRIVATE MAP_SHARED MAP_ANONYMOUS
-         * @param fd The file descriptor to map. It must support read/write/seek
-         * @param offset The offset in the file
-         * @return 0 on success, -1 on error
-         * @note This takes ownership of `fd`
-         * @note This will fail on overlapping map
+         * @return The address of the newly allocated region
+         * @note Be sure to map with the exact address returned, and the exact size specified,
+         *     * so that on unmap, the resources can be properly freed.
          */
-        int mmap(uint64_t addr, uint64_t size, uint8_t perms, int flags, int fd, uint64_t offset);
-        
-        /**
-         * @brief Unmap a region of memory
-         * @param addr The starting address of the region
-         * @param size The size of the region
-         * @return 0 on success, -1 on error
-         * @note This allows partial and multiple unmaps, and reigons not mmap'd are skipped
-         */
-        int munmap(uint64_t addr, uint64_t size);
+        uint32_t allocate(uint32_t size);
 
     private:
-        UnorderedMap<uint64_t, Page> pages;
-        List<uint64_t> swapped_on_pages;
-        Vector<MmapEntry> mappings;
+        PageTable page_table;
+        CircularBuffer<FreeRange> free_ranges;
+        uint32_t next_mmap = 0;
 
-        int ensure_page(uint64_t addr);
+        ssize_t do_read(uint32_t addr, void *buf, size_t len)
+        {
+            assert(buf != nullptr);
+
+            if HAMSTER_UNLIKELY(len == 0)
+                return 0;
+
+            uint32_t id = page_table.get_page(addr);
+            if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
+                return -1;
+
+            return page_manager.read(id, addr & (HAMSTER_PAGE_SIZE - 1), buf, len);
+        }
+
+        ssize_t do_write(uint32_t addr, const void *buf, size_t len)
+        {
+            assert(buf != nullptr);
+
+            if HAMSTER_UNLIKELY(len == 0)
+                return 0;
+
+            uint32_t id = page_table.get_page(addr);
+            if HAMSTER_UNLIKELY(id == PageTable::PAGE_ID_UNUSED)
+                return -1;
+
+            return page_manager.write(id, addr & (HAMSTER_PAGE_SIZE - 1), buf, len);
+        }
+
+        // Called on unmap
+        void deallocate(uint32_t addr, uint32_t size);
     };
 } // namespace Hamster
 

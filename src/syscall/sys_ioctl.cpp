@@ -17,9 +17,23 @@ namespace Hamster
         Task *current_task = scheduler.get_current_task();
         assert(current_task != nullptr);
 
-        int vfs_fd = current_task->get_vfs_fd(fd);
-        if (vfs_fd < 0)
-            return cvt_error();
+        UserFD *user_fd = current_task->get_user_fd(fd);
+        if (!user_fd)
+            return -1;
+        int vfs_fd;
+
+        switch (user_fd->type)
+        {
+        case UserFDType::VFS:
+            vfs_fd = user_fd->vfs_fd;
+            break;
+        case UserFDType::PIPE_READ:
+        case UserFDType::PIPE_WRITE:
+            return -H_EINVAL;
+        case UserFDType::PID:
+        default:
+            return -H_EBADF;
+        }
 
         // Copy a potential pointer into the buffer
         if (arg != 0)
@@ -39,6 +53,8 @@ namespace Hamster
             current_task->memory->obj.memory.memcpy(arg, IOCTL_BUF, sizeof(IOCTL_BUF));
         }
 
+        if (result == -1)
+            return cvt_error();
         return result;
     }
     

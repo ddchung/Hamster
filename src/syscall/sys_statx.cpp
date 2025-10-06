@@ -17,7 +17,7 @@ namespace Hamster
         // Check if we support the things in `mask`
         if (mask & ~H_STATX_BASIC_STATS)
         {
-            error = ENOSYS; // Not implemented
+            error = H_ENOSYS; // Not implemented
             return cvt_error();
         }
 
@@ -33,25 +33,32 @@ namespace Hamster
             dealloc(path_str);
             if (flags & H_AT_EMPTY_PATH)
             {
-                int vfs_fd = task->get_vfs_fd(dirfd);
-                if (vfs_fd < 0)
-                    return cvt_error();
-                ret = vfs.stat(vfs_fd, &statbuf);
+                UserFD *user_fd = task->get_user_fd(dirfd);
+                if (!user_fd)
+                    return -1;
+                switch (user_fd->type)
+                {
+                case UserFDType::VFS:
+                    ret = vfs.stat(user_fd->vfs_fd, &statbuf);
+                    break;
+                case UserFDType::PIPE_READ:
+                case UserFDType::PIPE_WRITE:
+                    statbuf.mode = STAT_IFIFO;
+                    break;
+                case UserFDType::PID:
+                default:
+                    return -H_EBADF;
+                }
             }
             else
             {
-                error = path_str ? ENOENT : EINVAL;
+                error = path_str ? H_ENOENT : H_EINVAL;
                 return cvt_error();
             }
         }
         else
         {
             // Normal path
-            if (!path_str)
-            {
-                error = EFAULT; // Bad address
-                return cvt_error();
-            }
             int vfs_relfd = task->get_relative_fd(path_str, dirfd);
             if (vfs_relfd < 0)
             {
@@ -95,9 +102,9 @@ namespace Hamster
         statxbuf.ctime.nsec = statbuf.ctime_nsec;
 
         // Copy to user memory
-        if (task->memory->obj.memory.memcpy(statxbuf_loc, &statxbuf, sizeof(statxbuf)) < 0)
+        if (task->memory->obj.memory.memcpy_alloc(statxbuf_loc, &statxbuf, sizeof(statxbuf)) < 0)
         {
-            error = EFAULT; // Bad address
+            error = H_EFAULT; // Bad address
             return cvt_error();
         }
 
