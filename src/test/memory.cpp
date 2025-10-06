@@ -91,17 +91,12 @@ void test_memory()
 
     // Write some data to the page
     const char *data = "Hello, World!";
-    ssize_t bytes_written = pm.try_write(id, 0, data, strlen(data));
-    if (bytes_written == -1)
-    {
-        pm.swap_in(id);
-        bytes_written = pm.try_write(id, 0, data, strlen(data));
-    }
-    assert(bytes_written != -1);
+    ssize_t bytes_written = pm.write(id, 0, data, strlen(data));
+    assert(bytes_written == (ssize_t)strlen(data));
 
     // Read the data back from the page
     char buffer[256];
-    ssize_t bytes_read = pm.try_read(id, 0, buffer, strlen(data));
+    ssize_t bytes_read = pm.read(id, 0, buffer, strlen(data));
     assert(bytes_read != -1);
     assert(bytes_read == (ssize_t)strlen(data));
     assert(strncmp(buffer, data, strlen(data)) == 0);
@@ -114,16 +109,11 @@ void test_memory()
         uint32_t id = pm.allocate_page();
 
         // Write some data to the page
-        ssize_t bytes_written = pm.try_write(id, 0, data, strlen(data));
-        if (bytes_written == -1)
-        {
-            pm.swap_in(id);
-            bytes_written = pm.try_write(id, 0, data, strlen(data));
-        }
+        ssize_t bytes_written = pm.write(id, 0, data, strlen(data));
         assert(bytes_written != -1);
 
         // Read the data back from the page
-        ssize_t bytes_read = pm.try_read(id, 0, buffer, strlen(data));
+        ssize_t bytes_read = pm.read(id, 0, buffer, strlen(data));
         assert(bytes_read != -1);
         assert(bytes_read == (ssize_t)strlen(data));
         assert(strncmp(buffer, data, strlen(data)) == 0);

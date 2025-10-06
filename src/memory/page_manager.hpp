@@ -137,20 +137,18 @@ namespace Hamster
         void free_page(uint32_t id);
 
         /**
-         * @brief Try reading from a page
-         * @param id The ID of the page
-         * @param addr The address to read from, starting from the beginning of the page
-         * @param buf The buffer to read data into
+         * @brief Read from the page
+         * @param id The id of the page to read
+         * @param addr The offset in the page
+         * @param buf The buffer to read into
          * @param size How many bytes to read
-         * @return The number of bytes read, or -1 on error
-         * @note It may read less bytes than requested, such as when it is at the end of a page
-         * @note This will fail if the page is swapped out
+         * @return The number of bytes read. might be less than size
          */
-        ssize_t try_read(uint32_t id, size_t addr, void *buf, size_t size)
+        ssize_t read(uint32_t id, size_t addr, void *buf, size_t size)
         {
             PageEntry *entry = page_table[id];
             if (entry->swapped)
-                return -1;
+                swap_in(id);
             assert(addr < HAMSTER_PAGE_SIZE);
             
             // Check readability
@@ -181,20 +179,18 @@ namespace Hamster
         }
 
         /**
-         * @brief Try writing to a page
-         * @param id The ID of the page
-         * @param addr The address to write to, starting from the beginning of the page
-         * @param buf The buffer containing the data to write
+         * @brief Write to the page
+         * @param id The id of the page
+         * @param addr The offset in the page
+         * @param buf The data to write
          * @param size How many bytes to write
-         * @return The number of bytes written, or -1 on error
-         * @note It may write less bytes than requested, such as when it is at the end of a page
-         * @note This will fail if the page is swapped out
+         * @return Number of bytes read. Might be less than size
          */
-        ssize_t try_write(uint32_t id, size_t addr, const void *buf, size_t size)
+        ssize_t write(uint32_t id, size_t addr, const void *buf, size_t size)
         {
             PageEntry *entry = page_table[id];
             if (entry->swapped)
-                return -1;
+                swap_in(id);
             assert(addr < HAMSTER_PAGE_SIZE);
 
             if ((entry->perms & PERM_WRITE) == 0)
@@ -229,30 +225,6 @@ namespace Hamster
                 memcpy(entry->data + addr, buf, size);
             }
             return size;
-        }
-
-        // Same thing as try_{read,write} but automatically swaps in
-
-        ssize_t read(uint32_t id, size_t addr, void *buf, size_t size)
-        {
-            ssize_t ret = try_read(id, addr, buf, size);
-            if (__builtin_expect(ret < 0, 0))
-            {
-                swap_in(id);
-                return try_read(id, addr, buf, size);
-            }
-            return ret;
-        }
-
-        ssize_t write(uint32_t id, size_t addr, const void *buf, size_t size)
-        {
-            ssize_t ret = try_write(id, addr, buf, size);
-            if (__builtin_expect(ret < 0, 0))
-            {
-                swap_in(id);
-                return try_write(id, addr, buf, size);
-            }
-            return ret;
         }
 
         /**
