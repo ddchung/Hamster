@@ -54,6 +54,8 @@ namespace
 
         void run() override
         {
+            // End immediately, since there's nothing to do
+            flags |= Hamster::KSCHED_REMOVE_ALL;
         }
     };
 
