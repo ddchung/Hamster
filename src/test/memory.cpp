@@ -9,6 +9,7 @@
 #include <memory/circular_buffer.hpp>
 #include <memory/allocator.hpp>
 #include <platform/platform.hpp>
+#include <memory/shared_ptr.hpp>
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
@@ -448,6 +449,59 @@ void test_memory()
         res = ms1.memcpy(readback2, test_addr, test_size);
         assert(res == 0);
         assert(memcmp(readback, readback2, test_size) == 0);
+    }
+
+    // Test Hamster::SharedPtr
+    {
+        // Basic construction
+        Hamster::SharedPtr<int> sp1({}, 123);
+        assert(*sp1 == 123);
+        // Copy (deep by default)
+        Hamster::SharedPtr<int> sp2 = sp1;
+        assert(*sp2 == 123);
+        *sp2 = 456;
+        // Deep copy: changing sp2 does not affect sp1
+        assert(*sp1 == 123);
+        assert(*sp2 == 456);
+
+        // Shallow copy
+        Hamster::SharedPtr<int, size_t, Hamster::SharedPtrCopyType::SHALLOW> sp3({}, 789);
+        Hamster::SharedPtr<int, size_t, Hamster::SharedPtrCopyType::SHALLOW> sp4 = sp3;
+        assert(*sp3 == 789);
+        assert(*sp4 == 789);
+        *sp4 = 321;
+        // Shallow copy: changing sp4 affects sp3
+        assert(*sp3 == 321);
+        assert(*sp4 == 321);
+
+        // Move semantics
+        Hamster::SharedPtr<int> sp5 = std::move(sp2);
+        assert(*sp5 == 456);
+        assert(!sp2);
+
+        // Test with a struct
+        struct Point { int x, y; };
+        Hamster::SharedPtr<Point> p1({}, 1, 2);
+        assert(p1->x == 1 && p1->y == 2);
+        Hamster::SharedPtr<Point> p2 = p1;
+        p2->x = 10;
+        assert(p1->x == 1); // deep copy
+        assert(p2->x == 10);
+
+        Hamster::SharedPtr<float> f1{{}};
+
+        *f1 = 123.456f;
+        assert(*f1 == 123.456f);
+
+        {
+            Hamster::SharedPtr<float> f2{f1, Hamster::SharedPtrCopyType::SHALLOW};
+            *f2 = 234.567f;
+
+            assert(*f1 == 234.567f);
+            assert(*f2 == 234.567f);
+        }
+
+        assert(*f1 == 234.567f);
     }
 }
 
