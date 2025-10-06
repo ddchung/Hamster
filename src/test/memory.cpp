@@ -441,6 +441,22 @@ void test_memory()
         assert(memcmp(readback, readback2, test_size) == 0);
     }
 
+    // Test MemorySpace with big data
+    {
+// Warning: takes a while
+#if 0
+        constexpr uint32_t size = 16 * 1024 * 1024;
+        Hamster::MemorySpace ms;
+
+        ms.map_anonymous(0, size, Hamster::PERM_READ | Hamster::PERM_WRITE);
+        ms.memset(0, 0, size);
+        ms.memset(0, 0xFF, size);
+
+        for (uint16_t i = 0; i < 8192; ++i)
+            ms.memset(0, i % 256, size);
+#endif
+    }
+
     // Test Hamster::SharedPtr
     {
         // Basic construction

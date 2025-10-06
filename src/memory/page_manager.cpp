@@ -51,7 +51,6 @@ namespace Hamster
         entry = alloc<PageEntry>();
         entry->data = nullptr;
         entry->fd = nullptr;
-        entry->eviction_queue_count = 0;
         entry->swapped = 1;
         entry->dirty = 0;
         entry->perms = perms;
@@ -159,11 +158,7 @@ namespace Hamster
         entry->data = (uint8_t *)_malloc(HAMSTER_PAGE_SIZE);
         entry->swapped = 0;
 
-        if (entry->eviction_queue_count <= 3)
-        {
-            eviction_queue.push_back(id);
-            ++entry->eviction_queue_count;
-        }
+        eviction_queue.push_back(id);
 
         if (entry->zero)
         {
@@ -272,7 +267,7 @@ namespace Hamster
             assert(victim < page_table.size());
 
             PageEntry *entry = page_table[victim];
-            if (!entry || --entry->eviction_queue_count > 0)
+            if (!entry)
                 continue;
 
             // Evict the page
