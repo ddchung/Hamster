@@ -340,7 +340,59 @@ namespace Hamster
         }
         return perms;
     }
-    
+
+    int MemorySpace::futex_wait(uint32_t addr, void (*callback)())
+    {
+        assert(addr % 4 == 0);
+
+        uint32_t page_id = page_table.get_page(addr);
+        uint16_t offset = addr % HAMSTER_PAGE_SIZE;
+
+        if (page_id == PageTable::PAGE_ID_UNUSED)
+        {
+            error = EFAULT;
+            return -1;
+        }
+
+        return page_manager.futex_wait(page_id, offset, callback);
+    }
+
+    int MemorySpace::futex_wake(uint32_t addr, uint32_t count)
+    {
+        assert(addr % 4 == 0);
+
+        uint32_t page_id = page_table.get_page(addr);
+        uint16_t offset = addr % HAMSTER_PAGE_SIZE;
+
+        if (page_id == PageTable::PAGE_ID_UNUSED)
+        {
+            error = EFAULT;
+            return -1;
+        }
+
+        return page_manager.futex_wake(page_id, offset, count);
+    }
+
+    int MemorySpace::futex_requeue(uint32_t wake_addr, uint32_t wake_count, uint32_t requeue_addr, uint32_t requeue_count)
+    {
+        assert(wake_addr % 4 == 0);
+        assert(requeue_addr % 4 == 0);
+
+        uint32_t wake_page_id = page_table.get_page(wake_addr);
+        uint16_t wake_offset = wake_addr % HAMSTER_PAGE_SIZE;
+
+        uint32_t requeue_page_id = page_table.get_page(requeue_addr);
+        uint16_t requeue_offset = requeue_addr % HAMSTER_PAGE_SIZE;
+
+        if (wake_page_id == PageTable::PAGE_ID_UNUSED ||
+            requeue_page_id == PageTable::PAGE_ID_UNUSED)
+        {
+            error = EFAULT;
+            return -1;
+        }
+
+        return page_manager.futex_requeue(wake_page_id, wake_offset, wake_count, requeue_page_id, requeue_offset, requeue_count);
+    }
 
     void MemorySpace::deallocate(uint32_t addr, uint32_t size)
     {

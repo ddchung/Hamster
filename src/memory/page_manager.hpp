@@ -39,6 +39,13 @@ namespace Hamster
             uint32_t zero : 1;
             uint32_t shared : 1; // Whether this page is a shared mapping
         };
+
+        struct FutexWaiter
+        {
+            void (*callback)();
+            PageEntry *page;
+            uint16_t offset;
+        };
     public:
 
         // An optimized instruction fetch iterator that can traverse within a page
@@ -290,10 +297,48 @@ namespace Hamster
             return page_table[id]->perms;
         }
 
+        /**
+         * @brief Perform a futex wait operation
+         * @param id The id of the page
+         * @param addr The offset in the page
+         * @param callback The callback to call when woken up
+         * @return 0 on success, -1 on error and set `error`
+         * @warning Shared file mappings do not support futexes
+         */
+        int futex_wait(uint32_t id, size_t addr, void (*callback)());
+
+        /**
+         * @brief Perform a futex wake operation
+         * @param id The id of the page
+         * @param addr The offset in the page
+         * @param count How many waiters to ake
+         * @note This will wake up (call the callback) of at most `count`
+         *       waiters waiting on the specified futex word
+         * @return The number of waiters woken up, -1 on error and set `error`
+         * @warning Shared file mappings do not support futexes
+         */
+        int futex_wake(uint32_t id, size_t addr, uint32_t count);
+
+        /**
+         * @brief Do a futex requeue
+         * @param wake_id The id of the initial futex
+         * @param wake_addr The offset in that page
+         * @param wake_count How many waiters to wake
+         * @param requeue_id The id of the futex to requeue to
+         * @param requeue_addr The offset in that page
+         * @param requeue_count The amount of waiters to requeue
+         * @note This will wake up at most `wake_count` waiters on the wake futex.
+         *       If there are still more waiters, a maximum of `requeue_count` remaining
+         *       waiters will be requeued to the new futex
+         * @return The number of waiters waked up or requeued, or -1 on error and set `error`
+         */
+        int futex_requeue(uint32_t wake_id, size_t wake_addr, uint32_t wake_count, uint32_t requeue_id, uint32_t requeue_addr, uint32_t requeue_count);
+
     private:
         Vector<PageEntry *> page_table;
         Deque<uint32_t> free_pages; // Free page IDs
         Deque<uint32_t> eviction_queue;
+        List<FutexWaiter> futex_waiters;
 
         int should_evict();
         void evict_pages();

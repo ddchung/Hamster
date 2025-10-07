@@ -221,6 +221,37 @@ namespace Hamster
          */
         uint32_t allocate(uint32_t size);
 
+        /**
+         * @brief Perform a futex wait operation
+         * @param addr The address of the futex word
+         * @param callback The callback to call when woken
+         * @return 0 on success, -1 on error
+         * @warning Futexes do not support shared file mappings
+         * @warning `addr` must be aligned
+         */
+        int futex_wait(uint32_t addr, void (*callback)());
+
+        /**
+         * @brief Wake up at most `count` waiters on a futex word
+         * @param addr The address of the futex word
+         * @param count The maximum number of waiters to wake up
+         * @return The number of waiters woken, or -1 and set `error` on error
+         * @warning `addr` must be aligned, and not on a shared file mapping
+         */
+        int futex_wake(uint32_t addr, uint32_t count);
+
+        /**
+         * @brief Wake up at most `wake_count` waiters, then if there are extra,
+         *        requeue at most `requeue_count` waiters to the new futex word
+         * @param wait_addr The address of the original futex word
+         * @param wake_count The max number of waiters to wake
+         * @param requeue_addr The address to queue remaining waiters
+         * @param requeue_count The max number of waiters to re-queue, if there are remaining after waking
+         * @return The number of waiters woken or requeued, or -1 on error and set `error`
+         * @warning `addr` must be aligned, and not on a shared file mapping
+         */
+        int futex_requeue(uint32_t wake_addr, uint32_t wake_count, uint32_t requeue_addr, uint32_t requeue_count);
+
     private:
         PageTable page_table;
         CircularBuffer<FreeRange> free_ranges;

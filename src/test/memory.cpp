@@ -509,6 +509,35 @@ void test_memory()
 
         assert(*f1 == 234.567f);
     }
+
+    // Test futexes
+    {
+        Hamster::MemorySpace ms;
+
+        // static to be accessible within lambda
+        static int i = 0;
+        static Hamster::MemorySpace *p_ms;
+
+        p_ms = &ms;
+
+        assert(ms.map_anonymous(0, HAMSTER_PAGE_SIZE, Hamster::PERM_READ | Hamster::PERM_WRITE) == 0);
+
+        ms.futex_wait(0, []{
+            uint32_t word;
+            assert(p_ms && p_ms->memcpy(&word, 0, 4) == 0);
+            assert(word == 0x1234);
+            i = 0x4321;
+        });
+
+        assert(i == 0);
+
+        uint32_t word = 0x1234;
+        assert(ms.memcpy(0, &word, 4) == 0);
+
+        assert(ms.futex_wake(0, 1) == 1);
+
+        assert(i == 0x4321);
+    }
 }
 
 #endif // NDEBUG

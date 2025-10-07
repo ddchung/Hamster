@@ -37,6 +37,9 @@
 // 0x00000000...0x08000000 (128MiB)
 #define HAMSTER_PAGES_PER_PROC 32768
 
+// Maximum global total number of futexes
+#define HAMSTER_MAX_FUTEXES 1024
+
 // warning: Changing this won't adversely affect the kernel, but RISC-V linux
 //          userspace programs expect a 4096-byte page size, and so changing this
 //          will probably break all the programs
