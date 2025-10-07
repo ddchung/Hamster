@@ -119,7 +119,13 @@ namespace Hamster
             switch (copy_type)
             {
             case SharedPtrCopyType::DEEP:
-                obj = alloc<Object>(1, other.obj->obj);
+                if constexpr(std::is_constructible_v<T, OtherT &>)
+                    obj = alloc<Object>(1, other.obj->obj);
+                else
+                {
+                    assert(false && "SharedPtr: Cannot deep-copy object with no copy constructor");
+                    __builtin_unreachable();
+                }
                 break;
             case SharedPtrCopyType::SHALLOW:
                 // note: cannot put into assert because of comma
@@ -141,6 +147,12 @@ namespace Hamster
         // Assign with the default copy type
         template <typename OtherT, typename OtherRefType, SharedPtrCopyType other_cpy_type>
         SharedPtr &operator=(const SharedPtr<OtherT, OtherRefType, other_cpy_type> &other)
+        {
+            return assign(other);
+        }
+
+        // Copy assign
+        SharedPtr &operator=(const SharedPtr &other)
         {
             return assign(other);
         }
