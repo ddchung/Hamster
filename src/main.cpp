@@ -16,6 +16,7 @@
 void test_platform();
 void test_memory();
 void test_filesystem();
+void test_process();
 
 namespace
 {
@@ -174,6 +175,10 @@ int main()
 
     log_operation("Testing Filesystem...");
     test_filesystem();
+    log_operation_status();
+
+    log_operation("Testing Process...");
+    test_process();
     log_operation_status();
 
     Hamster::error = 0; // Reset error after tests

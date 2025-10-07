@@ -40,6 +40,10 @@
 // Maximum global total number of futexes
 #define HAMSTER_MAX_FUTEXES 1024
 
+// Maximum number of file descriptors per process
+// (actually the max per TaskFDTable, but there is usually one per process)
+#define HAMSTER_MAX_FD_TABLE_SIZE 128
+
 // warning: Changing this won't adversely affect the kernel, but RISC-V linux
 //          userspace programs expect a 4096-byte page size, and so changing this
 //          will probably break all the programs
