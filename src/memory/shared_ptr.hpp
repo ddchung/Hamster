@@ -49,12 +49,24 @@ namespace Hamster
         template <typename... Args>
         SharedPtr(Construct, Args &&... args)
         {
-            obj = alloc<Object>(1, std::forward<Args>(args)...);
+            obj = nullptr;
+            construct(std::forward<Args>(args)...);
         }
 
         SharedPtr()
         {
             obj = nullptr;
+        }
+
+        /**
+         * @brief Construct a new value
+         * @param args The args to pass to T's constructor
+         */
+        template <typename... Args>
+        void construct(Args &&... args)
+        {
+            clear();
+            obj = alloc<Object>(1, std::forward<Args>(args)...);
         }
 
         /**
@@ -96,7 +108,7 @@ namespace Hamster
             if ((void *)obj == (void *)other.obj)
                 return *this;
 
-            destroy();
+            clear();
 
             if (!other.obj)
             {
@@ -138,7 +150,7 @@ namespace Hamster
             if ((void *)obj == (void *)other.obj)
                 return *this;
 
-            destroy();
+            clear();
             obj = other.obj;
             other.obj = nullptr;
             return *this;
@@ -146,7 +158,7 @@ namespace Hamster
 
         ~SharedPtr()
         {
-            destroy();
+            clear();
         }
 
         explicit operator bool() const
@@ -179,10 +191,10 @@ namespace Hamster
             return &obj->obj;
         }
 
-    private:
-        Object *obj;
-
-        void destroy()
+        /**
+         * @brief Clear the shared pointer
+         */
+        void clear()
         {
             if (obj)
             {
@@ -191,5 +203,8 @@ namespace Hamster
                 obj = nullptr;
             }
         }
+
+    private:
+        Object *obj;
     };
 } // namespace Hamster
