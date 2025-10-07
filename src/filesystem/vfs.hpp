@@ -559,6 +559,33 @@ namespace Hamster
          */
         int datasync(int fd);
 
+        /**
+         * @brief Do permission checking on a path relative to a directroy
+         * @param dfd The directory
+         * @param path The path to check, relative to the directory
+         * @param uid The user ID to check with
+         * @param groups The groups to check with
+         * @param numgroups Number of groups in the `groups` array
+         * @param mode Access mode. bitmap of 0b rwx
+         * @return 0 if accessible, -1 on error and set `error`
+         * @note If the path is not accessible with the credentials,
+         *       error with `EACCES`
+         */
+        int accessat(int dfd, const char *path, int uid, int *groups, size_t numgroups, int mode);
+
+        /**
+         * @brief Do permission checking on a path
+         * @param path The path to check
+         * @param uid The user ID to check with
+         * @param groups The groups to check with
+         * @param numgroups Number of groups in the `groups` array
+         * @param mode Access mode. bitmap of 0b rwx
+         * @return 0 if accessible, -1 on error and set `error`
+         * @note If the path is not accessible with the credentials,
+         *       error with `EACCES`
+         */
+        int access(const char *path, int uid, int *groups, size_t numgroups, int mode);
+
     private:
         VFSData *data;
     };

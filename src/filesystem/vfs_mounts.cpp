@@ -7,6 +7,41 @@
 
 namespace Hamster
 {
+    namespace
+    {
+        int check_access(int fsuid, int fsgid, int fsmode, int uid, int *groups, size_t numgroups, int mode)
+        {
+            bool ok = false;
+
+            if (fsuid == uid)
+            {
+                ok = !(mode & ~((fsmode >> 6) & 0b111));
+            }
+            else
+            {
+                bool found = false;
+                for (size_t i = 0; i < numgroups; ++i)
+                {
+                    if (fsgid == groups[i])
+                    {
+                        found = true;
+
+                        ok = !(mode & ~((fsmode >> 3) & 0b111));
+                        break;
+                    }
+                }
+
+                if (!found)
+                    ok = !(mode & ~((fsmode) & 0b111));
+            }
+
+            if (ok)
+                return 0;
+            error = EACCES;
+            return -1;
+        }
+    } // namespace
+    
 
     MountPoint::MountPoint(BaseFilesystem *fs)
         : fs(fs), children(0), parent(0)
@@ -232,6 +267,102 @@ namespace Hamster
             dealloc(dir);
             error = H_ENOTDIR;
             return nullptr;
+        }
+    }
+
+    int Mounts::access(const char *path, int uid, int *groups, size_t numgroups, int mode, BaseDirectory *dir)
+    {
+        if (!path)
+        {
+            error = H_EINVAL;
+            dealloc(dir);
+            return -1;
+        }
+        if (!dir)
+        {
+            if (!root_mount)
+            {
+                error = H_ENOENT;
+                return -1;
+            }
+            dir = root_mount->fs->open_root(OPEN_RDONLY);
+            if (!dir)
+                return -1;
+        }
+        int fsmode = dir->get_mode();
+        int fsuid = dir->get_uid();
+        int fsgid = dir->get_gid();
+        if (fsmode < 0 || fsuid < 0 || fsgid < 0 ||
+            // Check with search permission
+            check_access(fsuid, fsgid, fsmode, uid, groups, numgroups, 0b001) < 0)
+        {
+            dealloc(dir);
+            return -1;
+        }
+        while (*path == '/')
+            ++path;
+        if (*path == '\0')
+        {
+            // Already checked
+            dealloc(dir);
+            return 0;
+        }
+        const char *next = strchr(path, '/');
+        if (!next)
+        {
+            BaseFile *file = dir->get(path, OPEN_RDONLY);
+            dealloc(dir);
+            if (file && file->type() == FileType::Directory)
+                file = resolve_mount(file);
+            if (!file)
+                return -1;
+            int fsmode = file->get_mode();
+            int fsuid = file->get_uid();
+            int fsgid = file->get_gid();
+            dealloc(file);
+            if (fsmode < 0 || fsuid < 0 || fsgid < 0) return -1;
+            return check_access(fsuid, fsgid, fsmode, uid, groups, numgroups, mode);
+        }
+        else
+        {
+            String next_name(path, next - path);
+            BaseFile *next_file = dir->get(next_name.c_str(), OPEN_RDONLY);
+            if (!next_file)
+            {
+                dealloc(dir);
+                return -1;
+            }
+            switch (next_file->type())
+            {
+            case FileType::Symlink:
+                next_file = resolve_symlink((BaseSymlink *)next_file, OPEN_RDONLY | OPEN_DIRECTORY, dir);
+                dir = nullptr;
+                if (!next_file)
+                    return -1;
+                // fallthrough to directory handling
+            [[fallthrough]];
+            case FileType::Directory:
+            {
+                dealloc(dir);
+                BaseDirectory *next_dir = (BaseDirectory *)next_file;
+                next_dir = resolve_mount(next_dir);
+                if (!next_dir)
+                {
+                    dealloc(next_file);
+                    error = H_ENOENT;
+                    return -1;
+                }
+
+                return access(next, uid, groups, numgroups, mode, next_dir);
+            }
+            default:
+                break;
+            }
+            // non-directory in middle of path
+            dealloc(next_file);
+            dealloc(dir);
+            error = H_ENOTDIR;
+            return -1;
         }
     }
 

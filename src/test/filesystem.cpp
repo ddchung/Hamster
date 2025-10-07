@@ -490,6 +490,105 @@ void test_filesystem()
         assert(vfs->remove(sharedfile) == 0);
     }
 
+    // --- VFS::accessat tests ---
+    {
+        // Setup: create a directory and a file inside it
+        const char *accdir = "/accdir";
+        assert(vfs->mkdir(accdir, 0755) == 0);
+        int dirfd = vfs->open(accdir, OPEN_RDONLY);
+        assert(dirfd >= 0);
+        const char *accfile = "accfile.txt";
+        int fd = vfs->mkfileat(dirfd, accfile, OPEN_RDWR | OPEN_CREAT, 0640);
+        assert(fd >= 0);
+        vfs->close(fd);
+
+        // User and group setup
+        int owner_uid = 1001;
+        int other_uid = 2002;
+        int owner_gid = 3003;
+        int other_gid = 4004;
+        int groups1[] = {owner_gid};
+        int groups2[] = {other_gid};
+
+
+        // Change ownership (use path relative to dirfd)
+        assert(vfs->chownat(dirfd, accfile, owner_uid, owner_gid) == 0);
+
+
+        // Owner should have read/write access
+        assert(vfs->accessat(dirfd, accfile, owner_uid, groups1, 1, 4) == 0); // read
+        assert(vfs->accessat(dirfd, accfile, owner_uid, groups1, 1, 2) == 0); // write
+        assert(vfs->accessat(dirfd, accfile, owner_uid, groups1, 1, 1) != 0); // execute (should fail)
+
+        // Other user, not in group, should have no access
+        assert(vfs->accessat(dirfd, accfile, other_uid, groups2, 1, 4) != 0); // read
+        assert(vfs->accessat(dirfd, accfile, other_uid, groups2, 1, 2) != 0); // write
+
+        // Other user, but in group, should have read access (since 0640)
+        assert(vfs->accessat(dirfd, accfile, other_uid, groups1, 1, 4) == 0); // read
+        assert(vfs->accessat(dirfd, accfile, other_uid, groups1, 1, 2) != 0); // write
+
+        // Clean up
+        assert(vfs->removeat(dirfd, accfile) == 0);
+        vfs->close(dirfd);
+        assert(vfs->remove(accdir) == 0);
+    }
+
+    // --- VFS::accessat advanced tests: intermediate directory permissions and multiple groups ---
+    {
+        // Setup: create nested directories and a file
+        const char *topdir = "/topdir";
+        const char *subdir = "subdir";
+        const char *filename = "file.txt";
+        assert(vfs->mkdir(topdir, 0755) == 0);
+        int topfd = vfs->open(topdir, OPEN_RDONLY);
+        assert(topfd >= 0);
+        assert(vfs->mkdirat(topfd, subdir, 0750) == 0);
+        int subfd = vfs->openat(topfd, subdir, OPEN_RDONLY);
+        assert(subfd >= 0);
+        int fd = vfs->mkfileat(subfd, filename, OPEN_RDWR | OPEN_CREAT, 0640);
+        assert(fd >= 0);
+        vfs->close(fd);
+
+        // Set up users and groups
+        int owner_uid = 1111;
+        int groupA = 2222;
+        int groupB = 3333;
+        int groupC = 4444;
+        int groupsA[] = {groupA};
+        int groupsAB[] = {groupA, groupB};
+        int groupsBC[] = {groupB, groupC};
+        int other_uid = 5555;
+
+        // Set ownerships
+        assert(vfs->chownat(topfd, subdir, owner_uid, groupA) == 0);
+        assert(vfs->chownat(subfd, filename, owner_uid, groupB) == 0);
+
+        // /topdir
+        //         /subdir - owner:A
+        //                 /file.txt - owner:B
+
+        // Owner should have access through both dirs
+        assert(vfs->accessat(subfd, filename, owner_uid, groupsA, 1, 4) == 0); // read
+        // User in groupB but not groupA: should fail due to subdir perms
+        assert(vfs->accessat(subfd, filename, other_uid, groupsBC, 2, 4) != 0);
+        // User in both groupA and groupB: should succeed
+        assert(vfs->accessat(subfd, filename, other_uid, groupsAB, 2, 4) == 0);
+
+        // Remove read/execute from subdir, only owner can access
+        assert(vfs->chmod(subfd, 0700) == 0);
+        // Now only owner can access
+        assert(vfs->accessat(subfd, filename, owner_uid, groupsA, 1, 4) == 0);
+        assert(vfs->accessat(subfd, filename, other_uid, groupsAB, 2, 4) != 0);
+
+        // Clean up
+        assert(vfs->removeat(subfd, filename) == 0);
+        vfs->close(subfd);
+        assert(vfs->removeat(topfd, subdir) == 0);
+        vfs->close(topfd);
+        assert(vfs->remove(topdir) == 0);
+    }
+
     assert(vfs->unmount("/") == 0);
 }
 
