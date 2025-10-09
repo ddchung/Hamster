@@ -2,6 +2,7 @@
 
 #include <process/task_fd_table.hpp>
 #include <process/task_base_fd.hpp>
+#include <process/task_fs_info.hpp>
 #include <memory/allocator.hpp>
 #include <errno/errno.h>
 #include <cassert>
@@ -128,6 +129,48 @@ void test_process()
         table.clear();
         assert(table.get_fd(1) == nullptr);
         assert(table.get_fd(slot) == nullptr);
+    }
+
+    {
+        Hamster::TaskFSInfo fsinfo;
+
+        // Initial CWD and root should be "/"
+        char *cwd = fsinfo.getcwd();
+        assert(strcmp(cwd, "/") == 0);
+        dealloc(cwd);
+        char *abs_cwd = fsinfo.get_abs_cwd();
+        assert(strcmp(abs_cwd, "/") == 0);
+        dealloc(abs_cwd);
+
+        // chdir to a relative path
+        assert(fsinfo.chdir("tmp") == 0);
+        cwd = fsinfo.getcwd();
+        assert(strcmp(cwd, "/tmp") == 0);
+        dealloc(cwd);
+
+        // chdir to an absolute path
+        assert(fsinfo.chdir("/var/log") == 0);
+        cwd = fsinfo.getcwd();
+        assert(strcmp(cwd, "/var/log") == 0);
+        dealloc(cwd);
+
+        // chroot and check cwd
+        assert(fsinfo.chroot("/var") == 0);
+        cwd = fsinfo.getcwd();
+        assert(strcmp(cwd, "/log") == 0); // CWD relative to new root
+        dealloc(cwd);
+        abs_cwd = fsinfo.get_abs_cwd();
+        assert(strcmp(abs_cwd, "/var/log") == 0);
+        dealloc(abs_cwd);
+
+        // chdir after chroot
+        assert(fsinfo.chdir("/etc") == 0);
+        cwd = fsinfo.getcwd();
+        assert(strcmp(cwd, "/etc") == 0);
+        dealloc(cwd);
+        abs_cwd = fsinfo.get_abs_cwd();
+        assert(strcmp(abs_cwd, "/var/etc") == 0);
+        dealloc(abs_cwd);
     }
 }
 
