@@ -4,6 +4,7 @@
 #include <process/task_base_fd.hpp>
 #include <process/task_fs_info.hpp>
 #include <process/task_signal_mask.hpp>
+#include <process/task_signal_queue.hpp>
 #include <memory/allocator.hpp>
 #include <errno/errno.h>
 #include <cassert>
@@ -209,6 +210,56 @@ void test_process()
         // Should match the mask
         assert(set.sig[0] == (uint32_t)(m & 0xFFFFFFFF));
         assert(set.sig[1] == (uint32_t)(m >> 32));
+    }
+
+    // Test TaskSignalQueue
+    {
+        Hamster::TaskSignalQueue queue;
+        Hamster::TaskSignalMask mask;
+        Hamster::sys_siginfo s1 = {2, 0, 0, {.kill = {100, 200}}};
+        Hamster::sys_siginfo s2 = {3, 0, 1, {.kill = {101, 201}}};
+        Hamster::sys_siginfo s3 = {2, 0, 2, {.kill = {102, 202}}}; // same signo as s1
+        Hamster::sys_siginfo srt = {35, 0, 0, {.kill = {111, 222}}}; // realtime
+
+        // Initially empty
+        assert(queue.size() == 0);
+        // Push normal signals
+        assert(queue.push(s1) == 0);
+        assert(queue.size() == 1);
+        assert(queue.push(s2) == 0);
+        assert(queue.size() == 2);
+        // Push another with same signo (should replace)
+        assert(queue.push(s3) == 0);
+        assert(queue.size() == 2);
+        // Push realtime
+        assert(queue.push(srt) == 0);
+        assert(queue.size() == 3);
+
+        // Mask signal 2, should see signal 3
+        mask.block(2);
+        const Hamster::sys_siginfo *peeked = queue.peek(mask);
+        assert(peeked && peeked->signo == 3);
+        // Unmask signal 2, should see s3
+        mask.unblock(2);
+        peeked = queue.peek(mask);
+        assert(peeked && peeked->signo == 2 && peeked->code == 2);
+        // Pop signal 2
+        queue.pop(mask);
+        assert(queue.size() == 2);
+        // Now should see signal 3
+        peeked = queue.peek(mask);
+        assert(peeked && peeked->signo == 3);
+        // Pop signal 3
+        queue.pop(mask);
+        assert(queue.size() == 1);
+        // Now should see realtime
+        peeked = queue.peek(mask);
+        assert(peeked && peeked->signo == 35);
+        // Pop realtime
+        queue.pop(mask);
+        assert(queue.size() == 0);
+        // Peek empty
+        assert(queue.peek(mask) == nullptr);
     }
 }
 
