@@ -30,7 +30,7 @@ namespace Hamster
          * @return The BaseTaskFD, or nullptr on error and set `error`
          * @warning The returned pointer does not own the object. Do not free
          */
-        BaseTaskFD *get_fd(int fd);
+        BaseTaskFD *get_fd(int fd) const;
 
         /**
          * @brief Close a file descriptor

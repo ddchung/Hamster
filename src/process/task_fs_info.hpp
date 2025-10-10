@@ -18,7 +18,7 @@ namespace Hamster
          * @return A newly opened VFS directory, such that opening `path` relative to this
          *         directory results in the intended file. -1 on error and set `error`
          */
-        int open_rel_fd(const char *path, BaseTaskFD *at_fd = nullptr);
+        int open_rel_fd(const char *path, BaseTaskFD *at_fd = nullptr) const;
 
         /**
          * @brief Change the current root
@@ -41,13 +41,13 @@ namespace Hamster
          * @return A newly allocated string containing the CWD
          *         relative to the current root
          */
-        char *getcwd();
+        char *getcwd() const;
 
         /**
          * @brief Get the absolute CWD, relative to VFS /
          * @return A newly allocated string containing the absolute CWD
          */
-        char *get_abs_cwd();
+        char *get_abs_cwd() const;
 
     private:
         String root_path{"/"};

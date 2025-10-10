@@ -13,7 +13,7 @@ namespace Hamster
         dealloc(fd);
     }
 
-    BaseTaskFD *TaskFDTable::get_fd(int fd)
+    BaseTaskFD *TaskFDTable::get_fd(int fd) const
     {
         if (fd >= (int)fd_table.size())
         {

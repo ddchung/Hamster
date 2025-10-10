@@ -17,7 +17,7 @@ namespace Hamster
             mask &= ~SIGNAL_BIT(signo);
     }
 
-    int TaskSignalMask::check(uint8_t signo)
+    int TaskSignalMask::check(uint8_t signo) const
     {
         if (signo < 1 || signo > 64)
         {
@@ -27,12 +27,12 @@ namespace Hamster
         return (mask & SIGNAL_BIT(signo)) != 0;
     }
 
-    uint64_t TaskSignalMask::convert(bool invert)
+    uint64_t TaskSignalMask::convert(bool invert) const
     {
         return invert ? ~mask : mask;
     }
 
-    sys_sigset TaskSignalMask::to_sigset()
+    sys_sigset TaskSignalMask::to_sigset() const
     {
         sys_sigset set;
         set.sig[0] = mask & 0xFFFFFFFF;

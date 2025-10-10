@@ -34,7 +34,7 @@ namespace Hamster
          * @param signo The signal to check
          * @return 1 if it's blocked, 0 if it's not, -1 on error and set `error`
          */
-        int check(uint8_t signo);
+        int check(uint8_t signo) const;
 
         /**
          * @brief Convert the whole mask into a uint64_t
@@ -44,13 +44,13 @@ namespace Hamster
          *       Signal numbers are addressed with bit `1 << (signo - 1)`, so signal #1 will be LSB, and
          *       signal #64 will be MSB
          */
-        uint64_t convert(bool invert = false);
+        uint64_t convert(bool invert = false) const;
 
         /**
          * @brief Convert the mask into a sys_sigset
          * @return The sys_sigset object
          */
-        sys_sigset to_sigset();
+        sys_sigset to_sigset() const;
 
     private:
         uint64_t mask = 0;

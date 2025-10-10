@@ -9,7 +9,7 @@
 
 namespace Hamster
 {
-    int TaskFSInfo::open_rel_fd(const char *path, BaseTaskFD *at_fd)
+    int TaskFSInfo::open_rel_fd(const char *path, BaseTaskFD *at_fd) const
     {
         if (!path || path[0] == '\0')
         {
@@ -87,7 +87,7 @@ namespace Hamster
         return 0;
     }
 
-    char *TaskFSInfo::getcwd()
+    char *TaskFSInfo::getcwd() const
     {
         auto s = std::filesystem::path(cwd_path).lexically_relative(root_path).generic_string();
         s = std::filesystem::path("/" + s).lexically_normal().generic_string();
@@ -98,7 +98,7 @@ namespace Hamster
         return buf;
     }
 
-    char *TaskFSInfo::get_abs_cwd()
+    char *TaskFSInfo::get_abs_cwd() const
     {
         char *buf = alloc<char>(cwd_path.size() + 1);
         strcpy(buf, cwd_path.c_str());
