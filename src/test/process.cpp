@@ -3,6 +3,7 @@
 #include <process/task_fd_table.hpp>
 #include <process/task_base_fd.hpp>
 #include <process/task_fs_info.hpp>
+#include <process/task_signal_mask.hpp>
 #include <memory/allocator.hpp>
 #include <errno/errno.h>
 #include <cassert>
@@ -171,6 +172,43 @@ void test_process()
         abs_cwd = fsinfo.get_abs_cwd();
         assert(strcmp(abs_cwd, "/var/etc") == 0);
         dealloc(abs_cwd);
+    }
+
+    // Test TaskSignalMask
+    {
+        Hamster::TaskSignalMask mask;
+        // Initially, all signals should be unblocked
+        for (uint8_t i = 1; i <= 64; ++i) {
+            assert(mask.check(i) == 0);
+        }
+        // Block a signal
+        mask.block(2);
+        assert(mask.check(2) == 1);
+        // Unblock it
+        mask.unblock(2);
+        assert(mask.check(2) == 0);
+        // Block multiple signals
+        mask.block(1);
+        mask.block(3);
+        mask.block(64);
+        assert(mask.check(1) == 1);
+        assert(mask.check(3) == 1);
+        assert(mask.check(64) == 1);
+        // Convert to uint64_t
+        uint64_t m = mask.convert();
+        assert((m & 1) == 1); // signal 1
+        assert((m & (1ULL << 2)) == (1ULL << 2)); // signal 3
+        assert((m & (1ULL << 63)) == (1ULL << 63)); // signal 64
+        // Invert
+        uint64_t inv = mask.convert(true);
+        assert((inv & 1) == 0);
+        assert((inv & (1ULL << 2)) == 0);
+        assert((inv & (1ULL << 63)) == 0);
+        // to_sigset
+        sys_sigset set = mask.to_sigset();
+        // Should match the mask
+        assert(set.sig[0] == (uint32_t)(m & 0xFFFFFFFF));
+        assert(set.sig[1] == (uint32_t)(m >> 32));
     }
 }
 
