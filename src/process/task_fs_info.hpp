@@ -49,6 +49,25 @@ namespace Hamster
          */
         char *get_abs_cwd() const;
 
+        /**
+         * @brief Get the umask
+         * @return The umask
+         */
+        int get_umask() const { return umask; }
+
+        /**
+         * @brief Set the umask
+         * @param new_umask
+         */
+        void set_umask(int new_umask) { umask = new_umask & 0777; }
+
+        /**
+         * @brief Mask a mode with the umask
+         * @param mode The mode to mask
+         * @return The processed mode
+         */
+        int mask_mode(int mode) { return mode & ~umask; }
+
     private:
         String root_path{"/"};
         String cwd_path{"/"};
