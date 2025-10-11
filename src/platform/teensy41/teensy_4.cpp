@@ -172,9 +172,29 @@ namespace
 
     void speaker_write_sample(uint8_t sample)
     {
-        // Write to pins 14 (LSB) to 21 (MSB)
+        // Map sample bits to GPIO6 bits
+        const uint32_t pin_bits[8] = {
+            18, // pin 14
+            19, // pin 15
+            23, // pin 16
+            22, // pin 17
+            17, // pin 18
+            16, // pin 19
+            26, // pin 20
+            27  // pin 21
+        };
+
+        // Build a mask for all 8 pins at once
+        uint32_t new_val = 0;
         for (int i = 0; i < 8; i++)
-            digitalWriteFast(14 + i, (sample >> i) & 1);
+            if (sample & (1 << i))
+                new_val |= (1UL << pin_bits[i]);
+
+        // Clear and set all 8 pins in one operation
+        uint32_t all_mask = (1UL << 16) | (1UL << 17) | (1UL << 18) | (1UL << 19) |
+                            (1UL << 22) | (1UL << 23) | (1UL << 26) | (1UL << 27);
+
+        GPIO6_DR = (GPIO6_DR & ~all_mask) | new_val;
     }
 
     void speaker_timer_isr()
