@@ -5,6 +5,7 @@
 #include <process/task_fs_info.hpp>
 #include <process/task_signal_mask.hpp>
 #include <process/task_signal_queue.hpp>
+#include <process/task_signal_handlers.hpp>
 #include <memory/allocator.hpp>
 #include <errno/errno.h>
 #include <cassert>
@@ -179,7 +180,8 @@ void test_process()
     {
         Hamster::TaskSignalMask mask;
         // Initially, all signals should be unblocked
-        for (uint8_t i = 1; i <= 64; ++i) {
+        for (uint8_t i = 1; i <= 64; ++i)
+        {
             assert(mask.check(i) == 0);
         }
         // Block a signal
@@ -197,8 +199,8 @@ void test_process()
         assert(mask.check(64) == 1);
         // Convert to uint64_t
         uint64_t m = mask.convert();
-        assert((m & 1) == 1); // signal 1
-        assert((m & (1ULL << 2)) == (1ULL << 2)); // signal 3
+        assert((m & 1) == 1);                       // signal 1
+        assert((m & (1ULL << 2)) == (1ULL << 2));   // signal 3
         assert((m & (1ULL << 63)) == (1ULL << 63)); // signal 64
         // Invert
         uint64_t inv = mask.convert(true);
@@ -218,7 +220,7 @@ void test_process()
         Hamster::TaskSignalMask mask;
         Hamster::sys_siginfo s1 = {2, 0, 0, {.kill = {100, 200}}};
         Hamster::sys_siginfo s2 = {3, 0, 1, {.kill = {101, 201}}};
-        Hamster::sys_siginfo s3 = {2, 0, 2, {.kill = {102, 202}}}; // same signo as s1
+        Hamster::sys_siginfo s3 = {2, 0, 2, {.kill = {102, 202}}};   // same signo as s1
         Hamster::sys_siginfo srt = {35, 0, 0, {.kill = {111, 222}}}; // realtime
 
         // Initially empty
@@ -260,6 +262,60 @@ void test_process()
         assert(queue.size() == 0);
         // Peek empty
         assert(queue.peek(mask) == nullptr);
+    }
+
+    // Test TaskSignalHandlers
+    {
+        Hamster::TaskSignalHandlers handlers;
+
+        // static to be able to access in lambda
+        static bool called;
+        called = false;
+
+        // Dummy handler
+        auto my_handler = [](Hamster::Task &, const Hamster::sys_siginfo &, const Hamster::sys_sigaction &)
+        {
+            *(volatile bool *)&called = true;
+        };
+        Hamster::sys_sigaction action = {};
+
+        // Initially, all signals should be default
+        for (uint8_t i = 1; i <= 64; ++i)
+        {
+            assert(handlers.is_default(i) == 1);
+            assert(handlers.is_handler(i) == 0);
+            assert(handlers.is_ignored(i) == 0);
+        }
+        // Set handler for signal 2
+        assert(handlers.set_handler(2, my_handler, action) == 0);
+        assert(handlers.is_handler(2) == 1);
+        assert(handlers.is_default(2) == 0);
+        assert(handlers.is_ignored(2) == 0);
+        // Set ignore for signal 3
+        assert(handlers.set_ignore(3) == 0);
+        assert(handlers.is_ignored(3) == 1);
+        assert(handlers.is_default(3) == 0);
+        assert(handlers.is_handler(3) == 0);
+        // Set default for signal 2
+        assert(handlers.set_default(2) == 0);
+        assert(handlers.is_default(2) == 1);
+        assert(handlers.is_handler(2) == 0);
+        assert(handlers.is_ignored(2) == 0);
+        // Set handler again and call it
+        assert(handlers.set_handler(2, my_handler, action) == 0);
+
+        struct
+        {
+        } dummy_task;
+
+        Hamster::sys_siginfo siginfo = {2, 0, 0, {.kill = {0, 0}}};
+        called = false;
+
+        // Note: cast from dummy struct to Task
+        //       we aren't going to use the value anyway, and
+        //       properly initializing a full Task will be too costly
+        handlers.handle_signal(2, (class Task &)dummy_task, siginfo);
+        assert(called);
     }
 }
 
