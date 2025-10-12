@@ -53,7 +53,7 @@ namespace Hamster
             construct(std::forward<Args>(args)...);
         }
 
-        SharedPtr()
+        SharedPtr(std::nullptr_t = nullptr)
         {
             obj = nullptr;
         }
