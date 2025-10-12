@@ -39,18 +39,16 @@ namespace Hamster
             RefCountType refcount;
         };
     public:
-        struct Construct {};
-
         /**
-         * @brief Construct a new SharedPtr with a new object
+         * @brief Make a new SharedPtr with a new object
          * @param args The args to forward to the object
-         * @note Pass a Construct() to signify constructing the shared pointer's object
          */
         template <typename... Args>
-        SharedPtr(Construct, Args &&... args)
+        static SharedPtr make_shared(Args &&... args)
         {
-            obj = nullptr;
-            construct(std::forward<Args>(args)...);
+            SharedPtr ptr;
+            ptr.construct(std::forward<Args>(args)...);
+            return ptr;
         }
 
         SharedPtr(std::nullptr_t = nullptr)

@@ -460,7 +460,7 @@ void test_memory()
     // Test Hamster::SharedPtr
     {
         // Basic construction
-        Hamster::SharedPtr<int> sp1({}, 123);
+        Hamster::SharedPtr<int> sp1 = sp1.make_shared(123);
         assert(*sp1 == 123);
         // Copy (deep by default)
         Hamster::SharedPtr<int> sp2 = sp1;
@@ -471,7 +471,7 @@ void test_memory()
         assert(*sp2 == 456);
 
         // Shallow copy
-        Hamster::SharedPtr<int, size_t, Hamster::SharedPtrCopyType::SHALLOW> sp3({}, 789);
+        Hamster::SharedPtr<int, size_t, Hamster::SharedPtrCopyType::SHALLOW> sp3 = sp3.make_shared(789);
         Hamster::SharedPtr<int, size_t, Hamster::SharedPtrCopyType::SHALLOW> sp4 = sp3;
         assert(*sp3 == 789);
         assert(*sp4 == 789);
@@ -487,14 +487,14 @@ void test_memory()
 
         // Test with a struct
         struct Point { int x, y; };
-        Hamster::SharedPtr<Point> p1({}, 1, 2);
+        Hamster::SharedPtr<Point> p1 = p1.make_shared(1, 2);
         assert(p1->x == 1 && p1->y == 2);
         Hamster::SharedPtr<Point> p2 = p1;
         p2->x = 10;
         assert(p1->x == 1); // deep copy
         assert(p2->x == 10);
 
-        Hamster::SharedPtr<float> f1{{}};
+        Hamster::SharedPtr<float> f1 = f1.make_shared();
 
         *f1 = 123.456f;
         assert(*f1 == 123.456f);
