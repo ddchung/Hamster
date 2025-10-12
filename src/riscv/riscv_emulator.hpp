@@ -73,6 +73,11 @@ namespace Hamster
          */
         ExecuteResult run();
 
+        /**
+         * @brief Clear all caches
+         */
+        void flush_caches();
+
     private:
         int read8(uint32_t addr, uint8_t &out);
         int read16(uint32_t addr, uint16_t &out);

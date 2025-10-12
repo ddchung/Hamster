@@ -309,6 +309,12 @@ namespace Hamster
         return memory->fast_write_aligned(addr, &value, sizeof(value));
     }
 
+    void RiscVEmulator::flush_caches()
+    {
+        traces[0].pc = 0xFFFF'FFFF;
+        traces[1].pc = 0xFFFF'FFFF;
+    }
+
     RiscVEmulator::ExecuteResult
     RiscVEmulator::run()
     {
@@ -1525,9 +1531,7 @@ namespace Hamster
         else if (extract_funct3(current_inst->inst) == FUNCT3_FENCE_I)
         {
             // FENCE.I
-            // Clear trace cache
-            traces[0].pc = 0;
-            traces[1].pc = 0;
+            flush_caches();
             // End the current trace early, to re-fetch instructions next time
             result.status = ExecuteResult::Status::Success;
             OPCODE_RETURN_OK();
