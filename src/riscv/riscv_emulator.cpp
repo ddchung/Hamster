@@ -356,7 +356,6 @@ namespace Hamster
     {
         DecodedInst *predecoded_insts = nullptr;
         size_t decoded_count = 0;
-        reserved_addr = 0;
 
         if (pc == traces[0].pc)
         {
