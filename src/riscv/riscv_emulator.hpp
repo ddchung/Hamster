@@ -10,12 +10,6 @@ namespace Hamster
 {
     extern uint64_t total_instructions_executed;
 
-    struct EmulatorMemory
-    {
-        MemorySpace memory;
-        UnorderedMap<uint32_t, int> reserved_mem;
-    };
-
     class RiscVEmulator
     {
         struct DecodedInst
@@ -36,9 +30,7 @@ namespace Hamster
         uint32_t fcsr;
         uint32_t pc;
 
-        int reserved_mem_id;
-
-        EmulatorMemory *memory;
+        MemorySpace *memory;
 
         struct ExecuteResult
         {
@@ -97,5 +89,6 @@ namespace Hamster
 
         DecodedTrace traces[2] = {};
         uint32_t last_trace_slot = 0;
+        uint32_t reserved_addr = 0;
     };
 } // namespace Hamster

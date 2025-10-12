@@ -245,68 +245,68 @@ namespace Hamster
     {
         if HAMSTER_UNLIKELY (addr & 0b11)
             // unaligned, use slower routine
-            return memory->memory.memcpy(&out, addr, sizeof(out));
-        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
+            return memory->memcpy(&out, addr, sizeof(out));
+        return memory->fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::read16(uint32_t addr, uint16_t &out)
     {
         if HAMSTER_UNLIKELY (addr & 0b1)
-            return memory->memory.memcpy(&out, addr, sizeof(out));
-        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
+            return memory->memcpy(&out, addr, sizeof(out));
+        return memory->fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::read8(uint32_t addr, uint8_t &out)
     {
-        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
+        return memory->fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::write32(uint32_t addr, uint32_t value)
     {
         if HAMSTER_UNLIKELY (addr & 0b11)
-            return memory->memory.memcpy(addr, &value, sizeof(value));
-        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
+            return memory->memcpy(addr, &value, sizeof(value));
+        return memory->fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::write16(uint32_t addr, uint16_t value)
     {
         if HAMSTER_UNLIKELY (addr & 0b1)
-            return memory->memory.memcpy(addr, &value, sizeof(value));
+            return memory->memcpy(addr, &value, sizeof(value));
 
-        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
+        return memory->fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::write8(uint32_t addr, uint8_t value)
     {
-        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
+        return memory->fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::readf32(uint32_t addr, float &out)
     {
         if HAMSTER_UNLIKELY (addr & 0b11)
-            return memory->memory.memcpy(&out, addr, sizeof(out));
-        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
+            return memory->memcpy(&out, addr, sizeof(out));
+        return memory->fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::readf64(uint32_t addr, double &out)
     {
         if HAMSTER_UNLIKELY (addr & 0b111)
-            return memory->memory.memcpy(&out, addr, sizeof(out));
-        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
+            return memory->memcpy(&out, addr, sizeof(out));
+        return memory->fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::writef32(uint32_t addr, float value)
     {
         if HAMSTER_UNLIKELY (addr & 0b11)
-            return memory->memory.memcpy(addr, &value, sizeof(value));
-        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
+            return memory->memcpy(addr, &value, sizeof(value));
+        return memory->fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::writef64(uint32_t addr, double value)
     {
         if HAMSTER_UNLIKELY (addr & 0b111)
-            return memory->memory.memcpy(addr, &value, sizeof(value));
-        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
+            return memory->memcpy(addr, &value, sizeof(value));
+        return memory->fast_write_aligned(addr, &value, sizeof(value));
     }
 
     RiscVEmulator::ExecuteResult
@@ -356,6 +356,7 @@ namespace Hamster
     {
         DecodedInst *predecoded_insts = nullptr;
         size_t decoded_count = 0;
+        reserved_addr = 0;
 
         if (pc == traces[0].pc)
         {
@@ -905,14 +906,14 @@ namespace Hamster
                 result.illegal_load.address = pc;
                 return 0;
             }
-            if (memory->memory.check_executable(pc))
+            if (memory->check_executable(pc))
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
                 result.illegal_load.address = pc;
                 return 0;
             }
 
-            for (auto it = memory->memory.make_iterator(pc); !it.is_end(); ++it)
+            for (auto it = memory->make_iterator(pc); !it.is_end(); ++it)
             {
                 uint32_t inst = *it;
 
@@ -1117,6 +1118,7 @@ namespace Hamster
             result.illegal_store.value = value;
             OPCODE_RETURN_FAIL();
         }
+        reserved_addr = 0;
         DISPATCH();
     }
     case_sh:
@@ -1130,6 +1132,7 @@ namespace Hamster
             result.illegal_store.value = value;
             OPCODE_RETURN_FAIL();
         }
+        reserved_addr = 0;
         DISPATCH();
     }
     case_sw:
@@ -1143,6 +1146,7 @@ namespace Hamster
             result.illegal_store.value = value;
             OPCODE_RETURN_FAIL();
         }
+        reserved_addr = 0;
         DISPATCH();
     }
     case_op_branch:
@@ -1559,15 +1563,14 @@ namespace Hamster
                 result.illegal_load.address = x[extract_rs1(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
-            memory->reserved_mem[x[extract_rs1(current_inst->inst)]] = reserved_mem_id;
+            reserved_addr = x[extract_rs1(current_inst->inst)];
             x[extract_rd(current_inst->inst)] = val;
             break;
         }
         case FUNCT5_SC:
         {
             // Store Conditional
-            auto it = memory->reserved_mem.find(x[extract_rs1(current_inst->inst)]);
-            if (it == memory->reserved_mem.end() || it->second != reserved_mem_id)
+            if (x[extract_rs1(current_inst->inst)] != reserved_addr)
             {
                 // Not reserved
                 x[extract_rd(current_inst->inst)] = 1;
@@ -1582,7 +1585,7 @@ namespace Hamster
                 result.illegal_store.value = val;
                 OPCODE_RETURN_FAIL();
             }
-            memory->reserved_mem.erase(it);
+            reserved_addr = 0;
             x[extract_rd(current_inst->inst)] = 0;
             break;
         }
