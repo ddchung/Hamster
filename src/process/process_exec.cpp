@@ -1,6 +1,7 @@
 
 #include <process/task.hpp>
 #include <filesystem/vfs.hpp>
+#include <elf/elf_loader.hpp>
 #include <cassert>
 
 namespace Hamster
@@ -44,12 +45,12 @@ namespace Hamster
 
         MemorySpace &memory = *leader->get_memory();
 
-        memory.unmap_all();
-
-        memory.map_private_file(0, fd, 0, size, PERM_READ | PERM_WRITE | PERM_EXEC);
+        uint64_t entry_point = 0, ph_num = 0, brk = 0;
+        if (load_elf(fd, memory, entry_point, ph_num, brk) < 0)
+            return -1;
 
         RiscVEmulator &emulator = leader->get_emulator();
-        emulator.pc = 0;
+        emulator.pc = entry_point;
         memset(emulator.x, 0, sizeof(emulator.x));
 
         return 0;

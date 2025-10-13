@@ -8,7 +8,7 @@
 namespace Hamster
 {
     File::File(int fd)
-        : fd(fd)
+        : fd(vfs.dup(fd))
     {
     }
 
