@@ -906,4 +906,116 @@ void test_emulator()
         run_test("Fibonacci Sequence", code, sizeof(code));
         assert(emu.x[2] == 89); // 10th Fibonacci number
     }
+
+        // TEST 14: F Extension - Basic Floating Point Arithmetic (FADD.S, FSUB.S, FMUL.S, FDIV.S)
+    {
+        unsigned char code[80] =
+{
+	0x93, 0x00, 0x00, 0x50, 0x37, 0x01, 0x40, 0x40, 
+	0x23, 0xa0, 0x20, 0x00, 0x87, 0xa0, 0x00, 0x00, 
+	0xb7, 0x01, 0x00, 0x40, 0x23, 0xa0, 0x30, 0x00, 
+	0x07, 0xa1, 0x00, 0x00, 0xd3, 0xf1, 0x20, 0x00, 
+	0x53, 0xf2, 0x20, 0x08, 0xd3, 0xf2, 0x20, 0x10, 
+	0x53, 0xf3, 0x20, 0x18, 0x27, 0xa0, 0x30, 0x00, 
+	0x03, 0xa5, 0x00, 0x00, 0x27, 0xa0, 0x40, 0x00, 
+	0x83, 0xa5, 0x00, 0x00, 0x27, 0xa0, 0x50, 0x00, 
+	0x03, 0xa6, 0x00, 0x00, 0x27, 0xa0, 0x60, 0x00, 
+	0x83, 0xa6, 0x00, 0x00, 0x73, 0x00, 0x00, 0x00, 
+};
+
+        /*
+        # Setup: Load floating point values via memory
+        addi x1, x0, 0x500   # x1 = data address
+        lui x2, 0x40400      # x2 = 0x40400000 (3.0f)
+        sw x2, 0(x1)
+        flw f1, 0(x1)        # f1 = 3.0
+        lui x3, 0x40000      # x3 = 0x40000000 (2.0f)
+        sw x3, 0(x1)
+        flw f2, 0(x1)        # f2 = 2.0
+        
+        fadd.s f3, f1, f2    # f3 = 3.0 + 2.0 = 5.0
+        fsub.s f4, f1, f2    # f4 = 3.0 - 2.0 = 1.0
+        fmul.s f5, f1, f2    # f5 = 3.0 * 2.0 = 6.0
+        fdiv.s f6, f1, f2    # f6 = 3.0 / 2.0 = 1.5
+        
+        # Store results back to memory for verification
+        fsw f3, 0(x1)
+        lw x10, 0(x1)        # x10 = bits of 5.0
+        fsw f4, 0(x1)
+        lw x11, 0(x1)        # x11 = bits of 1.0
+        fsw f5, 0(x1)
+        lw x12, 0(x1)        # x12 = bits of 6.0
+        fsw f6, 0(x1)
+        lw x13, 0(x1)        # x13 = bits of 1.5
+        ecall
+        */
+        
+        mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+        run_test("F Extension - Basic Arithmetic", code, sizeof(code));
+        
+        float result;
+        memcpy(&result, &emu.x[10], 4);
+        assert(fabs(result - 5.0f) < 0.0001f);
+        memcpy(&result, &emu.x[11], 4);
+        assert(fabs(result - 1.0f) < 0.0001f);
+        memcpy(&result, &emu.x[12], 4);
+        assert(fabs(result - 6.0f) < 0.0001f);
+        memcpy(&result, &emu.x[13], 4);
+        assert(fabs(result - 1.5f) < 0.0001f);
+    }
+    
+    // TEST 15: F Extension - Square Root and Sign Injection (FSQRT.S, FSGNJ.S, FSGNJN.S, FSGNJX.S)
+    {
+        unsigned char code[72] =
+{
+	0x93, 0x00, 0x00, 0x50, 0x37, 0x01, 0x80, 0x40, 
+	0x23, 0xa0, 0x20, 0x00, 0x87, 0xa0, 0x00, 0x00, 
+	0x53, 0xf1, 0x00, 0x58, 0xb7, 0x01, 0x00, 0xc0, 
+	0x23, 0xa0, 0x30, 0x00, 0x87, 0xa1, 0x00, 0x00, 
+	0x53, 0x82, 0x30, 0x20, 0xd3, 0x92, 0x30, 0x20, 
+	0x53, 0xa3, 0x30, 0x20, 0x27, 0xa0, 0x20, 0x00, 
+	0x03, 0xa5, 0x00, 0x00, 0x27, 0xa0, 0x40, 0x00, 
+	0x83, 0xa5, 0x00, 0x00, 0x27, 0xa0, 0x50, 0x00, 
+	0x03, 0xa6, 0x00, 0x00, 0x73, 0x00, 0x00, 0x00, 
+};
+
+        /*
+        addi x1, x0, 0x500   # x1 = data address
+        lui x2, 0x40800      # x2 = 0x40800000 (4.0f)
+        sw x2, 0(x1)
+        flw f1, 0(x1)        # f1 = 4.0
+        
+        fsqrt.s f2, f1       # f2 = sqrt(4.0) = 2.0
+        
+        lui x3, 0xC0000      # x3 = 0xC0000000 (-2.0f)
+        sw x3, 0(x1)
+        flw f3, 0(x1)        # f3 = -2.0
+        
+        fsgnj.s f4, f1, f3   # f4 = abs(f1) * sign(f3) = -4.0
+        fsgnjn.s f5, f1, f3  # f5 = abs(f1) * -sign(f3) = 4.0
+        fsgnjx.s f6, f1, f3  # f6 = abs(f1) * (sign(f1) XOR sign(f3)) = -4.0
+        
+        # Store results
+        fsw f2, 0(x1)
+        lw x10, 0(x1)        # x10 = bits of 2.0
+        fsw f4, 0(x1)
+        lw x11, 0(x1)        # x11 = bits of -4.0
+        fsw f5, 0(x1)
+        lw x12, 0(x1)        # x12 = bits of 4.0
+        ecall
+        */
+        
+        mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+        run_test("F Extension - SQRT and Sign Injection", code, sizeof(code));
+        
+        float result;
+        memcpy(&result, &emu.x[10], 4);
+        assert(fabs(result - 2.0f) < 0.0001f);
+        memcpy(&result, &emu.x[11], 4);
+        assert(fabs(result - (-4.0f)) < 0.0001f);
+        memcpy(&result, &emu.x[12], 4);
+        assert(fabs(result - 4.0f) < 0.0001f);
+    }
 }
