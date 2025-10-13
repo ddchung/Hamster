@@ -92,7 +92,7 @@ namespace Hamster
 
         uint32_t execute_trace(ExecuteResult &result);
 
-        DecodedTrace traces[2] = {};
+        DecodedTrace traces[2] = {{0xFFFF'FFFF, {}, 0}, {0xFFFF'FFFF, {}, 0}};
         uint32_t last_trace_slot = 0;
         uint32_t reserved_addr = 0;
     };

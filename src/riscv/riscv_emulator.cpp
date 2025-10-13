@@ -942,7 +942,6 @@ namespace Hamster
 
         DecodedInst *current_inst = predecoded_insts;
         uint32_t new_pc;
-        uint32_t dummy;
 
         if (decoded_count == 0)
             return 0;
@@ -1163,8 +1162,7 @@ namespace Hamster
             if (x[extract_rs1(current_inst->inst)] == x[extract_rs2(current_inst->inst)])
             {
                 auto new_pc = pc + extract_imm_b(current_inst->inst);
-                // Ensure that it is readable
-                if (read32(new_pc, dummy) != 0)
+                if (memory->check_executable(new_pc) != 0)
                 {
                     _trace("RiscVEmulator: BEQ: Branch to unreadable address 0x%08x\n", new_pc);
                     result.status = ExecuteResult::Status::IllegalLoad;
@@ -1182,8 +1180,7 @@ namespace Hamster
             if (x[extract_rs1(current_inst->inst)] != x[extract_rs2(current_inst->inst)])
             {
                 auto new_pc = pc + extract_imm_b(current_inst->inst);
-                // Ensure that it is readable
-                if (read32(new_pc, dummy) != 0)
+                if (memory->check_executable(new_pc) != 0)
                 {
                     _trace("RiscVEmulator: BNE: Branch to unreadable address 0x%08x\n", new_pc);
                     result.status = ExecuteResult::Status::IllegalLoad;
@@ -1201,8 +1198,7 @@ namespace Hamster
             if ((int32_t)x[extract_rs1(current_inst->inst)] < (int32_t)x[extract_rs2(current_inst->inst)])
             {
                 auto new_pc = pc + extract_imm_b(current_inst->inst);
-                // Ensure that it is readable
-                if (read32(new_pc, dummy) != 0)
+                if (memory->check_executable(new_pc) != 0)
                 {
                     _trace("RiscVEmulator: BLT: Branch to unreadable address 0x%08x\n", new_pc);
                     result.status = ExecuteResult::Status::IllegalLoad;
@@ -1220,8 +1216,7 @@ namespace Hamster
             if ((int32_t)x[extract_rs1(current_inst->inst)] >= (int32_t)x[extract_rs2(current_inst->inst)])
             {
                 auto new_pc = pc + extract_imm_b(current_inst->inst);
-                // Ensure that it is readable
-                if (read32(new_pc, dummy) != 0)
+                if (memory->check_executable(new_pc) != 0)
                 {
                     _trace("RiscVEmulator: BGE: Branch to unreadable address 0x%08x\n", new_pc);
                     result.status = ExecuteResult::Status::IllegalLoad;
@@ -1239,8 +1234,7 @@ namespace Hamster
             if (x[extract_rs1(current_inst->inst)] < x[extract_rs2(current_inst->inst)])
             {
                 auto new_pc = pc + extract_imm_b(current_inst->inst);
-                // Ensure that it is readable
-                if (read32(new_pc, dummy) != 0)
+                if (memory->check_executable(new_pc) != 0)
                 {
                     _trace("RiscVEmulator: BLTU: Branch to unreadable address 0x%08x\n", new_pc);
                     result.status = ExecuteResult::Status::IllegalLoad;
@@ -1259,7 +1253,7 @@ namespace Hamster
             {
                 auto new_pc = pc + extract_imm_b(current_inst->inst);
                 // Ensure that it is readable
-                if (read32(new_pc, dummy) != 0)
+                if (memory->check_executable(new_pc) != 0)
                 {
                     _trace("RiscVEmulator: BGEU: Branch to unreadable address 0x%08x\n", new_pc);
                     result.status = ExecuteResult::Status::IllegalLoad;
@@ -1289,8 +1283,7 @@ namespace Hamster
         // JAL
         pc += decoded_count * 4 - 4;
         new_pc = pc + extract_imm_j(current_inst->inst);
-        // Ensure that it is readable
-        if (read32(new_pc, dummy) != 0)
+        if (memory->check_executable(new_pc) != 0)
         {
             _trace("RiscVEmulator: JAL: Jump to unreadable address 0x%08x\n", new_pc);
             result.status = ExecuteResult::Status::IllegalLoad;
@@ -1308,8 +1301,7 @@ namespace Hamster
         // JALR
         pc += decoded_count * 4 - 4;
         new_pc = (x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst)) & ~0x1;
-        // Ensure that it is readable
-        if (read32(new_pc, dummy) != 0)
+        if (memory->check_executable(new_pc) != 0)
         {
             _trace("RiscVEmulator: JALR: Jump to unreadable address 0x%08x\n", new_pc);
             result.status = ExecuteResult::Status::IllegalLoad;
