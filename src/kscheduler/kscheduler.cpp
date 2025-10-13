@@ -85,28 +85,16 @@ namespace Hamster
                 continue;
             if (task->next_tick <= now)
             {
-                // Check if overdue
-                if (task->next_tick + HAMSTER_KSCHED_OVERDUE_TIME < now)
-                {
-                    // Update interval if it is auto-interval, mark for removal otherwise
-                    if (task->flags & KSCHED_AUTO_INTERVAL)
-                        task->next_tick = now + task->interval;
-                    else
-                        task->flags |= KSCHED_REMOVE_NOW;
-                }
-                else
-                {
-                    // Tick the task
-                    bool remove_next_tick_before = (task->flags & KSCHED_REMOVE_NEXT_TICK) != 0;
-                    task->run();
-                    task->tick_count++;
-                    task->last_tick = now;
-                    if (task->flags & KSCHED_AUTO_INTERVAL)
-                        task->next_tick = now + task->interval;
-                    bool remove_next_tick_after = (task->flags & KSCHED_REMOVE_NEXT_TICK) != 0;
-                    if (remove_next_tick_before && remove_next_tick_after)
-                        task->flags |= KSCHED_REMOVE_NOW; // Mark for removal
-                }
+                // Tick the task
+                bool remove_next_tick_before = (task->flags & KSCHED_REMOVE_NEXT_TICK) != 0;
+                task->run();
+                task->tick_count++;
+                task->last_tick = now;
+                if (task->flags & KSCHED_AUTO_INTERVAL)
+                    task->next_tick = now + task->interval;
+                bool remove_next_tick_after = (task->flags & KSCHED_REMOVE_NEXT_TICK) != 0;
+                if (remove_next_tick_before && remove_next_tick_after)
+                    task->flags |= KSCHED_REMOVE_NOW; // Mark for removal
             }
         }
 
