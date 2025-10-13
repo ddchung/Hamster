@@ -3,6 +3,7 @@
 #include <process/task.hpp>
 #include <memory/allocator.hpp>
 #include <platform/platform.hpp>
+#include <syscall/syscall.hpp>
 #include <errno/errno.h>
 #include <cassert>
 #include <cinttypes>
@@ -115,9 +116,7 @@ namespace Hamster
             case Status::Success:
                 break;
             case Status::ECALL:
-                // TODO: ECALL
-                _trace("TID %" PRIu32 ": system call %" PRIu32 " args {%" PRIu32 " %" PRIu32 " %" PRIu32 "}\n",
-                    tid, emulator.x[17], emulator.x[10], emulator.x[11], emulator.x[12]);
+                emulator.x[10] = syscall(*this, emulator.x[17]);
                 break;
             case Status::EBREAK:
                 // TODO: EBREAK

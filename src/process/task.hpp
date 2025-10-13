@@ -219,6 +219,7 @@ namespace Hamster
         const SharedPtr<MemorySpace> &get_memory() const { return memory; }
         const SharedPtr<TaskFDTable> &get_fd_table() const { return fd_table; }
         RiscVEmulator &get_emulator() { return emulator; }
+        uint32_t get_tid() const { return tid; }
 
     private:
         // Private zero-initialize, with shared pointers = nullptr
