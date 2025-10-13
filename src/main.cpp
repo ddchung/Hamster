@@ -8,6 +8,7 @@
 #include <kscheduler/kscheduler.hpp>
 #include <riscv/riscv_emulator.hpp>
 #include <driver/base_char_device.hpp>
+#include <process/task.hpp>
 #include <errno/errno.h>
 #include <cstring>
 #include <cstdlib>
@@ -42,24 +43,6 @@ namespace
         Hamster::_log("]");
         Hamster::_log("\r\n");
     }
-
-    class UserSchedulerTickTask : public Hamster::BaseKTask
-    {
-    public:
-        UserSchedulerTickTask()
-        {
-            flags = Hamster::KSCHED_AUTO_INTERVAL;
-            interval = 0; // Tick as fast as possible
-            id = 1; // Fixed ID
-            next_tick = 0;
-        }
-
-        void run() override
-        {
-            // End immediately, since there's nothing to do
-            flags |= Hamster::KSCHED_REMOVE_ALL;
-        }
-    };
 
 #ifndef NTRACE
     class UserSchedulerPerfMonitorTask : public Hamster::BaseKTask
@@ -213,11 +196,10 @@ int main()
     Hamster::vfs.mkdir("/dev/shm", 0777);
     Hamster::vfs.mount("/dev/shm", Hamster::alloc<Hamster::RamFs>());
 
-    // Add the user scheduler tick task
-    Hamster::kscheduler.add_task(Hamster::alloc<UserSchedulerTickTask>());
 #ifndef NTRACE
     Hamster::kscheduler.add_task(Hamster::alloc<UserSchedulerPerfMonitorTask>());
 #endif
+    Hamster::spawn("/a.out");
 
     // Run the program
     while (true)

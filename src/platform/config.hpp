@@ -11,10 +11,6 @@
 // The maximum number of cached instructions in the trace cache
 #define HAMSTER_TRACE_SIZE 128
 
-// The maximum overrun time in the kernel scheduler, before the task is considered
-// overdue and is removed from the scheduler, in milliseconds
-#define HAMSTER_KSCHED_OVERDUE_TIME 1000
-
 // The target amount of free RAM for the page manager, in bytes
 // This controls the "swappiness" of the system
 // Ensure it's not too low or too high:
