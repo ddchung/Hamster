@@ -200,5 +200,27 @@ namespace Hamster
             leader = nullptr;
         tasks.erase(task);
     }
+
+    int Process::exit(uint16_t code)
+    {
+        for (Task *task : tasks)
+        {
+            task->exit();
+        }
+
+        tasks.clear();
+        leader = nullptr;
+
+        if (parent)
+        {
+            parent->state_changes.emplace_back();
+            auto &state_change = parent->state_changes.back();
+            state_change.type = ProcessStateChange::EXIT;
+            state_change.exit_code = code;
+            state_change.pid = pid;
+        }
+
+        return 0;
+    }
 } // namespace Hamster
 

@@ -26,7 +26,6 @@ namespace Hamster
             EXIT,
             STOP,
             CONT,
-            TERM,
         };
 
         using enum Type;
@@ -152,9 +151,18 @@ namespace Hamster
          */
         int exec(int fd, const char *const *argv, const char *const *envp);
 
+        /**
+         * @brief Make the process exit
+         * @param code The exit code to exit with
+         * @return 0 on success, -1 on error
+         */
+        int exit(uint16_t code);
+
         const SharedPtr<ProcessGroup> &get_process_group() const { return pgroup; }
         const SharedPtr<TaskSignalHandlers> &get_signal_handlers() const { return signal_handlers; }
         const SharedPtr<TaskFSInfo> &get_fs_info() const { return fs_info; }
+        size_t num_tasks() const { return tasks.size(); }
+        Task *get_leader() const { return leader; }
 
     private:
         SharedPtr<ProcessGroup> pgroup;
