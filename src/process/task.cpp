@@ -25,7 +25,7 @@ namespace Hamster
         task->fd_table.construct();
         // Note: task->emulator.memory is a weak pointer, which
         //       is destroyed before task->memory
-        task->emulator.memory = &*task->memory;
+        task->emulator.memory = &task->get_memory();
 
         tasks[tid] = task;
         task->add_to_scheduler();

@@ -213,7 +213,7 @@ namespace Hamster
         {
             _trace("\033[35m%s\033[0m=%08" PRIx32, name, p);
 
-            int perms = task.get_memory()->get_permissions(p);
+            int perms = task.get_memory().get_permissions(p);
             if (perms < 0)
             {
                 _trace(" (ptr invalid)");
@@ -228,7 +228,7 @@ namespace Hamster
 
         void print_arg(ParamType_STR, Task &task, const char *name, uint32_t s)
         {
-            char *str = task.get_memory()->get_string(s);
+            char *str = task.get_memory().get_string(s);
             if (str)
             {
                 _trace("\033[35m%s\033[0m=\"", name);

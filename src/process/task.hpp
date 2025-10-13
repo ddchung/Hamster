@@ -174,6 +174,11 @@ namespace Hamster
 
     class Task : private BaseKTask
     {
+        struct Memory
+        {
+            MemorySpace ms;
+            uint32_t brk;
+        };
     public:
         Task(const Task &) = delete;
         Task &operator=(const Task &) = delete;
@@ -216,7 +221,9 @@ namespace Hamster
         int exit();
 
         const SharedPtr<Process> &get_process() const { return process; }
-        const SharedPtr<MemorySpace> &get_memory() const { return memory; }
+        MemorySpace &get_memory() const { return memory->ms; }
+        uint32_t get_brk() const { return memory->brk; }
+        void set_brk(uint32_t brk) { memory->brk = brk; }
         const SharedPtr<TaskFDTable> &get_fd_table() const { return fd_table; }
         RiscVEmulator &get_emulator() { return emulator; }
         uint32_t get_tid() const { return tid; }
@@ -232,7 +239,7 @@ namespace Hamster
         static inline uint32_t next_tid = 1;
 
         SharedPtr<Process> process;
-        SharedPtr<MemorySpace> memory;
+        SharedPtr<Memory> memory;
         SharedPtr<TaskFDTable> fd_table;
         TaskSignalQueue pending_signals;
         TaskSignalMask signal_mask;

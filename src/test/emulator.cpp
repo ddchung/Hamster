@@ -1018,4 +1018,404 @@ void test_emulator()
         memcpy(&result, &emu.x[12], 4);
         assert(fabs(result - 4.0f) < 0.0001f);
     }
+    
+    // // TEST 16: F Extension - Min/Max and Comparisons (FMIN.S, FMAX.S, FEQ.S, FLT.S, FLE.S)
+    // {
+    //     uint32_t code[128];
+    //     /*
+    //     addi x1, x0, 0x500   # x1 = data address
+    //     lui x2, 0x40400      # x2 = 0x40400000 (3.0f)
+    //     sw x2, 0(x1)
+    //     flw f1, 0(x1)        # f1 = 3.0
+    //     lui x3, 0x40A00      # x3 = 0x40A00000 (5.0f)
+    //     sw x3, 0(x1)
+    //     flw f2, 0(x1)        # f2 = 5.0
+        
+    //     fmin.s f3, f1, f2    # f3 = min(3.0, 5.0) = 3.0
+    //     fmax.s f4, f1, f2    # f4 = max(3.0, 5.0) = 5.0
+        
+    //     feq.s x10, f1, f2    # x10 = (3.0 == 5.0) = 0
+    //     feq.s x11, f1, f1    # x11 = (3.0 == 3.0) = 1
+    //     flt.s x12, f1, f2    # x12 = (3.0 < 5.0) = 1
+    //     flt.s x13, f2, f1    # x13 = (5.0 < 3.0) = 0
+    //     fle.s x14, f1, f2    # x14 = (3.0 <= 5.0) = 1
+    //     fle.s x15, f1, f1    # x15 = (3.0 <= 3.0) = 1
+    //     ecall
+    //     */
+        
+    //     mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+    //     run_test("F Extension - Min/Max and Comparisons", code, sizeof(code));
+        
+    //     assert(emu.x[10] == 0);
+    //     assert(emu.x[11] == 1);
+    //     assert(emu.x[12] == 1);
+    //     assert(emu.x[13] == 0);
+    //     assert(emu.x[14] == 1);
+    //     assert(emu.x[15] == 1);
+    // }
+    
+    // // TEST 17: F Extension - Conversions (FCVT.W.S, FCVT.WU.S, FCVT.S.W, FCVT.S.WU)
+    // {
+    //     uint32_t code[128];
+    //     /*
+    //     addi x1, x0, 0x500   # x1 = data address
+    //     lui x2, 0x40400      # x2 = 0x40400000 (3.0f)
+    //     sw x2, 0(x1)
+    //     flw f1, 0(x1)        # f1 = 3.0
+        
+    //     fcvt.w.s x10, f1     # x10 = (int)3.0 = 3
+    //     fcvt.wu.s x11, f1    # x11 = (unsigned)3.0 = 3
+        
+    //     addi x3, x0, 42      # x3 = 42
+    //     fcvt.s.w f2, x3      # f2 = (float)42 = 42.0
+    //     addi x4, x0, -5      # x4 = -5
+    //     fcvt.s.w f3, x4      # f3 = (float)-5 = -5.0
+        
+    //     # Store float results
+    //     fsw f2, 0(x1)
+    //     lw x12, 0(x1)        # x12 = bits of 42.0
+    //     fsw f3, 0(x1)
+    //     lw x13, 0(x1)        # x13 = bits of -5.0
+    //     ecall
+    //     */
+        
+    //     mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+    //     run_test("F Extension - Conversions", code, sizeof(code));
+        
+    //     assert(emu.x[10] == 3);
+    //     assert(emu.x[11] == 3);
+        
+    //     float result;
+    //     memcpy(&result, &emu.x[12], 4);
+    //     assert(fabs(result - 42.0f) < 0.0001f);
+    //     memcpy(&result, &emu.x[13], 4);
+    //     assert(fabs(result - (-5.0f)) < 0.0001f);
+    // }
+    
+    // // TEST 18: F Extension - Move and Classify (FMV.X.W, FMV.W.X, FCLASS.S)
+    // {
+    //     uint32_t code[128];
+    //     /*
+    //     addi x1, x0, 0x500   # x1 = data address
+    //     lui x2, 0x40000      # x2 = 0x40000000 (2.0f)
+    //     sw x2, 0(x1)
+    //     flw f1, 0(x1)        # f1 = 2.0
+        
+    //     fmv.x.w x10, f1      # x10 = bit pattern of f1
+    //     fmv.w.x f2, x2       # f2 = interpret x2 as float
+        
+    //     fclass.s x11, f1     # x11 = class of 2.0 (positive normal)
+        
+    //     # Test with zero
+    //     lui x3, 0            # x3 = 0 (0.0f)
+    //     fmv.w.x f3, x3       # f3 = 0.0
+    //     fclass.s x12, f3     # x12 = class of 0.0 (positive zero)
+    //     ecall
+    //     */
+        
+    //     mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+    //     run_test("F Extension - Move and Classify", code, sizeof(code));
+        
+    //     assert(emu.x[10] == 0x40000000);
+    //     assert((emu.x[11] & 0x080) != 0); // Positive normal number
+    //     assert((emu.x[12] & 0x010) != 0); // Positive zero
+    // }
+    
+    // // TEST 19: F Extension - Fused Multiply-Add (FMADD.S, FMSUB.S, FNMADD.S, FNMSUB.S)
+    // {
+    //     uint32_t code[128];
+    //     /*
+    //     addi x1, x0, 0x500   # x1 = data address
+    //     lui x2, 0x40000      # x2 = 0x40000000 (2.0f)
+    //     sw x2, 0(x1)
+    //     flw f1, 0(x1)        # f1 = 2.0
+    //     lui x3, 0x40400      # x3 = 0x40400000 (3.0f)
+    //     sw x3, 0(x1)
+    //     flw f2, 0(x1)        # f2 = 3.0
+    //     lui x4, 0x40800      # x4 = 0x40800000 (4.0f)
+    //     sw x4, 0(x1)
+    //     flw f3, 0(x1)        # f3 = 4.0
+        
+    //     fmadd.s f4, f1, f2, f3   # f4 = (2.0 * 3.0) + 4.0 = 10.0
+    //     fmsub.s f5, f1, f2, f3   # f5 = (2.0 * 3.0) - 4.0 = 2.0
+    //     fnmadd.s f6, f1, f2, f3  # f6 = -(2.0 * 3.0) + 4.0 = -2.0
+    //     fnmsub.s f7, f1, f2, f3  # f7 = -(2.0 * 3.0) - 4.0 = -10.0
+        
+    //     # Store results
+    //     fsw f4, 0(x1)
+    //     lw x10, 0(x1)        # x10 = bits of 10.0
+    //     fsw f5, 0(x1)
+    //     lw x11, 0(x1)        # x11 = bits of 2.0
+    //     fsw f6, 0(x1)
+    //     lw x12, 0(x1)        # x12 = bits of -2.0
+    //     fsw f7, 0(x1)
+    //     lw x13, 0(x1)        # x13 = bits of -10.0
+    //     ecall
+    //     */
+        
+    //     mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+    //     run_test("F Extension - Fused Multiply-Add", code, sizeof(code));
+        
+    //     float result;
+    //     memcpy(&result, &emu.x[10], 4);
+    //     assert(fabs(result - 10.0f) < 0.0001f);
+    //     memcpy(&result, &emu.x[11], 4);
+    //     assert(fabs(result - 2.0f) < 0.0001f);
+    //     memcpy(&result, &emu.x[12], 4);
+    //     assert(fabs(result - (-2.0f)) < 0.0001f);
+    //     memcpy(&result, &emu.x[13], 4);
+    //     assert(fabs(result - (-10.0f)) < 0.0001f);
+    // }
+    
+    // // TEST 20: D Extension - Basic Double Precision Arithmetic (FADD.D, FSUB.D, FMUL.D, FDIV.D)
+    // {
+    //     uint32_t code[128];
+    //     /*
+    //     addi x1, x0, 0x500   # x1 = data address
+        
+    //     # Load 3.0 as double (0x4008000000000000)
+    //     lui x2, 0x40080      
+    //     sw x2, 4(x1)
+    //     sw x0, 0(x1)
+    //     fld f1, 0(x1)        # f1 = 3.0 (double)
+        
+    //     # Load 2.0 as double (0x4000000000000000)
+    //     lui x3, 0x40000
+    //     sw x3, 4(x1)
+    //     sw x0, 0(x1)
+    //     fld f2, 0(x1)        # f2 = 2.0 (double)
+        
+    //     fadd.d f3, f1, f2    # f3 = 3.0 + 2.0 = 5.0
+    //     fsub.d f4, f1, f2    # f4 = 3.0 - 2.0 = 1.0
+    //     fmul.d f5, f1, f2    # f5 = 3.0 * 2.0 = 6.0
+    //     fdiv.d f6, f1, f2    # f6 = 3.0 / 2.0 = 1.5
+        
+    //     # Store results (just check they don't crash)
+    //     fsd f3, 0(x1)
+    //     fsd f4, 0(x1)
+    //     fsd f5, 0(x1)
+    //     fsd f6, 0(x1)
+        
+    //     addi x10, x0, 1      # Success indicator
+    //     ecall
+    //     */
+        
+    //     mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+    //     run_test("D Extension - Basic Arithmetic", code, sizeof(code));
+        
+    //     // Verify doubles work (detailed verification would require reading from memory)
+    //     assert(emu.x[10] == 1);
+        
+    //     // Read back and verify one result
+    //     double result;
+    //     mem.memcpy(&result, 0x500, 8);
+    //     assert(fabs(result - 1.5) < 0.0001);
+    // }
+    
+    // // TEST 21: D Extension - Conversions (FCVT.D.S, FCVT.S.D, FCVT.W.D, FCVT.D.W)
+    // {
+    //     uint32_t code[128];
+    //     /*
+    //     addi x1, x0, 0x500   # x1 = data address
+        
+    //     # Load single precision 3.0
+    //     lui x2, 0x40400      # x2 = 0x40400000 (3.0f)
+    //     sw x2, 0(x1)
+    //     flw f1, 0(x1)        # f1 = 3.0 (single)
+        
+    //     fcvt.d.s f2, f1      # f2 = 3.0 (double)
+    //     fcvt.s.d f3, f2      # f3 = 3.0 (single)
+        
+    //     fcvt.w.d x10, f2     # x10 = (int)3.0 = 3
+        
+    //     addi x3, x0, 42      # x3 = 42
+    //     fcvt.d.w f4, x3      # f4 = (double)42 = 42.0
+    //     fcvt.w.d x11, f4     # x11 = (int)42.0 = 42
+    //     ecall
+    //     */
+        
+    //     mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+    //     run_test("D Extension - Conversions", code, sizeof(code));
+        
+    //     assert(emu.x[10] == 3);
+    //     assert(emu.x[11] == 42);
+    // }
+    
+    // // TEST 22: D Extension - Comparisons and Min/Max (FEQ.D, FLT.D, FLE.D, FMIN.D, FMAX.D)
+    // {
+    //     uint32_t code[128];
+    //     /*
+    //     addi x1, x0, 0x500   # x1 = data address
+        
+    //     # Load 3.0 as double
+    //     lui x2, 0x40080      
+    //     sw x2, 4(x1)
+    //     sw x0, 0(x1)
+    //     fld f1, 0(x1)        # f1 = 3.0
+        
+    //     # Load 5.0 as double
+    //     lui x3, 0x40140
+    //     sw x3, 4(x1)
+    //     sw x0, 0(x1)
+    //     fld f2, 0(x1)        # f2 = 5.0
+        
+    //     feq.d x10, f1, f2    # x10 = (3.0 == 5.0) = 0
+    //     feq.d x11, f1, f1    # x11 = (3.0 == 3.0) = 1
+    //     flt.d x12, f1, f2    # x12 = (3.0 < 5.0) = 1
+    //     fle.d x13, f1, f2    # x13 = (3.0 <= 5.0) = 1
+        
+    //     fmin.d f3, f1, f2    # f3 = min(3.0, 5.0) = 3.0
+    //     fmax.d f4, f1, f2    # f4 = max(3.0, 5.0) = 5.0
+    //     ecall
+    //     */
+        
+    //     mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+    //     run_test("D Extension - Comparisons", code, sizeof(code));
+        
+    //     assert(emu.x[10] == 0);
+    //     assert(emu.x[11] == 1);
+    //     assert(emu.x[12] == 1);
+    //     assert(emu.x[13] == 1);
+    // }
+    
+    // // TEST 23: A Extension - Atomic Memory Operations (LR.W, SC.W)
+    // {
+    //     uint32_t code[128];
+    //     /*
+    //     addi x1, x0, 0x500   # x1 = data address
+    //     addi x2, x0, 42      # x2 = 42
+    //     sw x2, 0(x1)         # Store 42 at address
+        
+    //     lr.w x10, (x1)       # x10 = 42, set reservation
+    //     addi x3, x0, 100     # x3 = 100
+    //     sc.w x11, x3, (x1)   # Store 100, x11 = 0 (success)
+    //     lw x12, 0(x1)        # x12 = 100 (verify store)
+        
+    //     # Try SC without LR (should fail)
+    //     addi x4, x0, 200     # x4 = 200
+    //     sc.w x13, x4, (x1)   # x13 = 1 (failure - no reservation)
+    //     lw x14, 0(x1)        # x14 = 100 (unchanged)
+    //     ecall
+    //     */
+        
+    //     mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+    //     run_test("A Extension - LR/SC", code, sizeof(code));
+        
+    //     assert(emu.x[10] == 42);
+    //     assert(emu.x[11] == 0);  // SC succeeded
+    //     assert(emu.x[12] == 100);
+    //     assert(emu.x[13] == 1);  // SC failed (no reservation)
+    //     assert(emu.x[14] == 100);
+    // }
+    
+    // // TEST 24: A Extension - Atomic Swap and Add (AMOSWAP.W, AMOADD.W)
+    // {
+    //     uint32_t code[128];
+    //     /*
+    //     addi x1, x0, 0x500   # x1 = data address
+    //     addi x2, x0, 50      # x2 = 50
+    //     sw x2, 0(x1)         # Store 50 at address
+        
+    //     addi x3, x0, 25      # x3 = 25
+    //     amoswap.w x10, x3, (x1)  # x10 = 50 (old value), mem = 25
+    //     lw x11, 0(x1)        # x11 = 25 (verify)
+        
+    //     addi x4, x0, 15      # x4 = 15
+    //     amoadd.w x12, x4, (x1)   # x12 = 25 (old value), mem = 25+15 = 40
+    //     lw x13, 0(x1)        # x13 = 40 (verify)
+    //     ecall
+    //     */
+        
+    //     mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+    //     run_test("A Extension - SWAP and ADD", code, sizeof(code));
+        
+    //     assert(emu.x[10] == 50);
+    //     assert(emu.x[11] == 25);
+    //     assert(emu.x[12] == 25);
+    //     assert(emu.x[13] == 40);
+    // }
+    
+    // // TEST 25: A Extension - Atomic Logical Operations (AMOXOR.W, AMOAND.W, AMOOR.W)
+    // {
+    //     uint32_t code[128];
+    //     /*
+    //     addi x1, x0, 0x500   # x1 = data address
+    //     addi x2, x0, 0xFF    # x2 = 0xFF
+    //     sw x2, 0(x1)         # Store 0xFF at address
+        
+    //     addi x3, x0, 0xF0    # x3 = 0xF0
+    //     amoxor.w x10, x3, (x1)   # x10 = 0xFF, mem = 0xFF XOR 0xF0 = 0x0F
+    //     lw x11, 0(x1)        # x11 = 0x0F
+        
+    //     addi x4, x0, 0x0F    # x4 = 0x0F
+    //     sw x2, 0(x1)         # Reset to 0xFF
+    //     amoand.w x12, x4, (x1)   # x12 = 0xFF, mem = 0xFF AND 0x0F = 0x0F
+    //     lw x13, 0(x1)        # x13 = 0x0F
+        
+    //     addi x5, x0, 0xF0    # x5 = 0xF0
+    //     amoor.w x14, x5, (x1)    # x14 = 0x0F, mem = 0x0F OR 0xF0 = 0xFF
+    //     lw x15, 0(x1)        # x15 = 0xFF
+    //     ecall
+    //     */
+        
+    //     mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+    //     run_test("A Extension - Logical Atomics", code, sizeof(code));
+        
+    //     assert(emu.x[10] == 0xFF);
+    //     assert(emu.x[11] == 0x0F);
+    //     assert(emu.x[12] == 0xFF);
+    //     assert(emu.x[13] == 0x0F);
+    //     assert(emu.x[14] == 0x0F);
+    //     assert(emu.x[15] == 0xFF);
+    // }
+    
+    // // TEST 26: A Extension - Atomic Min/Max (AMOMIN.W, AMOMAX.W, AMOMINU.W, AMOMAXU.W)
+    // {
+    //     uint32_t code[128];
+    //     /*
+    //     addi x1, x0, 0x500   # x1 = data address
+    //     addi x2, x0, 10      # x2 = 10
+    //     sw x2, 0(x1)         # Store 10 at address
+        
+    //     addi x3, x0, 5       # x3 = 5
+    //     amomin.w x10, x3, (x1)   # x10 = 10, mem = min(10, 5) = 5
+    //     lw x11, 0(x1)        # x11 = 5
+        
+    //     addi x4, x0, 20      # x4 = 20
+    //     amomax.w x12, x4, (x1)   # x12 = 5, mem = max(5, 20) = 20
+    //     lw x13, 0(x1)        # x13 = 20
+        
+    //     addi x5, x0, -1      # x5 = -1 (0xFFFFFFFF)
+    //     amomin.w x14, x5, (x1)   # x14 = 20, mem = min(20, -1) = -1 (signed)
+    //     lw x15, 0(x1)        # x15 = 0xFFFFFFFF
+        
+    //     addi x6, x0, 10      # x6 = 10
+    //     amominu.w x16, x6, (x1)  # x16 = 0xFFFFFFFF, mem = min(0xFFFFFFFF, 10) = 10 (unsigned)
+    //     lw x17, 0(x1)        # x17 = 10
+    //     ecall
+    //     */
+        
+    //     mem.map_anonymous(0x500, 0x1000, PERM_READ | PERM_WRITE);
+        
+    //     run_test("A Extension - Min/Max Atomics", code, sizeof(code));
+        
+    //     assert(emu.x[10] == 10);
+    //     assert(emu.x[11] == 5);
+    //     assert(emu.x[12] == 5);
+    //     assert(emu.x[13] == 20);
+    //     assert(emu.x[14] == 20);
+    //     assert(emu.x[15] == (uint32_t)-1);
+    //     assert(emu.x[16] == (uint32_t)-1);
+    //     assert(emu.x[17] == 10);
+    // }
 }
