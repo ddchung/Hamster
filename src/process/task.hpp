@@ -237,6 +237,20 @@ namespace Hamster
          */
         int open_rel_fd(int thread_dfd, const char *path);
 
+        /**
+         * @brief Enter a blocking operation
+         * @param callback The blocking callback, called every once in a while
+         * @param interrupt_callback The callback to call to interrupt the blocking operation partway through
+         * @return 0 on success, -1 on error
+         */
+        int block(void (*callback)(Task &), void (*interrupt_callback)(Task &));
+
+        /**
+         * @brief Interrupt the blocking operation
+         * @return 0 on success, -1 on error
+         */
+        int interrupt_block();
+
         const SharedPtr<Process> &get_process() const { return process; }
         MemorySpace &get_memory() const { return memory->ms; }
         uint32_t get_brk() const { return memory->brk; }
