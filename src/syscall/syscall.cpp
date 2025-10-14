@@ -167,21 +167,9 @@ namespace Hamster
 
         struct ParamType_FLAGS_Flag
         {
-            constexpr ParamType_FLAGS_Flag(const char *n, uint32_t m)
-                : name(n), mask(m), value(m)
-            {
-            }
-
-            constexpr ParamType_FLAGS_Flag(const char *n, uint32_t m, uint32_t v)
-                : name(n), mask(m), value(v)
-            {
-            }
-
-            // Flag active if
-            // `(param & mask) == value`
-            const char *name;
-            uint32_t mask;
-            uint32_t value;
+            const char name[32];
+            const uint32_t mask;
+            const uint32_t value = mask;
         };
 
         template <ParamType_FLAGS_Flag...>
@@ -256,7 +244,7 @@ namespace Hamster
             bool first = true;
             for (const auto &flag : {Flags...})
             {
-                if (i & flag.mask == flag.value)
+                if ((i & flag.mask) == flag.value)
                 {
                     if (!first)
                         _trace(" | ");
@@ -363,7 +351,28 @@ namespace Hamster
             break;
         case SyscallID::CLONE:
             trace_syscall<
-                SysTraceParam("flags", PT_UINT),
+                SysTraceParam("flags", PT_FLAGS<
+                    {"CLONE_SIGNAL", H_CLONE_SIGNAL},
+                    {"CLONE_VM", H_CLONE_VM},
+                    {"CLONE_FS", H_CLONE_FS},
+                    {"CLONE_FILES", H_CLONE_FILES},
+                    {"CLONE_SIGHAND", H_CLONE_SIGHAND},
+                    {"CLONE_PIDFD", H_CLONE_PIDFD},
+                    {"CLONE_PTRACE", H_CLONE_PTRACE},
+                    {"CLONE_VFORK", H_CLONE_VFORK},
+                    {"CLONE_PARENT", H_CLONE_PARENT},
+                    {"CLONE_THREAD", H_CLONE_THREAD},
+                    {"CLONE_NEWNS", H_CLONE_NEWNS},
+                    {"CLONE_SYSVSEM", H_CLONE_SYSVSEM},
+                    {"CLONE_SETTLS", H_CLONE_SETTLS},
+                    {"CLONE_PARENT_SETTID", H_CLONE_PARENT_SETTID},
+                    {"CLONE_CHILD_CLEARTID", H_CLONE_CHILD_CLEARTID},
+                    {"CLONE_DETACHED", H_CLONE_DETACHED},
+                    {"CLONE_UNTRACED", H_CLONE_UNTRACED},
+                    {"CLONE_CHILD_SETTID", H_CLONE_CHILD_SETTID},
+                    {"CLONE_NEWCGROUP", H_CLONE_NEWCGROUP},
+                    {"CLONE_NEWUTS", H_CLONE_NEWUTS}
+                >),
                 SysTraceParam("stack", PT_PTR),
                 SysTraceParam("ptid", PT_PTR),
                 SysTraceParam("tls", PT_INT),
@@ -477,7 +486,22 @@ namespace Hamster
             trace_syscall<
                 SysTraceParam("dirfd", PT_INT),
                 SysTraceParam("path", PT_STR),
-                SysTraceParam("flags", PT_UINT),
+                SysTraceParam("flags", PT_FLAGS<
+                    {"O_RDONLY", OPEN_ACCMODE, OPEN_RDONLY},
+                    {"O_WRONLY", OPEN_ACCMODE, OPEN_WRONLY},
+                    {"O_RDWR", OPEN_ACCMODE, OPEN_RDWR},
+                    {"O_CREAT", OPEN_CREAT},
+                    {"O_EXCL", OPEN_EXCL},
+                    {"O_NOCTTY", OPEN_NOCTTY},
+                    {"O_TRUNC", OPEN_TRUNC},
+                    {"O_APPEND", OPEN_APPEND},
+                    {"O_NONBLOCK", OPEN_NONBLOCK},
+                    {"O_SYNC", OPEN_SYNC},
+                    {"O_ASYNC", OPEN_ASYNC},
+                    {"O_DIRECTORY", OPEN_DIRECTORY},
+                    {"O_NOFOLLOW", OPEN_NOFOLLOW},
+                    {"O_CLOEXEC", OPEN_CLOEXEC}
+                >),
                 SysTraceParam("mode", PT_INT)>("openat", task, args);
             result = syscall(task, sys_openat);
             trace_syscall_result(result);
