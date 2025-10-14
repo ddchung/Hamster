@@ -32,8 +32,8 @@ namespace Hamster
         virtual int set_flags(int flags) = 0;
         virtual int get_flags() = 0;
         virtual int poll(int op) = 0;
-        virtual int sync(int fd) = 0;
-        virtual int datasync(int fd) = 0;
+        virtual int sync() = 0;
+        virtual int datasync() = 0;
 
         /**
          * @brief Get the VFS file descriptor

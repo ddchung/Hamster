@@ -68,12 +68,12 @@ public:
         error = H_ENOTSUP;
         return -1;
     };
-    int sync(int fd)
+    int sync()
     {
         error = H_ENOTSUP;
         return -1;
     };
-    int datasync(int fd)
+    int datasync()
     {
         error = H_ENOTSUP;
         return -1;
