@@ -228,6 +228,15 @@ namespace Hamster
          */
         int exit();
 
+        /**
+         * @brief Open a relative directory file descriptor
+         * @param thread_dfd The userspace relative file descriptor
+         * @param path The path
+         * @return A VFS file descriptor `fd` such that doing a relative operation `*at(fd, path)` will
+         *         result in the intended target. -1 on error and set `error`
+         */
+        int open_rel_fd(int thread_dfd, const char *path);
+
         const SharedPtr<Process> &get_process() const { return process; }
         MemorySpace &get_memory() const { return memory->ms; }
         uint32_t get_brk() const { return memory->brk; }

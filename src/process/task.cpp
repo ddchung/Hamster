@@ -64,6 +64,22 @@ namespace Hamster
         return 0;
     }
 
+    int Task::open_rel_fd(int thread_dfd, const char *path)
+    {
+        BaseTaskFD *fd;
+        if (thread_dfd >= 0)
+            fd = fd_table->get_fd(thread_dfd);
+        else if (thread_dfd == H_AT_FDCWD)
+            fd = nullptr;
+        else
+        {
+            error = EBADF;
+            return -1;
+        }
+
+        return process->get_fs_info()->open_rel_fd(path, fd);
+    }
+
     Task::~Task()
     {
         assert(flags & (KSCHED_REMOVE_NOW | KSCHED_REMOVE_ALL));
