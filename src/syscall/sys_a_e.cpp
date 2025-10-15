@@ -22,5 +22,13 @@ namespace Hamster
         task.get_process()->exit(make_wait_exited(status));
         return 0;
     }
+
+    int32_t sys_close(Task &task, int32_t fd)
+    {
+        int res = task.get_fd_table()->close(fd);
+        if (res < 0)
+            return cvt_error();
+        return 0;
+    }
 } // namespace Hamster
 
