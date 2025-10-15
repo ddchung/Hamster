@@ -46,7 +46,7 @@ namespace Hamster
         if (flags & (KSCHED_REMOVE_NOW | KSCHED_REMOVE_ALL))
         {
             // already exited
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -73,7 +73,7 @@ namespace Hamster
             fd = nullptr;
         else
         {
-            error = EBADF;
+            error = H_EBADF;
             return -1;
         }
 

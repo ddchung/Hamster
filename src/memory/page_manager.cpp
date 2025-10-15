@@ -264,13 +264,13 @@ namespace Hamster
         // Shared file mappings are not supported by futexes
         if (entry->fd && entry->shared)
         {
-            error = EPERM;
+            error = H_EPERM;
             return -1;
         }
 
         if (futex_waiters.size() >= HAMSTER_MAX_FUTEXES)
         {
-            error = ENOMEM;
+            error = H_ENOMEM;
             return -1;
         }
 
@@ -287,7 +287,7 @@ namespace Hamster
 
         if (entry->fd && entry->shared)
         {
-            error = EPERM;
+            error = H_EPERM;
             return -1;
         }
 
@@ -316,7 +316,7 @@ namespace Hamster
 
         if ((entry->fd && entry->shared) || (requeue_entry->fd && requeue_entry->shared))
         {
-            error = EPERM;
+            error = H_EPERM;
             return -1;
         }
 

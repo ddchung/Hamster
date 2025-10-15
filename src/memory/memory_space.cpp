@@ -350,7 +350,7 @@ namespace Hamster
 
         if (page_id == PageTable::PAGE_ID_UNUSED)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return -1;
         }
 
@@ -366,7 +366,7 @@ namespace Hamster
 
         if (page_id == PageTable::PAGE_ID_UNUSED)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return -1;
         }
 
@@ -387,7 +387,7 @@ namespace Hamster
         if (wake_page_id == PageTable::PAGE_ID_UNUSED ||
             requeue_page_id == PageTable::PAGE_ID_UNUSED)
         {
-            error = EFAULT;
+            error = H_EFAULT;
             return -1;
         }
 

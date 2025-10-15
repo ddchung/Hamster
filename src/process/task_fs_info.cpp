@@ -40,7 +40,7 @@ namespace Hamster
             switch (vfs.is_directory(vfs_fd))
             {
             case 0:
-                error = ENOTDIR;
+                error = H_ENOTDIR;
                 return -1;
             case 1:
                 break;
@@ -56,7 +56,7 @@ namespace Hamster
     {
         if (!newroot || !newroot[0])
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -73,7 +73,7 @@ namespace Hamster
     {
         if (!newcwd || !newcwd[0])
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 

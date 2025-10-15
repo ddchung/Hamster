@@ -287,7 +287,7 @@ namespace Hamster
         size = min(avail, size);
         if (size == 0)
         {
-            Hamster::error = EAGAIN;
+            Hamster::error = H_EAGAIN;
             return -1;
         }
         SerialUSB1.readBytes((char *)buf, size);
@@ -301,7 +301,7 @@ namespace Hamster
         size = min(avail, size);
         if (size == 0)
         {
-            Hamster::error = EAGAIN;
+            Hamster::error = H_EAGAIN;
             return -1;
         }
         SerialUSB1.write((const char *)buf, size);

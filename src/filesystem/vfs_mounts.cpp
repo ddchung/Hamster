@@ -37,7 +37,7 @@ namespace Hamster
 
             if (ok)
                 return 0;
-            error = EACCES;
+            error = H_EACCES;
             return -1;
         }
     } // namespace

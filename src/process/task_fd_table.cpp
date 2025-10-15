@@ -110,7 +110,7 @@ namespace Hamster
         {
             if (it > HAMSTER_MAX_FD_TABLE_SIZE)
             {
-                error = EMFILE;
+                error = H_EMFILE;
                 return -1;
             }
             
