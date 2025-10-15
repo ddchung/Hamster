@@ -47,45 +47,6 @@ namespace Hamster
             uint16_t offset;
         };
     public:
-
-        // An optimized instruction fetch iterator that can traverse within a page
-        // Has less functionality than your average iterator though
-        class InstructionIterator
-        {
-            friend class PageManager;
-
-            InstructionIterator(uint32_t *it, uint32_t *end)
-                : it(it), end(end)
-            {
-            }
-
-        public:
-            
-            uint32_t operator *()
-            {
-                return *it;
-            }
-
-            void operator++(int)
-            {
-                ++it;
-            }
-
-            void operator++()
-            {
-                ++it;
-            }
-
-            bool is_end()
-            {
-                return it == end;
-            }
-            
-        private:
-            uint32_t *it;
-            uint32_t *end;
-        };
-
         PageManager()
         { page_table.reserve(0xFFFF); }
         ~PageManager();
@@ -239,24 +200,22 @@ namespace Hamster
          * @param addr The relative offset within the page. Must be aligned to 4 bytes
          * @return The iterator
          * @note Swaps in the page if necessary
-         * @note Page must be executable
+         * @note Page must be executable or readable
+         * @note Page must not be a shared file mapping
          */
-        InstructionIterator make_iterator(uint32_t id, size_t addr)
+        uint32_t *make_iterator(uint32_t id, size_t addr)
         {
             PageEntry *entry = page_table[id];
+            if (entry->fd && entry->shared)
+                return nullptr;
             if (entry->swapped)
                 swap_in(id);
             assert(entry->data != nullptr);
             assert(addr < HAMSTER_PAGE_SIZE);
             assert(addr % 4 == 0);
-            assert(entry->perms & PERM_EXEC);
+            assert(entry->perms & (PERM_EXEC | PERM_READ));
 
-            uint32_t *it, *end;
-
-            end = (uint32_t *)(entry->data + HAMSTER_PAGE_SIZE);
-            it = (uint32_t *)(entry->data + addr);
-            
-            return InstructionIterator(it, end);
+            return (uint32_t *)(entry->data + addr);
         }
 
         /**

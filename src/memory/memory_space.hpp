@@ -72,9 +72,9 @@ namespace Hamster
          * @brief Get an instruction iterator
          * @param addr The initial address that it points to. Must be aligned to 4 bytes, and exist.
          * @return The instruction iterator. This iterator traverses within a single page only.
-         * @note Page must be executable
+         * @note Page must be executable or readable
          */
-        PageManager::InstructionIterator make_iterator(uint32_t addr)
+        uint32_t *make_iterator(uint32_t addr)
         {
             assert(addr % 4 == 0);
 
