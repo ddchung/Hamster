@@ -80,6 +80,50 @@ namespace Hamster
         return process->get_fs_info()->open_rel_fd(path, fd);
     }
 
+    int Task::block(void (*callback)(Task &), void (*interrupt_callback)(Task &))
+    {
+        if (!callback)
+        {
+            error = EINVAL;
+            return -1;
+        }
+
+        if (is_blocking())
+        {
+            error = H_EAGAIN;
+            return -1;
+        }
+
+        if (!interrupt_callback)
+            interrupt_callback = [](Task &task) {
+                task.get_emulator().x[10] = -H_EAGAIN;
+                task.end_block();
+            };
+    
+        blocking_operation = callback;
+        interrupt_blocking = interrupt_callback;
+
+        return 0;
+    }
+
+    int Task::interrupt_block()
+    {
+        if (!is_blocking())
+        {
+            error = EPERM;
+            return -1;
+        }
+
+        interrupt_blocking(*this);
+        return 0;
+    }
+
+    void Task::end_block()
+    {
+        blocking_operation = nullptr;
+        interrupt_blocking = nullptr;
+    }
+
     Task::~Task()
     {
         assert(flags & (KSCHED_REMOVE_NOW | KSCHED_REMOVE_ALL));
@@ -97,11 +141,8 @@ namespace Hamster
                 // stop any blocking operation in progress
                 if (blocking_operation)
                 {
-                    assert(interrupt_blocking);
-                    interrupt_blocking(*this);
-
-                    blocking_operation = nullptr;
-                    interrupt_blocking = nullptr;
+                    interrupt_block();
+                    end_block();
                 }
 
                 // handle the signal

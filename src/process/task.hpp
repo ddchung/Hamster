@@ -242,14 +242,20 @@ namespace Hamster
          * @param callback The blocking callback, called every once in a while
          * @param interrupt_callback The callback to call to interrupt the blocking operation partway through
          * @return 0 on success, -1 on error
+         * @note By default, the interrupt callback sets register `a0` to `-EINTR` and ends blocking
          */
-        int block(void (*callback)(Task &), void (*interrupt_callback)(Task &));
+        int block(void (*callback)(Task &), void (*interrupt_callback)(Task &) = nullptr);
 
         /**
          * @brief Interrupt the blocking operation
          * @return 0 on success, -1 on error
          */
         int interrupt_block();
+
+        /**
+         * @brief End the blocking operation. Should be used only in blocking callbacks
+         */
+        void end_block();
 
         const SharedPtr<Process> &get_process() const { return process; }
         MemorySpace &get_memory() const { return memory->ms; }
@@ -258,6 +264,9 @@ namespace Hamster
         const SharedPtr<TaskFDTable> &get_fd_table() const { return fd_table; }
         RiscVEmulator &get_emulator() { return emulator; }
         uint32_t get_tid() const { return tid; }
+        uint32_t *get_blocking_saved() { return blocking_operation_saved; }
+        bool is_blocking() const { return blocking_operation != nullptr; }
+        static inline constexpr size_t blocking_saved_size = 3;
 
     private:
         // Private zero-initialize, with shared pointers = nullptr
@@ -276,7 +285,7 @@ namespace Hamster
         TaskSignalMask signal_mask;
         RiscVEmulator emulator;
         void (*blocking_operation)(Task &) = nullptr;
-        uint32_t blocking_operation_saved[3] = {}; // Optionally used by blocking operations
+        uint32_t blocking_operation_saved[blocking_saved_size] = {}; // Optionally used by blocking operations
         void (*interrupt_blocking)(Task &) = nullptr; // Called when signal recieved while blocking
         uint32_t tid;
         Task *parent = nullptr;
