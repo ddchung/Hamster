@@ -69,20 +69,27 @@ namespace Hamster
         }
 
         /**
-         * @brief Get an instruction iterator
+         * @brief Get a 4-byte iterator
          * @param addr The initial address that it points to. Must be aligned to 4 bytes, and exist.
-         * @return The instruction iterator. This iterator traverses within a single page only.
+         * @return The iterator. This iterator traverses within a single page only.
          * @note Page must be executable or readable
          */
-        uint32_t *make_iterator(uint32_t addr)
+        uint32_t *make_iterator_fast(uint32_t addr)
         {
             assert(addr % 4 == 0);
 
             uint32_t id = page_table.get_page(addr);
             assert(id != PageTable::PAGE_ID_UNUSED);
 
-            return page_manager.make_iterator(id, addr % HAMSTER_PAGE_SIZE);
+            return page_manager.make_iterator_fast(id, addr % HAMSTER_PAGE_SIZE);
         }
+
+        /**
+         * @brief Get a single byte iterator
+         * @param addr The address that it points to
+         * @return The iterator. Traverses within a single page only!
+         */
+        uint8_t *make_iterator_1(uint32_t addr);
 
         /**
          * @brief Check if a location is executable

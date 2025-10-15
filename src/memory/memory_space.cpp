@@ -341,6 +341,18 @@ namespace Hamster
         return perms;
     }
 
+    uint8_t *MemorySpace::make_iterator_1(uint32_t addr)
+    {
+        uint32_t id = page_table.get_page(addr);
+        if (id == PageTable::PAGE_ID_UNUSED)
+        {
+            error = H_EFAULT;
+            return nullptr;
+        }
+
+        return page_manager.make_iterator_1(id, addr % HAMSTER_PAGE_SIZE);
+    }
+
     int MemorySpace::futex_wait(uint32_t addr, void (*callback)())
     {
         assert(addr % 4 == 0);

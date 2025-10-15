@@ -195,7 +195,7 @@ namespace Hamster
         }
 
         /**
-         * @brief Get an instruction iterator
+         * @brief Get an iterator (4-byte fast version)
          * @param id The id of the page
          * @param addr The relative offset within the page. Must be aligned to 4 bytes
          * @return The iterator
@@ -203,7 +203,7 @@ namespace Hamster
          * @note Page must be executable or readable
          * @note Page must not be a shared file mapping
          */
-        uint32_t *make_iterator(uint32_t id, size_t addr)
+        uint32_t *make_iterator_fast(uint32_t id, size_t addr)
         {
             PageEntry *entry = page_table[id];
             if (entry->fd && entry->shared)
@@ -217,6 +217,17 @@ namespace Hamster
 
             return (uint32_t *)(entry->data + addr);
         }
+
+        /**
+         * @brief Make a single byte iterator
+         * @param id The id of the page
+         * @param addr The address within the page
+         * @return The iterator, or -1 on error and set `error`
+         * @note Page must not be a shared file mapping
+         * @note Page must be readable
+         * @note Swaps in the page if needed
+         */
+        uint8_t *make_iterator_1(uint32_t id, size_t addr);
 
         /**
          * @brief Set the permissions of a page

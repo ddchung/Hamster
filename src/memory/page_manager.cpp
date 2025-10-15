@@ -255,6 +255,30 @@ namespace Hamster
         return id < page_table.size() && page_table[id] != nullptr;
     }
 
+    uint8_t *PageManager::make_iterator_1(uint32_t id, size_t addr)
+    {
+        PageEntry *entry = page_table[id];
+        assert(entry);
+        assert(addr < HAMSTER_PAGE_SIZE);
+
+        if (entry->swapped)
+            swap_in(id);
+
+        if (entry->shared && entry->fd)
+        {
+            error = H_EPERM;
+            return nullptr;
+        }
+
+        if ((entry->perms & PERM_READ) == 0)
+        {
+            error = H_EACCES;
+            return nullptr;
+        }
+
+        return entry->data + addr;
+    }
+
     int PageManager::futex_wait(uint32_t id, size_t addr, void (*callback)())
     {
         PageEntry *entry = page_table[id];
