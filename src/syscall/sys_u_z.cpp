@@ -25,7 +25,7 @@ namespace Hamster
             // Read at most to the end of the page
             uint32_t location = buf_loc + total_written;
             size_t to_write = std::min(count, HAMSTER_PAGE_SIZE - ((location) % HAMSTER_PAGE_SIZE));
-            uint8_t *mem = task.get_memory().make_iterator_1(location);
+            const uint8_t *mem = (const uint8_t *)task.get_memory().make_iterator_read(location);
             if (!mem)
             {
                 if (total_written > 0)

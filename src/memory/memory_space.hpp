@@ -69,27 +69,34 @@ namespace Hamster
         }
 
         /**
-         * @brief Get a 4-byte iterator
-         * @param addr The initial address that it points to. Must be aligned to 4 bytes, and exist.
+         * @brief Make a read-only iterator
+         * @param addr The initial address that it points to
          * @return The iterator. This iterator traverses within a single page only.
-         * @note Page must be executable or readable
+         * @note Page must be readable
          */
-        uint32_t *make_iterator_fast(uint32_t addr)
-        {
-            assert(addr % 4 == 0);
-
-            uint32_t id = page_table.get_page(addr);
-            assert(id != PageTable::PAGE_ID_UNUSED);
-
-            return page_manager.make_iterator_fast(id, addr % HAMSTER_PAGE_SIZE);
-        }
+        const void *make_iterator_read(uint32_t addr);
+        
+        /**
+         * @brief Make a read-write iterator
+         * @param addr The initial address that it points to
+         * @return The iterator. This iterator traverses within a single page only.
+         * @note Page must be readable and writable
+         */
+        void *make_iterator(uint32_t addr);
 
         /**
-         * @brief Get a single byte iterator
-         * @param addr The address that it points to
-         * @return The iterator. Traverses within a single page only!
+         * @brief Make an executable iterator
+         * @param addr The initial address that it points to
+         * @return The iterator. This iterator traverses within a single page only.
+         * @note Page must be executable
+         * @note Address must be 4-byte aligned
          */
-        uint8_t *make_iterator_1(uint32_t addr);
+        const uint32_t *make_iterator_exec(uint32_t addr)
+        {
+            uint32_t id = page_table.get_page(addr);
+            assert(id != PageTable::PAGE_ID_UNUSED);
+            return page_manager.make_iterator_exec(id, addr % HAMSTER_PAGE_SIZE);
+        }
 
         /**
          * @brief Check if a location is executable
@@ -103,16 +110,35 @@ namespace Hamster
         }
 
         /**
-         * @brief Read from a memory region, up until, and including, a zero byte
+         * @brief Read from a memory region, up until, and including, a zero T
          * @param addr The address of the memory region to read from
          * @return A newly allocated buffer containing the data on success, or nullptr on failure and set `error`
          * @note May be used to get a C-string
          */
-        char *read_until_zero(uint32_t addr);
+        template <typename T>
+        T *read_until_zero(uint32_t addr)
+        {
+            T t;
+            size_t num_t = 0;
 
-        // backwards compatibility
+            for (uint32_t it = addr;; ++it)
+            {
+                if (do_read(it, &t, sizeof(T)) != (ssize_t)sizeof(T))
+                    return nullptr;
+
+                num_t++;
+
+                if (t == 0)
+                    break;
+            }
+
+            T *result = alloc<T>(num_t);
+            memcpy(result, addr, num_t * sizeof(T));
+            return result;
+        }
+
         char *get_string(uint32_t addr)
-        { return read_until_zero(addr); }
+        { return read_until_zero<char>(addr); }
 
         /**
          * @brief Check if a memory region is mapped

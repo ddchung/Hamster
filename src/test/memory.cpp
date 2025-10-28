@@ -332,7 +332,7 @@ void test_memory()
         // read_until_zero
         char str[] = "abc\0def";
         assert(ms.memcpy_alloc(page_size * 20, str, sizeof(str)) == 0);
-        char *out = ms.read_until_zero(page_size * 20);
+        char *out = ms.read_until_zero<char>(page_size * 20);
         assert(out != nullptr && strcmp(out, "abc") == 0);
         Hamster::dealloc(out);
 

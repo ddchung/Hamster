@@ -920,7 +920,7 @@ namespace Hamster
 
             // Number of 4-byte words left until end of page
             size_t to_process = (HAMSTER_PAGE_SIZE / 4) - ((pc / 4) % (HAMSTER_PAGE_SIZE / 4));
-            for (auto it = memory->make_iterator_fast(pc); decoded_count < to_process; ++it)
+            for (auto it = memory->make_iterator_exec(pc); decoded_count < to_process; ++it)
             {
                 uint32_t inst = *it;
 

@@ -106,33 +106,6 @@ namespace Hamster
         return 1;
     }
 
-    char *MemorySpace::read_until_zero(uint32_t addr)
-    {
-        size_t len = 0;
-
-        for (uint32_t it = addr;; ++it)
-        {
-            char c;
-            if (do_read(it, &c, 1) != 1)
-                return nullptr;
-            ++len;
-            if (c == '\0')
-                break;
-        }
-
-        char *result = alloc<char>(len);
-
-        result[len - 1] = '\0';
-
-        if (memcpy(result, addr, len) < 0)
-        {
-            dealloc(result);
-            return nullptr;
-        }
-
-        return result;
-    }
-
     ssize_t MemorySpace::how_many_mapped(uint32_t loc, uint32_t size) const
     {
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
@@ -341,7 +314,7 @@ namespace Hamster
         return perms;
     }
 
-    uint8_t *MemorySpace::make_iterator_1(uint32_t addr)
+    void *MemorySpace::make_iterator(uint32_t addr)
     {
         uint32_t id = page_table.get_page(addr);
         if (id == PageTable::PAGE_ID_UNUSED)
@@ -349,8 +322,18 @@ namespace Hamster
             error = H_EFAULT;
             return nullptr;
         }
+        return page_manager.make_iterator(id, addr % HAMSTER_PAGE_SIZE);
+    }
 
-        return page_manager.make_iterator_1(id, addr % HAMSTER_PAGE_SIZE);
+    const void *MemorySpace::make_iterator_read(uint32_t addr)
+    {
+        uint32_t id = page_table.get_page(addr);
+        if (id == PageTable::PAGE_ID_UNUSED)
+        {
+            error = H_EFAULT;
+            return nullptr;
+        }
+        return page_manager.make_iterator_read(id, addr % HAMSTER_PAGE_SIZE);
     }
 
     int MemorySpace::futex_wait(uint32_t addr, void (*callback)())
