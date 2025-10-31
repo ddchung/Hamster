@@ -144,12 +144,13 @@ namespace Hamster
         /**
          * @brief Load an executable file
          * @param fd The VFS file descriptor of the file
+         * @param leader The new leader task
          * @param argv The arguments
          * @param envp The environment variables
          * @return 0 on success, -1 on error
          * @note This will clear all tasks except one, and wipe the memory space
          */
-        int exec(int fd, const char *const *argv, const char *const *envp);
+        int exec(int fd, Task *leader, const char *const *argv, const char *const *envp);
 
         /**
          * @brief Make the process exit
@@ -224,9 +225,18 @@ namespace Hamster
 
         /**
          * @brief Make this task exit
+         * @param code The exit code
+         * @return 0 on success, -1 on error
+         * @note `code` is only used if this is the last task in the process
+         */
+        int exit(uint16_t code);
+
+        /**
+         * @brief Make all tasks in the process exit
+         * @param code The exit code
          * @return 0 on success, -1 on error
          */
-        int exit();
+        int exit_group(uint16_t code);
 
         /**
          * @brief Open a relative directory file descriptor
@@ -257,16 +267,207 @@ namespace Hamster
          */
         void end_block();
 
-        const SharedPtr<Process> &get_process() const { return process; }
-        MemorySpace &get_memory() const { return memory->ms; }
-        uint32_t get_brk() const { return memory->brk; }
-        void set_brk(uint32_t brk) { memory->brk = brk; }
-        const SharedPtr<TaskFDTable> &get_fd_table() const { return fd_table; }
+        /**
+         * @brief Access the blocking operation saved data
+         * @warning Please ensure that the data fits within `Task::BLOCKING_SAVED_SIZE` bytes
+         */
+        void *get_blocking_saved() { return blocking_operation_saved; }
+
+        /**
+         * @brief Load an ELF executable into the task's memory space
+         * @param fd The VFS file descriptor of the ELF file
+         * @param argv The arguments
+         * @param envp The environment variables
+         * @return 0 on success, -1 on error
+         * @warning Don't use this directly, use `Task::exec` instead
+         */
+        int load_elf(int fd, const char *const *argv, const char *const *envp);
+
+        /**
+         * @brief Replace the process image with a new executable
+         * @param fd The VFS file descriptor of the executable file
+         * @param argv The arguments
+         * @param envp The environment variables
+         * @return 0 on success, -1 on error
+         * @warning This will kill all other tasks in the current process
+         */
+        int exec(int fd, const char *const *argv, const char *const *envp);
+
+        /**
+         * @brief Copy a POD structure into the task's memory space
+         * @param dest The destination address in the task's memory space
+         * @param src The source structure
+         * @param size The size of the structure, in bytes. Defaults to sizeof(T)
+         * @return 0 on success, -1 on error
+         */
+        template <typename T>
+        int copy_to_memory(uint32_t dest, const T &src, size_t size = sizeof(T))
+        {
+            return memory->ms.memcpy(dest, &src, size);
+        }
+
+        /**
+         * @brief Copy a POD structure from the task's memory space
+         * @param dest The destination structure
+         * @param src The source address in the task's memory space
+         * @param size The size of the structure, in bytes. Defaults to sizeof(T)
+         * @return 0 on success, -1 on error
+         */
+        template <typename T>
+        int copy_from_memory(T &dest, uint32_t src, size_t size = sizeof(T))
+        {
+            return memory->ms.memcpy(&dest, src, size);
+        }
+
+        /**
+         * @brief Map a memory region
+         * @param addr The virtual address to map. 0 to auto-allocate
+         * @param size The size of the region to map
+         * @param perms The permissions for the region, composed by bitwise-ORing `PERM_*` flags
+         * @param flags The mmap flags, controlling the type of mapping
+         * @param fd The VFS file descriptor to back the mapping. -1 for anonymous
+         * @param offset The backing file offset
+         * @return The mapped address, or UINT32_MAX on error and set `error`
+         */
+        uint32_t mmap(uint32_t addr, uint32_t size, uint8_t perms, int flags, int fd = -1, uint32_t offset = 0);
+
+        /**
+         * @brief Set the program break
+         * @param brk The new program break
+         * @return The new program break, or the old break on error and set `error`
+         */
+        uint32_t mbrk(uint32_t brk);
+
+        /**
+         * @brief Set the alternate signal stack
+         * @param new_stack The new alternate signal stack. nullptr to disable
+         * @param old_stack The old alternate signal stack. nullptr to ignore
+         * @return 0 on success, -1 on error
+         */
+        int sigaltstack(const sys_sigaltstack *new_stack, sys_sigaltstack *old_stack);
+
+        /**
+         * @brief Set the clear_child_tid address
+         * @param addr The address to set. 0 to disable
+         */
+        void set_tid_address(uint32_t addr);
+
+        /**
+         * @brief Set the robust list head pointer
+         * @param head The head of the linked list
+         */
+        void set_robust_list(uint32_t head);
+
+        /**
+         * @brief Register a signal handler
+         * @param signo The signal number
+         * @param handler The location of the userspace handler, or H_SIG_DFL/H_SIG_IGN
+         * @return 0 on success, -1 on error
+         */
+        int sigaction(uint8_t signo, uint32_t handler);
+
+        /**
+         * @brief Check for a state changes in child processes
+         * @param idtype The type of id to wait for
+         * @param id The id to wait for
+         * @param siginfo The signal info structure to fill
+         * @param options The wait options
+         * @return 0 on success, -1 on error
+         * @note If there are no matching state changes, this returns -1 and sets `error` to `EAGAIN`
+         */
+        int waitid(int idtype, uint32_t id, sys_siginfo *siginfo, int options);
+
+        /**
+         * @brief Check access to a file
+         * @param dfd The VFS directory file descriptor
+         * @param file The file path, relative to `dfd`
+         * @param mode The access mode to check, composed by bitwise-ORing `PERM_*` flags
+         * @param use_effective_ids Whether to use effective UID/GID instead of real UID/GID
+         * @return 0 on success, -1 on error
+         */
+        int accessat(int dfd, const char *file, int mode, bool use_effective_ids = true);
+
+        // MemorySpace functions
+
+        int memcpy(void *dest, uint32_t src, uint32_t len);
+        int memcpy(uint32_t dest, const void *src, uint32_t len);
+        int memset(uint32_t addr, uint8_t value, uint32_t len);
+        const void *mem_make_iterator_read(uint32_t addr);
+        void *mem_make_iterator(uint32_t addr);
+        template <typename T>
+        T *mem_read_until_zero(uint32_t addr)
+        {
+            return memory->ms.read_until_zero<T>(add on error and r);
+        }
+        char *mem_get_string(uint32_t addr);
+        int mem_is_mapped(uint32_t loc, uint32_t size) const;
+        int munmap(uint32_t addr, uint32_t size);
+        int munmap_all();
+        int mprotect(uint32_t addr, uint32_t size, uint8_t perms);
+        int8_t mem_get_permissions(uint32_t loc, uint32_t size = 1);
+        int futex_wait(uint32_t addr, void (*callback)());
+        int futex_wake(uint32_t addr, uint32_t count);
+        int futex_requeue(uint32_t wake_addr, uint32_t wake_count, uint32_t requeue_addr, uint32_t requeue_count);
+
+        // TaskFDTable functions
+
+        BaseTaskFD *get_fd(int fd) const;
+        int close_fd(int fd);
+        int set_fd(BaseTaskFD *task_fd, int fd = -1);
+        int dup_fd(int fd, int new_fd);
+        int allocate_fd(int start = 0);
+        void close_cloexec_fds();
+        void clear_fds();
+
+        // TaskSignalQueue functions
+
+        int send_signal(const sys_siginfo &siginfo); // to this task
+        int send_signal_process(const sys_siginfo &siginfo); // to the process
+        size_t pending_signals_size() const;
+        size_t pending_signals_size_process() const;
+
+        // TaskSignalMask functions
+
+        void block_signal(uint8_t signo);
+        void unblock_signal(uint8_t signo);
+        void set_signal_blocked(uint8_t signo, bool blocked);
+        int is_signal_blocked(uint8_t signo) const;
+        uint64_t get_signal_mask(bool invert = false) const;
+        sys_sigset get_signal_sigset() const;
+
+        // TaskSignalHandlers functions
+
+        int is_signal_handler(uint8_t signo);
+        int is_signal_ignored(uint8_t signo);
+        int is_signal_default(uint8_t signo);
+
+        // TaskFSInfo functions
+
+        int chroot(const char *path);
+        int chdir(const char *path);
+        char *getcwd(); // relative to current root
+        char *get_abs_cwd(); // absolute, from VFS /
+        int get_umask() const;
+        void set_umask(int new_umask);
+        int mask_mode(int mode) const;
+
+        // Process functions
+
+        bool is_leader() const;
+        uint32_t get_pid() const;
+        void get_uid(int *uid = nullptr, int *euid = nullptr, int *suid = nullptr) const;
+        void get_gid(int *gid = nullptr, int *egid = nullptr, int *sgid = nullptr) const;
+        const Vector<int> &get_groups() const;
+        void set_uid(int uid, int euid, int suid);
+        void set_gid(int gid, int egid, int sgid);
+        int set_groups(const Vector<int> &groups);
+
         RiscVEmulator &get_emulator() { return emulator; }
         uint32_t get_tid() const { return tid; }
-        uint32_t *get_blocking_saved() { return blocking_operation_saved; }
+        Task *get_parent() const { return parent; }
         bool is_blocking() const { return blocking_operation != nullptr; }
-        static inline constexpr size_t blocking_saved_size = 3;
+
+        inline constexpr static size_t BLOCKING_SAVED_SIZE = 16;
 
     private:
         // Private zero-initialize, with shared pointers = nullptr
@@ -285,17 +486,18 @@ namespace Hamster
         TaskSignalMask signal_mask;
         RiscVEmulator emulator;
         void (*blocking_operation)(Task &) = nullptr;
-        uint32_t blocking_operation_saved[blocking_saved_size] = {}; // Optionally used by blocking operations
+        uint8_t blocking_operation_saved[BLOCKING_SAVED_SIZE] = {}; // Optionally used by blocking operations
         void (*interrupt_blocking)(Task &) = nullptr; // Called when signal recieved while blocking
         uint32_t tid;
         Task *parent = nullptr;
-        uint32_t sig_alt_stack = 0;
+        sys_sigaltstack alt_signal_stack;
         sys_ucontext signal_saved_state;
         uint32_t clear_child_tid = 0;
         uint32_t robust_list = 0;
         uint32_t robust_list_size;
         bool is_paused : 1 = false;
         bool is_vfork : 1 = false; // clears blocking operation of parent on memory space release
+        bool is_handling_signal : 1 = false;
     };
 
     /**

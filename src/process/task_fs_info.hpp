@@ -66,7 +66,7 @@ namespace Hamster
          * @param mode The mode to mask
          * @return The processed mode
          */
-        int mask_mode(int mode) { return mode & ~umask; }
+        int mask_mode(int mode) const { return mode & ~umask; }
 
     private:
         String root_path{"/"};

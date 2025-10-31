@@ -278,10 +278,17 @@ namespace Hamster
         char domainname[65];
     };
 
-    struct pselect6_time64_sigset
+    struct sys_pselect6_time64_sigset
     {
         uint32_t sigset_loc;
         uint32_t sigset_size;
+    };
+
+    struct sys_sigaltstack
+    {
+        uint32_t stack_loc;
+        int32_t flags;
+        uint32_t size;
     };
 
     inline uint64_t timespec_to_systick(const sys_timespec &ts)
