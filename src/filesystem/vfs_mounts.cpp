@@ -270,7 +270,7 @@ namespace Hamster
         }
     }
 
-    int Mounts::access(const char *path, int uid, int *groups, size_t numgroups, int mode, BaseDirectory *dir)
+    int Mounts::access(const char *path, int uid, int *groups, size_t numgroups, int mode, BaseDirectory *dir, int flags)
     {
         if (!path)
         {
@@ -311,11 +311,24 @@ namespace Hamster
         if (!next)
         {
             BaseFile *file = dir->get(path, OPEN_RDONLY);
-            dealloc(dir);
             if (file && file->type() == FileType::Directory)
                 file = resolve_mount(file);
             if (!file)
+            {
+                dealloc(dir);
                 return -1;
+            }
+            if (file->type() == FileType::Symlink && !(flags & H_AT_SYMLINK_NOFOLLOW))
+            {
+                file = resolve_symlink((BaseSymlink *)file, OPEN_RDONLY, dir);
+                dir = nullptr;
+                if (!file)
+                {
+                    return -1;
+                }
+            }
+            dealloc(dir);
+
             int fsmode = file->get_mode();
             int fsuid = file->get_uid();
             int fsgid = file->get_gid();
@@ -353,7 +366,7 @@ namespace Hamster
                     return -1;
                 }
 
-                return access(next, uid, groups, numgroups, mode, next_dir);
+                return access(next, uid, groups, numgroups, mode, next_dir, flags);
             }
             default:
                 break;

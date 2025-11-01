@@ -567,11 +567,14 @@ namespace Hamster
          * @param groups The groups to check with
          * @param numgroups Number of groups in the `groups` array
          * @param mode Access mode. bitmap of 0b rwx
+         * @param flags Flags for access checking
          * @return 0 if accessible, -1 on error and set `error`
          * @note If the path is not accessible with the credentials,
          *       error with `EACCES`
+         * @note The only defined flag is `AT_SYMLINK_NOFOLLOW`, which checks
+         *       the symlink itself, not the target
          */
-        int accessat(int dfd, const char *path, int uid, int *groups, size_t numgroups, int mode);
+        int accessat(int dfd, const char *path, int uid, int *groups, size_t numgroups, int mode, int flags = 0);
 
         /**
          * @brief Do permission checking on a path
@@ -580,11 +583,12 @@ namespace Hamster
          * @param groups The groups to check with
          * @param numgroups Number of groups in the `groups` array
          * @param mode Access mode. bitmap of 0b rwx
+         * @param flags Flags for access checking
          * @return 0 if accessible, -1 on error and set `error`
          * @note If the path is not accessible with the credentials,
          *       error with `EACCES`
          */
-        int access(const char *path, int uid, int *groups, size_t numgroups, int mode);
+        int access(const char *path, int uid, int *groups, size_t numgroups, int mode, int flags = 0);
 
     private:
         VFSData *data;

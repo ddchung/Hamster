@@ -1413,7 +1413,7 @@ namespace Hamster
         return file->datasync();
     }
 
-    int VFS::accessat(int dfd, const char *path, int uid, int *groups, size_t numgroups, int mode)
+    int VFS::accessat(int dfd, const char *path, int uid, int *groups, size_t numgroups, int mode, int flags)
     {
         BaseFile *file = data->fd_manager.get_fd(dfd);
         if (!file)
@@ -1429,15 +1429,15 @@ namespace Hamster
             return -1;
         assert(cloned_file->type() == FileType::Directory);
 
-        return data->mounts.access(path, uid, groups, numgroups, mode, (BaseDirectory *)cloned_file);
+        return data->mounts.access(path, uid, groups, numgroups, mode, (BaseDirectory *)cloned_file, flags);
     }
 
-    int VFS::access(const char *path, int uid, int *groups, size_t numgroups, int mode)
+    int VFS::access(const char *path, int uid, int *groups, size_t numgroups, int mode, int flags)
     {
         int rootfd = open("/", OPEN_RDONLY | OPEN_DIRECTORY);
         if (rootfd < 0)
             return -1;
-        int res = accessat(rootfd, path, uid, groups, numgroups, mode);
+        int res = accessat(rootfd, path, uid, groups, numgroups, mode, flags);
         close(rootfd);
         return res;
     }

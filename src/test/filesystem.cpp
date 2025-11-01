@@ -589,6 +589,104 @@ void test_filesystem()
         assert(vfs->remove(topdir) == 0);
     }
 
+    // --- Symlink access / accessat tests (including H_AT_SYMLINK_NOFOLLOW) ---
+    {
+        int empty[1] = {0};
+
+        // dangling symlink at root
+        const char *dang = "/danglink";
+        // create a symlink pointing to a non-existent target
+        assert(vfs->symlink(dang, "/no/such/target") == 0);
+
+        // By default, access should try to follow the symlink and fail (target missing)
+        assert(vfs->access(dang, 0, empty, 1, 4) < 0);
+
+        // With H_AT_SYMLINK_NOFOLLOW, access should check the symlink itself and succeed
+        assert(vfs->access(dang, 0, empty, 1, 4, H_AT_SYMLINK_NOFOLLOW) == 0);
+
+        // Cleanup root symlink
+        assert(vfs->remove(dang) == 0);
+
+        // Now test accessat with a directory FD and a symlink inside it
+        const char *adir = "/ad";
+        const char *alinkname = "linkname";
+        assert(vfs->mkdir(adir, 0755) == 0);
+        int adfd = vfs->open(adir, OPEN_RDONLY);
+        assert(adfd >= 0);
+
+        // create dangling symlink relative to adir
+        assert(vfs->symlinkat(adfd, alinkname, "/nonexistent") == 0);
+
+        // accessat without NOFOLLOW should fail (follows and fails)
+        assert(vfs->accessat(adfd, alinkname, 0, empty, 1, 4) < 0);
+
+        // accessat with NOFOLLOW should succeed (checks symlink itself)
+        assert(vfs->accessat(adfd, alinkname, 0, empty, 1, 4, H_AT_SYMLINK_NOFOLLOW) == 0);
+
+        // cleanup
+        assert(vfs->removeat(adfd, alinkname) == 0);
+        vfs->close(adfd);
+        assert(vfs->remove(adir) == 0);
+    }
+
+    // --- Symlink follow tests: verify access follows the symlink to target ---
+    {
+        const char *real = "/real_follow.txt";
+        const char *slink = "/slink_follow";
+        int empty[1] = {0};
+        // create target file with owner-only permissions
+        int rfd = vfs->mkfile(real, OPEN_RDWR | OPEN_CREAT, 0600);
+        assert(rfd >= 0);
+        // set ownership to uid 1001
+        int owner_uid = 1001;
+        int owner_gid = 1001;
+        assert(vfs->chown(rfd, owner_uid, owner_gid) == 0);
+        vfs->close(rfd);
+
+        // create symlink pointing to the real file
+        assert(vfs->symlink(slink, real) == 0);
+
+        int other_uid = 2002;
+
+        // access without NOFOLLOW should follow and check the target
+        // owner should be allowed to read
+        assert(vfs->access(slink, owner_uid, empty, 1, 4) == 0);
+        // other user should not be allowed (target is 0600)
+        assert(vfs->access(slink, other_uid, empty, 1, 4) < 0);
+
+        // Now change symlink ownership to other_uid (lchown) so NOFOLLOW checks the symlink
+        assert(vfs->lchown(slink, other_uid, owner_gid) == 0);
+
+        // access with AT_SYMLINK_NOFOLLOW should check the symlink itself (owned by other_uid)
+        assert(vfs->access(slink, other_uid, empty, 1, 4, H_AT_SYMLINK_NOFOLLOW) == 0);
+
+        // Also test accessat: create a directory and place a symlink inside
+        const char *dname = "/sdir";
+        assert(vfs->mkdir(dname, 0755) == 0);
+        int dfd2 = vfs->open(dname, OPEN_RDONLY);
+        assert(dfd2 >= 0);
+        // create symlink inside that points to the real file
+        assert(vfs->symlinkat(dfd2, "inner", real) == 0);
+
+        // follow: owner allowed, other not
+        assert(vfs->accessat(dfd2, "inner", owner_uid, empty, 1, 4) == 0);
+        assert(vfs->accessat(dfd2, "inner", other_uid, empty, 1, 4) < 0);
+
+        // set symlink owner to other_uid via lchownat if available or lchown on path
+        // use lchown on full path for simplicity
+        assert(vfs->lchown("/slink_follow", other_uid, owner_gid) == 0);
+
+        // nofollow via accessat should now succeed for other_uid
+        assert(vfs->accessat(dfd2, "inner", other_uid, empty, 1, 4, H_AT_SYMLINK_NOFOLLOW) == 0);
+
+        // cleanup
+        assert(vfs->removeat(dfd2, "inner") == 0);
+        vfs->close(dfd2);
+        assert(vfs->remove(dname) == 0);
+        assert(vfs->remove(slink) == 0);
+        assert(vfs->remove(real) == 0);
+    }
+
     assert(vfs->unmount("/") == 0);
 }
 

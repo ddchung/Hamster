@@ -391,10 +391,10 @@ namespace Hamster
          * @param dfd The VFS directory file descriptor
          * @param file The file path, relative to `dfd`
          * @param mode The access mode to check, composed by bitwise-ORing `PERM_*` flags
-         * @param use_effective_ids Whether to use effective UID/GID instead of real UID/GID
+         * @param flags Flags controlling the access check
          * @return 0 on success, -1 on error
          */
-        int accessat(int dfd, const char *file, int mode, bool use_effective_ids = true);
+        int accessat(int dfd, const char *file, int mode, int flags);
 
         // MemorySpace functions
 

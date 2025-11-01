@@ -84,6 +84,32 @@ namespace Hamster
         return 0;
     }
 
+    int Task::accessat(int dirfd, const char *pathname, int mode, int flags)
+    {
+        int uid, gid, *groups;
+
+        if (flags & H_AT_EACCESS)
+        {
+            process->get_uid(nullptr, &uid, nullptr);
+            process->get_gid(nullptr, &gid, nullptr);
+        }
+        else
+        {
+            process->get_uid(&uid, nullptr, nullptr);
+            process->get_gid(&gid, nullptr, nullptr);
+        }
+
+        // Put `gid` into groups
+        groups = alloc<int>(process->get_groups().size() + 1);
+        ::memcpy(groups, process->get_groups().data(), process->get_groups().size() * sizeof(int));
+        groups[process->get_groups().size()] = gid;
+
+        // Only forward AT_SYMLINK_NOFOLLOW
+        int res = vfs.accessat(dirfd, pathname, uid, groups, process->get_groups().size() + 1, mode, flags & H_AT_SYMLINK_NOFOLLOW);
+        dealloc(groups);
+        return res;
+    }
+
     int Task::exit_group(uint16_t code)
     {
         return process->exit(code);
