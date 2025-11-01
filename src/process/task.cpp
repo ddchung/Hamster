@@ -150,6 +150,299 @@ namespace Hamster
         interrupt_blocking = nullptr;
     }
 
+    BaseTaskFD *Task::get_fd(int fd) const
+    {
+        return fd_table->get_fd(fd);
+    }
+
+    int Task::close_fd(int fd)
+    {
+        return fd_table->close(fd);
+    }
+
+    void Task::get_uid(int *uid, int *euid, int *suid) const
+    {
+        process->get_uid(uid, euid, suid);
+    }
+
+    void Task::get_gid(int *gid, int *egid, int *sgid) const
+    {
+        process->get_gid(gid, egid, sgid);
+    }
+
+    void Task::set_uid(int uid, int euid, int suid)
+    {
+        process->set_uid(uid, euid, suid);
+    }
+
+    void Task::set_gid(int gid, int egid, int sgid)
+    {
+        process->set_gid(gid, egid, sgid);
+    }
+
+    char *Task::mem_get_string(uint32_t addr)
+    {
+        return memory->ms.get_string(addr);
+    }
+
+    int Task::mask_mode(int mode) const
+    {
+        return process->get_fs_info()->mask_mode(mode);
+    }
+
+    int Task::allocate_fd(int start)
+    {
+        return fd_table->allocate_fd(start);
+    }
+
+    int Task::set_fd(BaseTaskFD *task_fd, int fd)
+    {
+        return fd_table->set_fd(task_fd, fd);
+    }
+
+    const void *Task::mem_make_iterator_read(uint32_t addr)
+    {
+        return memory->ms.make_iterator_read(addr);
+    }
+
+    void *Task::mem_make_iterator(uint32_t addr)
+    {
+        return memory->ms.make_iterator(addr);
+    }
+
+    int8_t Task::mem_get_permissions(uint32_t addr, uint32_t size)
+    {
+        return memory->ms.get_permissions(addr, size);
+    }
+
+    void Task::close_cloexec_fds()
+    {
+        fd_table->close_cloexec();
+    }
+
+    uint32_t Task::mbrk(uint32_t brk)
+    {
+        if (brk == 0)
+            return memory->brk;
+
+        if (brk < memory->brk)
+        {
+            // Shrink brk
+
+            // Note: align `brk` up to page size. `unmap` rounds down automatically
+            if (memory->ms.unmap(brk + (HAMSTER_PAGE_SIZE - 1),
+                                 memory->brk - brk) < 0)
+            {
+                return memory->brk;
+            }
+        }
+        else if (brk > memory->brk)
+        {
+            // Expand brk
+
+            // same thing for `memory->brk`
+            if (memory->ms.map_anonymous(memory->brk + (HAMSTER_PAGE_SIZE - 1),
+                                        brk - memory->brk, PERM_READ | PERM_WRITE) < 0)
+            {
+                return memory->brk;
+            }
+        }
+
+        memory->brk = brk;
+        return memory->brk;
+    }
+
+    int Task::sigaltstack(const sys_sigaltstack *new_stack, sys_sigaltstack *old_stack)
+    {
+        if (old_stack)
+            *old_stack = alt_signal_stack;
+        if (new_stack)
+            alt_signal_stack = *new_stack;
+        return 0;
+    }
+
+    void Task::set_tid_address(uint32_t tid_addr)
+    {
+        clear_child_tid = tid_addr;
+    }
+
+    void Task::set_robust_list(uint32_t head)
+    {
+        robust_list = head;
+    }
+
+    int Task::memcpy(uint32_t dest, const void *src, uint32_t n)
+    {
+        return memory->ms.memcpy(dest, src, n);
+    }
+
+    int Task::memcpy(void *dest, uint32_t src, uint32_t n)
+    {
+        return memory->ms.memcpy(dest, src, n);
+    }
+
+    int Task::memset(uint32_t addr, uint8_t value, uint32_t n)
+    {
+        return memory->ms.memset(addr, value, n);
+    }
+
+    int Task::mem_is_mapped(uint32_t addr, uint32_t size) const
+    {
+        return memory->ms.is_mapped(addr, size);
+    }
+
+    int Task::munmap(uint32_t addr, uint32_t size)
+    {
+        emulator.flush_caches();
+        return memory->ms.unmap(addr, size);
+    }
+
+    int Task::munmap_all()
+    {
+        emulator.flush_caches();
+        return memory->ms.unmap_all();
+    }
+
+    int Task::mprotect(uint32_t addr, uint32_t size, uint8_t permissions)
+    {
+        return memory->ms.mprotect(addr, size, permissions);
+    }
+
+    int Task::futex_wait(uint32_t addr, void (*callback)())
+    {
+        return memory->ms.futex_wait(addr, callback);
+    }
+
+    int Task::futex_wake(uint32_t addr, uint32_t count)
+    {
+        return memory->ms.futex_wake(addr, count);
+    }
+
+    int Task::futex_requeue(uint32_t wake_addr, uint32_t wake_count, uint32_t requeue_addr, uint32_t requeue_count)
+    {
+        return memory->ms.futex_requeue(wake_addr, wake_count, requeue_addr, requeue_count);
+    }
+
+    int Task::dup_fd(int fd, int new_fd)
+    {
+        return fd_table->dup(fd, new_fd);
+    }
+
+    void Task::clear_fds()
+    {
+        fd_table->clear();
+    }
+
+    int Task::send_signal(const sys_siginfo &siginfo)
+    {
+        return pending_signals.push(siginfo);
+    }
+
+    int Task::send_signal_process(const sys_siginfo &siginfo)
+    {
+        return process->get_pending_signals().push(siginfo);
+    }
+
+    size_t Task::pending_signals_size() const
+    {
+        return pending_signals.size();
+    }
+
+    size_t Task::pending_signals_size_process() const
+    {
+        return process->get_pending_signals().size();
+    }
+
+    void Task::block_signal(uint8_t signo)
+    {
+        signal_mask.block(signo);
+    }
+
+    void Task::unblock_signal(uint8_t signo)
+    {
+        signal_mask.unblock(signo);
+    }
+
+    void Task::set_signal_blocked(uint8_t signo, bool blocked)
+    {
+        signal_mask.set_blocked(signo, blocked);
+    }
+
+    int Task::is_signal_blocked(uint8_t signo) const
+    {
+        return signal_mask.check(signo);
+    }
+
+    uint64_t Task::get_signal_mask(bool invert) const
+    {
+        return signal_mask.convert(invert);
+    }
+
+    sys_sigset Task::get_signal_sigset() const
+    {
+        return signal_mask.to_sigset();
+    }
+
+    int Task::is_signal_handler(uint8_t signo)
+    {
+        return process->get_signal_handlers()->is_handler(signo);
+    }
+
+    int Task::is_signal_ignored(uint8_t signo)
+    {
+        return process->get_signal_handlers()->is_ignored(signo);
+    }
+
+    int Task::is_signal_default(uint8_t signo)
+    {
+        return process->get_signal_handlers()->is_default(signo);
+    }
+
+    int Task::chroot(const char *path)
+    {
+        return process->get_fs_info()->chroot(path);
+    }
+
+    int Task::chdir(const char *path)
+    {
+        return process->get_fs_info()->chdir(path);
+    }
+
+    char *Task::getcwd()
+    {
+        return process->get_fs_info()->getcwd();
+    }
+
+    char *Task::get_abs_cwd()
+    {
+        return process->get_fs_info()->get_abs_cwd();
+    }
+
+    int Task::get_umask() const
+    {
+        return process->get_fs_info()->get_umask();
+    }
+
+    void Task::set_umask(int new_umask)
+    {
+        process->get_fs_info()->set_umask(new_umask);
+    }
+
+    bool Task::is_leader() const
+    {
+        return process->get_leader() == this;
+    }
+
+    uint32_t Task::get_pid() const
+    {
+        return process->get_pid();
+    }
+
+    int Task::set_groups(const Vector<int> &groups)
+    {
+        return process->set_groups(groups);
+    }
+
     Task::~Task()
     {
         assert(flags & (KSCHED_REMOVE_NOW | KSCHED_REMOVE_ALL));
@@ -266,6 +559,52 @@ namespace Hamster
         tasks.emplace(leader);
 
         this->pgroup->add_process(this);
+    }
+
+    void Process::get_uid(int *uid, int *euid, int *suid) const
+    {
+        if (uid)
+            *uid = this->uid;
+        if (euid)
+            *euid = this->euid;
+        if (suid)
+            *suid = this->suid;
+    }
+
+    void Process::get_gid(int *gid, int *egid, int *sgid) const
+    {
+        if (gid)
+            *gid = this->gid;
+        if (egid)
+            *egid = this->egid;
+        if (sgid)
+            *sgid = this->sgid;
+    }
+
+    void Process::set_uid(int uid, int euid, int suid)
+    {
+        if (uid != -1)
+            this->uid = uid;
+        if (euid != -1)
+            this->euid = euid;
+        if (suid != -1)
+            this->suid = suid;
+    }
+
+    void Process::set_gid(int gid, int egid, int sgid)
+    {
+        if (gid != -1)
+            this->gid = gid;
+        if (egid != -1)
+            this->egid = egid;
+        if (sgid != -1)
+            this->sgid = sgid;
+    }
+
+    int Process::set_groups(const Vector<int> &groups)
+    {
+        this->groups = groups;
+        return 0;
     }
 
     Process::~Process()

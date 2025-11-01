@@ -163,8 +163,16 @@ namespace Hamster
         const SharedPtr<ProcessGroup> &get_process_group() const { return pgroup; }
         const SharedPtr<TaskSignalHandlers> &get_signal_handlers() const { return signal_handlers; }
         const SharedPtr<TaskFSInfo> &get_fs_info() const { return fs_info; }
+        TaskSignalQueue &get_pending_signals() { return pending_signals; }
+        Deque<ProcessStateChange> &get_state_changes() { return state_changes; }
         size_t num_tasks() const { return tasks.size(); }
         Task *get_leader() const { return leader; }
+        void get_uid(int *uid, int *euid, int *suid) const;
+        void get_gid(int *gid, int *egid, int *sgid) const;
+        void set_uid(int uid = -1, int euid = -1, int suid = -1);
+        void set_gid(int gid = -1, int egid = -1, int sgid = -1);
+        const Vector<int> &get_groups() const { return groups; }
+        int set_groups(const Vector<int> &groups);
 
     private:
         SharedPtr<ProcessGroup> pgroup;
@@ -333,14 +341,15 @@ namespace Hamster
 
         /**
          * @brief Set the program break
-         * @param brk The new program break
+         * @param brk The new program break. 0 to query the current break
          * @return The new program break, or the old break on error and set `error`
+         * @note mbrk(0) can be used to get the current break
          */
-        uint32_t mbrk(uint32_t brk);
+        uint32_t mbrk(uint32_t brk = 0);
 
         /**
          * @brief Set the alternate signal stack
-         * @param new_stack The new alternate signal stack. nullptr to disable
+         * @param new_stack The new alternate signal stack. nullptr to not set
          * @param old_stack The old alternate signal stack. nullptr to ignore
          * @return 0 on success, -1 on error
          */
@@ -458,8 +467,8 @@ namespace Hamster
         void get_uid(int *uid = nullptr, int *euid = nullptr, int *suid = nullptr) const;
         void get_gid(int *gid = nullptr, int *egid = nullptr, int *sgid = nullptr) const;
         const Vector<int> &get_groups() const;
-        void set_uid(int uid, int euid, int suid);
-        void set_gid(int gid, int egid, int sgid);
+        void set_uid(int uid = -1, int euid = -1, int suid = -1);
+        void set_gid(int gid = -1, int egid = -1, int sgid = -1);
         int set_groups(const Vector<int> &groups);
 
         RiscVEmulator &get_emulator() { return emulator; }
@@ -492,7 +501,6 @@ namespace Hamster
         sys_ucontext signal_saved_state;
         uint32_t clear_child_tid = 0;
         uint32_t robust_list = 0;
-        uint32_t robust_list_size;
         bool is_paused : 1 = false;
         bool is_vfork : 1 = false; // clears blocking operation of parent on memory space release
         bool is_handling_signal : 1 = false;
