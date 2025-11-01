@@ -10,7 +10,7 @@ namespace Hamster
 {
     int32_t sys_openat(Task &task, int32_t thread_dfd, uint32_t path_loc, int32_t flags, uint32_t mode)
     {
-        char *path = task.get_memory().get_string(path_loc);
+        char *path = task.mem_get_string(path_loc);
         if (!path)
             return cvt_error();
         
@@ -19,7 +19,7 @@ namespace Hamster
             return cvt_error();
         
         // Process mode with umask
-        mode = task.get_process()->get_fs_info()->mask_mode(mode);
+        mode = task.mask_mode(mode);
 
         int fd = vfs.openat(rel_fd, path, flags, mode);
         dealloc(path);
@@ -27,8 +27,8 @@ namespace Hamster
 
         if (fd < 0)
             return cvt_error();
-        
-        int task_fd = task.get_fd_table()->allocate_fd();
+
+        int task_fd = task.allocate_fd();
         if (task_fd < 0)
         {
             vfs.close(fd);
@@ -37,7 +37,7 @@ namespace Hamster
 
         // Make a new TaskVFSFD with the opened file descriptor, and put it in the
         // allocated slot
-        if (task.get_fd_table()->set_fd(alloc<TaskVFSFD>(1, fd), task_fd) < 0)
+        if (task.set_fd(alloc<TaskVFSFD>(1, fd), task_fd) < 0)
             return cvt_error();
         return task_fd;
     }

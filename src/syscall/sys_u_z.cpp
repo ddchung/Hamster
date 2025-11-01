@@ -10,7 +10,7 @@ namespace Hamster
 {
     int32_t sys_write(Task &task, int32_t fd, uint32_t buf_loc, uint32_t count)
     {
-        BaseTaskFD *user_fd = task.get_fd_table()->get_fd(fd);
+        BaseTaskFD *user_fd = task.get_fd(fd);
         if (!user_fd)
             return cvt_error();
 
@@ -25,7 +25,7 @@ namespace Hamster
             // Read at most to the end of the page
             uint32_t location = buf_loc + total_written;
             size_t to_write = std::min(count, HAMSTER_PAGE_SIZE - ((location) % HAMSTER_PAGE_SIZE));
-            const uint8_t *mem = (const uint8_t *)task.get_memory().make_iterator_read(location);
+            const uint8_t *mem = (const uint8_t *)task.mem_make_iterator_read(location);
             if (!mem)
             {
                 if (total_written > 0)
@@ -49,12 +49,10 @@ namespace Hamster
                     // blocking
                     if ((fd_flags & OPEN_NONBLOCK) == 0 && !task.is_blocking())
                     {
-                        // Save FD for later, since it's overwritten when we return
-                        task.get_blocking_saved()[0] = fd;
-                        task.block([](Task &task) {
-                            int32_t blocking_fd = task.get_blocking_saved()[0];
+                        task.block([](Task &task, uint64_t saved) {
+                            int32_t blocking_fd = saved;
 
-                            BaseTaskFD *task_fd = task.get_fd_table()->get_fd(blocking_fd);
+                            BaseTaskFD *task_fd = task.get_fd(blocking_fd);
                             int res;
 
                             if (!task_fd)
@@ -79,7 +77,7 @@ namespace Hamster
 
 
                             task.end_block();
-                        });
+                        }, fd);
 
                         return 0;
                     }

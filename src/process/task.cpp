@@ -25,23 +25,38 @@ namespace Hamster
         task->fd_table.construct();
         // Note: task->emulator.memory is a weak pointer, which
         //       is destroyed before task->memory
-        task->emulator.memory = &task->get_memory();
+        task->emulator.memory = &task->memory->ms;
 
         tasks[tid] = task;
         task->add_to_scheduler();
 
-        int res = task->process->exec(fd, argv, envp);
+        int res = task->exec(fd, argv, envp);
         if (res < 0)
         {
-            task->exit();
+            task->exit(make_wait_terminated_coredump(H_SIGKILL));
             dealloc(task);
             return nullptr;
         }
 
         return task;
     }
+
+    Task *Task::get_task(uint32_t tid)
+    {
+        auto it = tasks.find(tid);
+        if (it == tasks.end())
+        {
+            error = H_ESRCH;
+            return nullptr;
+        }
+
+        assert(it->second != nullptr);
+        assert(it->second->get_tid() == tid);
+
+        return it->second;
+    }
     
-    int Task::exit()
+    int Task::exit(uint16_t code)
     {
         if (flags & (KSCHED_REMOVE_NOW | KSCHED_REMOVE_ALL))
         {
@@ -59,16 +74,26 @@ namespace Hamster
         assert(tasks.find(tid)->second == this);
         tasks.erase(tid);
 
+        // TODO: traverse robust futex list
+
         process->remove_task(this);
 
+        if (process->num_tasks() == 0)
+            process->exit(code);
+
         return 0;
+    }
+
+    int Task::exit_group(uint16_t code)
+    {
+        return process->exit(code);
     }
 
     int Task::open_rel_fd(int thread_dfd, const char *path)
     {
         BaseTaskFD *fd;
         if (thread_dfd >= 0)
-            fd = fd_table->get_fd(thread_dfd);
+            fd = get_fd(thread_dfd);
         else if (thread_dfd == H_AT_FDCWD)
             fd = nullptr;
         else
@@ -80,7 +105,7 @@ namespace Hamster
         return process->get_fs_info()->open_rel_fd(path, fd);
     }
 
-    int Task::block(void (*callback)(Task &), void (*interrupt_callback)(Task &))
+    int Task::block(BlockingCallback callback, uint64_t saved, BlockingCallback interrupt_callback)
     {
         if (!callback)
         {
@@ -95,12 +120,13 @@ namespace Hamster
         }
 
         if (!interrupt_callback)
-            interrupt_callback = [](Task &task) {
-                task.get_emulator().x[10] = -H_EAGAIN;
+            interrupt_callback = [](Task &task, uint64_t saved) {
+                task.get_emulator().x[10] = -H_EINTR;
                 task.end_block();
             };
     
         blocking_operation = callback;
+        blocking_operation_saved = saved;
         interrupt_blocking = interrupt_callback;
 
         return 0;
@@ -114,7 +140,7 @@ namespace Hamster
             return -1;
         }
 
-        interrupt_blocking(*this);
+        interrupt_blocking(*this, blocking_operation_saved);
         return 0;
     }
 
@@ -157,7 +183,7 @@ namespace Hamster
 
         if (blocking_operation)
         {
-            blocking_operation(*this);
+            blocking_operation(*this, blocking_operation_saved);
 
             // Limit blocking checks to once a millisecond
             this->BaseKTask::next_tick = _get_sys_time() + 1;
@@ -183,8 +209,9 @@ namespace Hamster
             case Status::IllegalLoad:
             case Status::IllegalStore:
             case Status::Error:
+                // TODO: Send SIGILL, SIGBUS, SIGSEGV
                 _trace("TID %" PRIu32 ": ERROR!\n", tid);
-                this->exit();
+                this->exit(make_wait_terminated_coredump(H_SIGKILL));
                 break;
             }
         }
@@ -260,21 +287,25 @@ namespace Hamster
 
     int Process::exit(uint16_t code)
     {
-        for (Task *task : tasks)
+        if (num_tasks() > 0)
         {
-            task->exit();
+            // Make all tasks exit
+            // Note that `Task::exit` will remove the task from `this->tasks`
+            for (auto it = tasks.begin(); it != tasks.end();)
+                (*it++)->exit(code);
+            return 0;
         }
-
-        tasks.clear();
-        leader = nullptr;
-
-        if (parent)
+        else
         {
-            parent->state_changes.emplace_back();
-            auto &state_change = parent->state_changes.back();
-            state_change.type = ProcessStateChange::EXIT;
-            state_change.exit_code = code;
-            state_change.pid = pid;
+            // Notify parent of exit
+            if (parent)
+            {
+                parent->state_changes.emplace_back();
+                auto &state_change = parent->state_changes.back();
+                state_change.type = ProcessStateChange::EXIT;
+                state_change.exit_code = code;
+                state_change.pid = pid;
+            }
         }
 
         return 0;

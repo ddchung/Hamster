@@ -38,6 +38,7 @@ namespace Hamster
          */
         int close(int fd);
 
+        // TODO: Make `set_fd` return the fd, instead of 0 on success
         /**
          * @brief Set a file descriptor
          * @param task_fd The BaseTaskFD object. Will take ownership

@@ -145,12 +145,13 @@ namespace Hamster
          * @brief Load an executable file
          * @param fd The VFS file descriptor of the file
          * @param leader The new leader task
-         * @param argv The arguments
-         * @param envp The environment variables
+         * @param argv The arguments. nullptr for empty arguments
+         * @param envp The environment variables. nullptr for empty environment
          * @return 0 on success, -1 on error
          * @note This will clear all tasks except one, and wipe the memory space
+         * @note `leader` must be one of the tasks in this process
          */
-        int exec(int fd, Task *leader, const char *const *argv, const char *const *envp);
+        int exec(int fd, Task *leader, const char *const *argv = nullptr, const char *const *envp = nullptr);
 
         /**
          * @brief Make the process exit
@@ -195,6 +196,8 @@ namespace Hamster
         Task &operator=(Task &&) = delete;
         ~Task();
 
+        using BlockingCallback = void (*)(Task &, uint64_t);
+
         // Give access to default constructor
         friend Task *alloc<Task>(size_t N);
 
@@ -214,7 +217,7 @@ namespace Hamster
          * @return The new task, or nullptr on error and set `error`
          * @note This creates a completely new task, in its own process, process group, and session
          */
-        static Task *create_task(int fd, const char *const *argv = {nullptr}, const char *const *envp = {nullptr});
+        static Task *create_task(int fd, const char *const *argv = nullptr, const char *const *envp = nullptr);
 
         /**
          * @brief Get a task by TID
@@ -250,11 +253,12 @@ namespace Hamster
         /**
          * @brief Enter a blocking operation
          * @param callback The blocking callback, called every once in a while
+         * @param saved Data to save information for the blocking operation callback
          * @param interrupt_callback The callback to call to interrupt the blocking operation partway through
          * @return 0 on success, -1 on error
          * @note By default, the interrupt callback sets register `a0` to `-EINTR` and ends blocking
          */
-        int block(void (*callback)(Task &), void (*interrupt_callback)(Task &) = nullptr);
+        int block(BlockingCallback callback, uint64_t saved, BlockingCallback interrupt_callback = nullptr);
 
         /**
          * @brief Interrupt the blocking operation
@@ -268,30 +272,26 @@ namespace Hamster
         void end_block();
 
         /**
-         * @brief Access the blocking operation saved data
-         * @warning Please ensure that the data fits within `Task::BLOCKING_SAVED_SIZE` bytes
-         */
-        void *get_blocking_saved() { return blocking_operation_saved; }
-
-        /**
-         * @brief Load an ELF executable into the task's memory space
-         * @param fd The VFS file descriptor of the ELF file
-         * @param argv The arguments
-         * @param envp The environment variables
-         * @return 0 on success, -1 on error
-         * @warning Don't use this directly, use `Task::exec` instead
-         */
-        int load_elf(int fd, const char *const *argv, const char *const *envp);
-
-        /**
-         * @brief Replace the process image with a new executable
+         * @brief Load an executable into the task's memory space
          * @param fd The VFS file descriptor of the executable file
          * @param argv The arguments
          * @param envp The environment variables
          * @return 0 on success, -1 on error
+         * @warning Don't use this directly, use `Task::exec` instead. this function is
+         *          to be used internally by `Process::exec`
+         * @note Don't pass nullptr for argv/envp, pass empty arrays instead
+         */
+        int load_executable(int fd, const char *const *argv, const char *const *envp);
+
+        /**
+         * @brief Replace the process image with a new executable
+         * @param fd The VFS file descriptor of the executable file
+         * @param argv The arguments. nullptr for empty arguments
+         * @param envp The environment variables. nullptr for empty environment
+         * @return 0 on success, -1 on error
          * @warning This will kill all other tasks in the current process
          */
-        int exec(int fd, const char *const *argv, const char *const *envp);
+        int exec(int fd, const char *const *argv = nullptr, const char *const *envp = nullptr);
 
         /**
          * @brief Copy a POD structure into the task's memory space
@@ -397,7 +397,7 @@ namespace Hamster
         template <typename T>
         T *mem_read_until_zero(uint32_t addr)
         {
-            return memory->ms.read_until_zero<T>(add on error and r);
+            return memory->ms.read_until_zero<T>(addr);
         }
         char *mem_get_string(uint32_t addr);
         int mem_is_mapped(uint32_t loc, uint32_t size) const;
@@ -467,8 +467,6 @@ namespace Hamster
         Task *get_parent() const { return parent; }
         bool is_blocking() const { return blocking_operation != nullptr; }
 
-        inline constexpr static size_t BLOCKING_SAVED_SIZE = 16;
-
     private:
         // Private zero-initialize, with shared pointers = nullptr
         Task() = default;
@@ -485,9 +483,9 @@ namespace Hamster
         TaskSignalQueue pending_signals;
         TaskSignalMask signal_mask;
         RiscVEmulator emulator;
-        void (*blocking_operation)(Task &) = nullptr;
-        uint8_t blocking_operation_saved[BLOCKING_SAVED_SIZE] = {}; // Optionally used by blocking operations
-        void (*interrupt_blocking)(Task &) = nullptr; // Called when signal recieved while blocking
+        BlockingCallback blocking_operation = nullptr;
+        uint64_t blocking_operation_saved = 0; // Optionally used by blocking operations
+        BlockingCallback interrupt_blocking = nullptr; // Called when signal recieved while blocking
         uint32_t tid;
         Task *parent = nullptr;
         sys_sigaltstack alt_signal_stack;
@@ -506,5 +504,5 @@ namespace Hamster
      * @param argv The argument for the task
      * @param envp The environment variables
      */
-    Task *spawn(const char *path, const char *const *argv = {nullptr}, const char *const *envp = {nullptr});
+    Task *spawn(const char *path, const char *const *argv = nullptr, const char *const *envp = nullptr);
 } // namespace Hamster

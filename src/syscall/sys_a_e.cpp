@@ -9,23 +9,23 @@ namespace Hamster
 {
     int32_t sys_exit(Task &task, int32_t status)
     {
-        // Exit only this thread if multithreaded, or clean up whole process if singlethreaded
-        if (task.get_process()->num_tasks() > 1)
-            task.exit();
-        else
-            task.get_process()->exit(make_wait_exited(status));
+        int res = task.exit(make_wait_exited(status));
+        if (res < 0)
+            return cvt_error();
         return 0;
     }
 
     int32_t sys_exit_group(Task &task, int32_t status)
     {
-        task.get_process()->exit(make_wait_exited(status));
+        int res = task.exit_group(make_wait_exited(status));
+        if (res < 0)
+            return cvt_error();
         return 0;
     }
 
     int32_t sys_close(Task &task, int32_t fd)
     {
-        int res = task.get_fd_table()->close(fd);
+        int res = task.close_fd(fd);
         if (res < 0)
             return cvt_error();
         return 0;
