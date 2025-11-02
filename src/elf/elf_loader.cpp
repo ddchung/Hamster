@@ -98,10 +98,9 @@ namespace Hamster
                     
                     // Map segment
 
-                    _trace("%s:%d load_elf32: mapping private region, vaddr=0x%08x, fd=%d, offset=%d, filesz=0x%08x\n", __FILE__, __LINE__, phdr.p_vaddr, file.get_fd(), phdr.p_offset, phdr.p_filesz);
-                    int res = mem_space.map_private_file(phdr.p_vaddr, file.get_fd(), phdr.p_offset, phdr.p_filesz, phdr.p_flags & 07);
-                    if (res < 0)
-                        _trace("%s:%d load_elf32: map_private_file failed: error %d\n", __FILE__, __LINE__, error);
+                    // TODO: handle error
+                    if (mem_space.map_private_file(phdr.p_vaddr, file.get_fd(), phdr.p_offset, phdr.p_filesz, phdr.p_flags & 07) < 0)
+                        return -1;
                     
                     if (phdr.p_memsz > phdr.p_filesz)
                     {
