@@ -72,6 +72,14 @@ namespace Hamster
         error = H_ESRCH;
         return nullptr;
     }
+
+    Process *Task::get_init_process()
+    {
+        auto it = tasks.find(1);
+        if (it == tasks.end())
+            return nullptr;
+        return &it->second->process.get();
+    }
     
     int Task::exit(uint16_t code)
     {
@@ -225,6 +233,79 @@ namespace Hamster
         return new_task;
     }
 
+    int Task::waitid(int idtype, uint32_t id, sys_siginfo *siginfo, int options)
+    {
+        auto &state_changes = process->get_state_changes();
+
+        for (auto it = state_changes.begin(); it != state_changes.end(); ++it)
+        {
+            bool match = false;
+            switch (idtype)
+            {
+            case H_P_PID:
+                match = (it->pid == id);
+                break;
+            case H_P_PGID:
+                match = (it->pgid == id);
+                break;
+            case H_P_ALL:
+                match = true;
+                break;
+            default:
+                error = H_EINVAL;
+                return -1;
+            }
+
+            if (match)
+            {
+                // Found matching state change, check if it applies
+                switch (it->type)
+                {
+                case ProcessStateChange::EXIT:
+                    if ((options & H_WEXITED) == 0)
+                        continue;
+                    siginfo->fields.child.status = it->exit_code;
+                    if (is_wait_exited(it->exit_code))
+                        siginfo->code = H_CLD_EXITED;
+                    else if (is_wait_terminated(it->exit_code))
+                        siginfo->code = H_CLD_KILLED;
+                    else
+                        siginfo->code = H_CLD_DUMPED;
+                    break;
+                case ProcessStateChange::STOP:
+                    if ((options & H_WSTOPPED) == 0)
+                        continue;
+                    siginfo->code = H_CLD_STOPPED;
+                    siginfo->fields.child.status = it->signo;
+                    break;
+                case ProcessStateChange::CONT:
+                    if ((options & H_WCONTINUED) == 0)
+                        continue;
+                    siginfo->code = H_CLD_CONTINUED;
+                    siginfo->fields.child.status = it->signo;
+                    break;
+                }
+
+                // OK, full match, return
+                siginfo->fields.kill.pid = it->pid;
+                siginfo->fields.kill.uid = it->uid;
+                siginfo->signo = H_SIGCHLD;
+
+                if ((options & H_WNOWAIT) == 0)
+                {
+                    // delete this state change
+                    state_changes.erase(it);
+                }
+
+                return 0;
+            }
+        }
+
+        // not found
+        error = H_EAGAIN;
+        return -1;
+    }
+
     int Task::exit_group(uint16_t code)
     {
         return process->exit(code);
@@ -234,7 +315,7 @@ namespace Hamster
     {
         if (!callback)
         {
-            error = EINVAL;
+            error = H_EINVAL;
             return -1;
         }
 
@@ -261,7 +342,7 @@ namespace Hamster
     {
         if (!is_blocking())
         {
-            error = EPERM;
+            error = H_EPERM;
             return -1;
         }
 
@@ -401,6 +482,8 @@ namespace Hamster
             this->signal_handlers.construct();
         if (!fs_info)
             this->fs_info.construct();
+        if (parent)
+            parent->children.insert(this);
 
         // also have the leader task in `tasks`
         tasks.emplace(leader);
@@ -411,6 +494,18 @@ namespace Hamster
     Process::~Process()
     {
         pgroup->remove_process(this);
+
+        // Leave parent
+        if (parent)
+            parent->children.erase(this);
+        
+        // make init adopt children
+        Process *init = Task::get_init_process();
+        for (Process *child : children)
+        {
+            child->parent = init;
+            init->children.insert(child);
+        }
     }
 
     void Process::add_task(Task *task)
@@ -442,9 +537,27 @@ namespace Hamster
             {
                 parent->state_changes.emplace_back();
                 auto &state_change = parent->state_changes.back();
-                state_change.type = ProcessStateChange::EXIT;
-                state_change.exit_code = code;
                 state_change.pid = pid;
+                state_change.uid = uid;
+                state_change.pgid = pgroup->get_pgid();
+
+                if (is_wait_exited(code) || is_wait_terminated(code) || is_wait_terminated_coredump(code))
+                {
+                    state_change.type = ProcessStateChange::EXIT;
+                    state_change.exit_code = code;
+                }
+                else if (is_wait_stopped(code))
+                {
+                    state_change.type = ProcessStateChange::STOP;
+                    // retrieve signal number
+                    // see make_wait_stopped in abi/values.hpp
+                    state_change.signo = code >> 8;
+                }
+                else
+                {
+                    state_change.type = ProcessStateChange::CONT;
+                    state_change.signo = H_SIGCONT;
+                }
             }
         }
 

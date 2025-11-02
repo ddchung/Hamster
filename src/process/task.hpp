@@ -23,7 +23,7 @@ namespace Hamster
     {
         enum class Type
         {
-            EXIT,
+            EXIT, // Includes exiting, terminating, coredumping, etc.
             STOP,
             CONT,
         };
@@ -32,13 +32,15 @@ namespace Hamster
 
         Type type;
         uint32_t pid;
+        uint32_t pgid;
+        uint32_t uid;
 
         union
         {
             // EXIT
             uint32_t exit_code;
 
-            // STOP, CONT, TERM
+            // STOP, CONT
             uint8_t signo;
         };
         
@@ -263,6 +265,12 @@ namespace Hamster
          * @return A weak pointer to the task, or nullptr on error and set `error
          */
         static Task *get_task_pid(uint32_t pid);
+
+        /**
+         * @brief Get a pointer to the init process
+         * @warning Don't use this directly. Intended for use by Process.
+         */
+        static Process *get_init_process();
 
         /**
          * @brief Make this task exit

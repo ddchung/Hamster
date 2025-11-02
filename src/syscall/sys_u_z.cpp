@@ -96,5 +96,41 @@ namespace Hamster
 
         return total_written;
     }
+
+    int32_t sys_waitid(Task &task, int32_t idtype, int32_t id, uint32_t siginfo_loc, int32_t options, uint32_t rusage_loc)
+    {
+        task.block([](Task &task, uint64_t saved) {
+            int32_t idtype = saved;
+            int32_t id = task.get_emulator().x[11];
+            uint32_t siginfo_loc = task.get_emulator().x[12];
+            int32_t options = task.get_emulator().x[13];
+            uint32_t rusage_loc = task.get_emulator().x[14];
+
+            sys_siginfo siginfo = {};
+            int res = task.waitid(idtype, id, &siginfo, options);
+
+            // check if there was an error, or to continue blocking
+            if (res < 0 && !(error == H_EAGAIN && (options & H_WNOHANG)))
+            {
+                // block
+                if (error == H_EAGAIN)
+                    return;
+
+                // error!
+                task.get_emulator().x[10] = cvt_error();
+                task.end_block();
+                return;
+            }
+
+            task.get_emulator().x[10] = 0;
+            if (siginfo_loc && (task.copy_to_memory(siginfo_loc, siginfo) < 0
+                || task.memset(rusage_loc, 0, sizeof(sys_rusage)) < 0))
+                // failed to copy
+                task.get_emulator().x[10] = cvt_error();
+
+            task.end_block();
+        }, idtype);
+        return 0;
+    }
 } // namespace Hamster
 
