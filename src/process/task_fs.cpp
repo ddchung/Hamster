@@ -47,6 +47,43 @@ namespace Hamster
         return process->get_fs_info()->open_rel_fd(path, fd);
     }
 
+    int Task::open_rel_file(int thread_dfd, const char *path, int flags)
+    {
+        if ((flags & H_AT_EMPTY_PATH) && (!path || !path[0]))
+        {
+            // Operate on `thread_dfd`
+            BaseTaskFD *tfd = get_fd(thread_dfd);
+            if (!tfd)
+                return -1;
+            int vfs_fd = tfd->get_vfs_fd();
+            if (vfs_fd < 0)
+            {
+                error = H_EBADF;
+                return -1;
+            }
+            return vfs.dup(vfs_fd);
+        }
+        else
+        {
+            if (!path || !path[0])
+            {
+                error = H_EINVAL;
+                return -1;
+            }
+
+            // TODO: permission checking
+
+            int rel_fd = open_rel_fd(thread_dfd, path);
+            if (rel_fd < 0)
+                return -1;
+            
+            int file = vfs.openat(rel_fd, path, flags & ~(OPEN_CREAT | H_AT_EMPTY_PATH | 0x03));
+            vfs.close(rel_fd);
+
+            return file;
+        }
+    }
+
     BaseTaskFD *Task::get_fd(int fd) const
     {
         return fd_table->get_fd(fd);

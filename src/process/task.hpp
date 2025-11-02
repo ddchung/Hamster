@@ -289,6 +289,17 @@ namespace Hamster
         int open_rel_fd(int thread_dfd, const char *path);
 
         /**
+         * @brief Open a file, given a path, relative directory, and flags
+         * @param thread_dfd The userspace relative file descriptor
+         * @param path The path of the file. May be null if flags has AT_EMPTY_PATH
+         * @param flags Open flags, and AT_EMPTY_PATH, and `0x03` to check for executability
+         * @return A new VFS file descriptor to that file, or -1 on error and set `error`
+         * @note `flags` will be cleared of `OPEN_CREAT`
+         * @note Use the custom flag `0x03` to do permissions checking with X_OK too
+         */
+        int open_rel_file(int thread_dfd, const char *path, int flags);
+
+        /**
          * @brief Enter a blocking operation
          * @param callback The blocking callback, called every once in a while
          * @param saved Data to save information for the blocking operation callback
