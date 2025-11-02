@@ -223,7 +223,7 @@ namespace Hamster
         Task &operator=(const Task &) = delete;
         Task(Task &&) = delete;
         Task &operator=(Task &&) = delete;
-        ~Task();
+        ~Task() = default;
 
         using BlockingCallback = void (*)(Task &, uint64_t);
 

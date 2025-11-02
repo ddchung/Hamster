@@ -129,7 +129,8 @@ namespace Hamster
         // check for unsupported flags
 
         if (flags & ~(
-            H_CLONE_CHILD_CLEARTID
+            H_SIGCHLD
+          | H_CLONE_CHILD_CLEARTID
           | H_CLONE_CHILD_SETTID
           | H_CLONE_FILES
           | H_CLONE_FS
@@ -287,11 +288,6 @@ namespace Hamster
     const Set<Process *> &Task::get_children_processes() const
     {
         return process->get_children();
-    }
-
-    Task::~Task()
-    {
-        assert(flags & (KSCHED_REMOVE_NOW | KSCHED_REMOVE_ALL));
     }
 
     void Task::run()
