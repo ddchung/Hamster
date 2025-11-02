@@ -56,23 +56,17 @@ namespace Hamster
         return it->second;
     }
 
-    Process *Task::get_process(uint32_t pid)
+    Task *Task::get_task_pid(uint32_t pid)
     {
         // first, check task with same TID
         auto it = tasks.find(pid);
         if (it != tasks.end() && it->second->get_pid() == pid)
-        {
-            return &it->second->process.get();
-        }
+            return it->second;
 
         // next, search all tasks
         for (const auto &[tid, task] : tasks)
-        {
             if (task->get_pid() == pid)
-            {
-                return &task->process.get();
-            }
-        }
+                return task;
 
         // not found
         error = H_ESRCH;

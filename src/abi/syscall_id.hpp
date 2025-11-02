@@ -76,6 +76,8 @@ namespace Hamster
              */
             GETPPID = 173,//
 
+            // =======================
+
             /**
              * @brief Clone a task
              * This system call creates either a new process or a new thread, depending on the flags provided.

@@ -23,11 +23,11 @@ namespace Hamster
         if (pid == 0)
             pid = task.get_pid();
         
-        Process *proc = Task::get_process(pid);
-        if (!proc)
+        Task *t = Task::get_task_pid(pid);
+        if (!t)
             return cvt_error();
         
-        return proc->get_process_group()->get_pgid();
+        return t->get_pgid();
     }
 
     int32_t sys_getsid(Task &task, int32_t pid)
@@ -35,11 +35,11 @@ namespace Hamster
         if (pid == 0)
             pid = task.get_pid();
         
-        Process *proc = Task::get_process(pid);
-        if (!proc)
+        Task *t = Task::get_task_pid(pid);
+        if (!t)
             return cvt_error();
         
-        return proc->get_process_group()->get_session()->get_sid();
+        return t->get_sid();
     }
 
     int32_t sys_getppid(Task &task)

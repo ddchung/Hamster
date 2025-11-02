@@ -255,11 +255,11 @@ namespace Hamster
         static Task *get_task(uint32_t tid);
 
         /**
-         * @brief Get a process by PID
-         * @param pid The PID of the process to get
-         * @return A weak pointer to the process, or nullptr on error and set `error
+         * @brief Get a task by PID
+         * @param pid The PID of the task to get
+         * @return A weak pointer to the task, or nullptr on error and set `error
          */
-        static Process *get_process(uint32_t pid);
+        static Task *get_task_pid(uint32_t pid);
 
         /**
          * @brief Make this task exit
