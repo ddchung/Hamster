@@ -46,5 +46,37 @@ namespace Hamster
     {
         return task.get_ppid();
     }
+
+    int32_t sys_ioctl(Task &task, int32_t task_fd, int32_t op, uint32_t arg)
+    {
+        static uint8_t IOCTL_BUF[HAMSTER_MAX_IOCTL_SIZE];
+
+        BaseTaskFD *fd = task.get_fd(task_fd);
+        if (!fd)
+            return cvt_error();
+        
+        IoctlArg ioarg;
+        int res;
+        ioarg.i = arg;
+
+        error = 0;
+        
+        if ((arg % HAMSTER_PAGE_SIZE) > HAMSTER_PAGE_SIZE - HAMSTER_MAX_IOCTL_SIZE)
+        {
+            task.memcpy(IOCTL_BUF, arg, HAMSTER_MAX_IOCTL_SIZE);
+            ioarg.p = IOCTL_BUF;
+            res = fd->ioctl(op, ioarg);
+            task.memcpy(arg, IOCTL_BUF, HAMSTER_MAX_IOCTL_SIZE);
+        }
+        else
+        {
+            ioarg.p = task.mem_make_iterator(arg);
+            res = fd->ioctl(op, ioarg);
+        }
+
+        if (error)
+            return cvt_error();
+        return res;
+    }
 } // namespace Hamster
 

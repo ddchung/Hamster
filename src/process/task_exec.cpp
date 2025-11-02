@@ -144,9 +144,7 @@ namespace Hamster
 
         uint64_t sp = HAMSTER_STACK_TOP;
 
-        // map 8 MB stack
-        constexpr uint32_t stack_size = 8 * 1024 * 1024;
-        if (memory.map_anonymous(sp - stack_size, stack_size, PERM_READ | PERM_WRITE | PERM_EXEC) < 0)
+        if (memory.map_anonymous(sp - HAMSTER_STACK_SIZE, HAMSTER_STACK_SIZE, PERM_READ | PERM_WRITE | PERM_EXEC) < 0)
             return -1;
 
         // some zero padding

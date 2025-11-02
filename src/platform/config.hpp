@@ -3,7 +3,13 @@
 #pragma once
 
 // The stack top, leave some space above for reserved data
-#define HAMSTER_STACK_TOP (96 * 1024 * 1024)
+#define HAMSTER_STACK_TOP (120 * 1024 * 1024)
+
+// Stack size
+#define HAMSTER_STACK_SIZE (8 * 1024 * 1024)
+
+// ioctl pointer max structure size. Must be less than HAMSTER_PAGE_SIZE
+#define HAMSTER_MAX_IOCTL_SIZE 512
 
 // The length of each thread's time slice, in # of instructions
 #define HAMSTER_THREAD_TIME_SLICE 65536

@@ -8,9 +8,6 @@ namespace Hamster
 {
     namespace SyscallID
     {
-
-        // minor note: those postfixed with // after the number (e.g. `EXIT = 93,`) are
-        // actually implemented, while those without are not implemented yet and are just stubs
         enum ID : uint16_t
         {
             /**
@@ -18,79 +15,77 @@ namespace Hamster
              * This system call terminates the calling process.
              * @note Userspace sig: `void exit(int status);`
              */
-            EXIT = 93,//
+            EXIT = 93,////
 
             /**
              * @brief Get the PID of the calling process
              * This system call retrieves the process ID of the calling process.
              * @note Userspace sig: `pid_t getpid(void);`, `pid_t` = `int`
              */
-            GETPID = 172,//
+            GETPID = 172,////
 
             /**
              * @brief Get the Thread ID of the calling thread
              * This system call retrieves the thread ID of the calling thread.
              * @note Userspace sig: `pid_t gettid(void);`, `pid_t` = `int`
              */
-            GETTID = 178,//
+            GETTID = 178,////
 
             /**
              * @brief Set the PGID of a process
              * This system call sets the process group ID of the specified process.
              * @note Userspace sig: `int setpgid(pid_t pid, pid_t pgid);`
              */
-            SETPGID = 154,//
+            SETPGID = 154,////
 
             /**
              * @brief Get the PGID of a process
              * This system call retrieves the process group ID of the specified process.
              * @note Userspace sig: `pid_t getpgid(pid_t pid);`, `pid_t` = `int`
              */
-            GETPGID = 155,//
+            GETPGID = 155,////
 
             /**
              * @brief Get the SID of a process
              * This system call retrieves the session ID of the specified process.
              * @note Userspace sig: `pid_t getsid(pid_t pid);`, `pid_t` = `int`
              */
-            GETSID = 156,//
+            GETSID = 156,////
 
             /**
              * @brief Create a new session
              * This system call creates a new session and sets the calling process as the session leader.
              * @note Userspace sig: `pid_t setsid(void);`, `pid_t` = `int`
              */
-            SETSID = 157,//
+            SETSID = 157,////
 
             /**
              * @brief Voluntarily yield the CPU
              * This system call allows the calling process to yield the CPU, allowing other processes to run
              * @note Userspace sig: `void sched_yield(void);`
              */
-            SCHED_YIELD = 124,//
+            SCHED_YIELD = 124,////
 
             /**
              * @brief Get the PID of the parent process
              * This system call retrieves the process ID of the parent process of the calling process.
              * @note Userspace sig: `pid_t getppid(void);`, `pid_t` = `int`
              */
-            GETPPID = 173,//
+            GETPPID = 173,////
 
             /**
              * @brief Clone a task
              * This system call creates either a new process or a new thread, depending on the flags provided.
              * @note Userspace sig: `int clone(unsigned long flags, void *stack, int *ptid, unsigned long tls, int *ctid);`
              */
-            CLONE = 220,//
-
-            // =====================
+            CLONE = 220,////
 
             /**
              * @brief Replace the current process image with a new one
              * This system call replaces the current process image with a new program.
              * @note Userspace sig: `int execve(const char *filename, char *const argv[], char *const envp[]);`
              */
-            EXECVE = 221,//
+            EXECVE = 221,////
 
             /**
              * @brief Replace the current process image with a new one using file descriptor
@@ -98,7 +93,7 @@ namespace Hamster
              * to a directory file descriptor, instead of the CWD
              * @note Userspace sig: `int execveat(int dirfd, const char *filename, char *const argv[], char *const envp[], int flags);`
              */
-            EXECVEAT = 281,//
+            EXECVEAT = 281,////
 
             /**
              * @brief Wait for a child process to change state
@@ -106,7 +101,7 @@ namespace Hamster
              * changes state, such as exiting or stopping.
              * @note Userspace sig: `pid_t waitid(int which, pid_t pid, struct siginfo *infop, int options, struct rusage *ru);`, `pid_t` = `int`
              */
-            WAITID = 95,//
+            WAITID = 95,////
 
             /**
              * @brief Wait for a child process to change state
