@@ -92,6 +92,10 @@ namespace Hamster
         tasks.erase(tid);
 
         // TODO: traverse robust futex list
+        // TODO: clear_child_tid
+        
+        if (is_vfork && parent)
+            parent->interrupt_block();
 
         process->remove_task(this);
 

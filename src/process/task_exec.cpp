@@ -74,6 +74,8 @@ namespace Hamster
     int Task::exec(int fd, const char *const *argv, const char *const *envp)
     {
         close_cloexec_fds();
+        if (is_vfork && parent)
+            parent->interrupt_block();
         return process->exec(fd, this, argv, envp);
     }
 

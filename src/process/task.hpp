@@ -185,6 +185,7 @@ namespace Hamster
         Deque<ProcessStateChange> &get_state_changes() { return state_changes; }
         size_t num_tasks() const { return tasks.size(); }
         Task *get_leader() const { return leader; }
+        Process *get_parent() const { return parent; }
         void get_uid(int *uid, int *euid, int *suid) const;
         void get_gid(int *gid, int *egid, int *sgid) const;
         void set_uid(int uid = -1, int euid = -1, int suid = -1);
@@ -537,9 +538,9 @@ namespace Hamster
         uint64_t blocking_operation_saved = 0; // Optionally used by blocking operations
         BlockingCallback interrupt_blocking = nullptr; // Called when signal recieved while blocking
         uint32_t tid;
-        Task *parent = nullptr;
-        sys_sigaltstack alt_signal_stack;
-        sys_ucontext signal_saved_state;
+        Task *parent = nullptr; // may be null
+        sys_sigaltstack alt_signal_stack = {};
+        sys_ucontext signal_saved_state = {};
         uint32_t clear_child_tid = 0;
         uint32_t robust_list = 0;
         bool is_paused : 1 = false;

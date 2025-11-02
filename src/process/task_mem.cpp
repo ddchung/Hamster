@@ -104,6 +104,8 @@ namespace Hamster
     int Task::munmap_all()
     {
         emulator.flush_caches();
+        if (is_vfork && parent)
+            parent->interrupt_block();
         return memory->ms.unmap_all();
     }
 
