@@ -78,5 +78,59 @@ namespace Hamster
             return cvt_error();
         return res;
     }
+
+    int32_t sys_getuid(Task &task)
+    {
+        int uid;
+        task.get_uid(&uid);
+        return uid;
+    }
+
+    int32_t sys_geteuid(Task &task)
+    {
+        int euid;
+        task.get_uid(nullptr, &euid);
+        return euid;
+    }
+
+    int32_t sys_getresuid(Task &task, uint32_t ruid_loc, uint32_t euid_loc, uint32_t suid_loc)
+    {
+        int uid, euid, suid;
+        task.get_uid(&uid, &euid, &suid);
+        if ((ruid_loc && task.copy_to_memory(ruid_loc, uid) < 0)
+         || (euid_loc && task.copy_to_memory(euid_loc, euid) < 0)
+         || (suid_loc && task.copy_to_memory(suid_loc, suid) < 0))
+        {
+            return cvt_error();
+        }
+        return 0;
+    }
+
+    int32_t sys_getgid(Task &task)
+    {
+        int gid;
+        task.get_gid(&gid);
+        return gid;
+    }
+
+    int32_t sys_getegid(Task &task)
+    {
+        int egid;
+        task.get_gid(nullptr, &egid);
+        return egid;
+    }
+
+    int32_t sys_getresgid(Task &task, uint32_t rgid_loc, uint32_t egid_loc, uint32_t sgid_loc)
+    {
+        int gid, egid, sgid;
+        task.get_gid(&gid, &egid, &sgid);
+        if ((rgid_loc && task.copy_to_memory(rgid_loc, gid) < 0)
+         || (egid_loc && task.copy_to_memory(egid_loc, egid) < 0)
+         || (sgid_loc && task.copy_to_memory(sgid_loc, sgid) < 0))
+        {
+            return cvt_error();
+        }
+        return 0;
+    }
 } // namespace Hamster
 
