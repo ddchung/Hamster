@@ -55,6 +55,29 @@ namespace Hamster
 
         return it->second;
     }
+
+    Process *Task::get_process(uint32_t pid)
+    {
+        // first, check task with same TID
+        auto it = tasks.find(pid);
+        if (it != tasks.end() && it->second->get_pid() == pid)
+        {
+            return &it->second->process.get();
+        }
+
+        // next, search all tasks
+        for (const auto &[tid, task] : tasks)
+        {
+            if (task->get_pid() == pid)
+            {
+                return &task->process.get();
+            }
+        }
+
+        // not found
+        error = H_ESRCH;
+        return nullptr;
+    }
     
     int Task::exit(uint16_t code)
     {
@@ -297,6 +320,10 @@ namespace Hamster
         robust_list = head;
     }
 
+    int Task::set_pgid(uint32_t pgid)
+    {
+        return process->set_pgid(pgid);
+    }
     int Task::memcpy(uint32_t dest, const void *src, uint32_t n)
     {
         return memory->ms.memcpy(dest, src, n);
@@ -464,9 +491,39 @@ namespace Hamster
         return process->get_pid();
     }
 
+    uint32_t Task::get_ppid() const
+    {
+        return process->get_ppid();
+    }
+
+    uint32_t Task::get_pgid() const
+    {
+        return process->get_process_group()->get_pgid();
+    }
+
+    uint32_t Task::get_sid() const
+    {
+        return process->get_process_group()->get_session()->get_sid();
+    }
+
     int Task::set_groups(const Vector<int> &groups)
     {
         return process->set_groups(groups);
+    }
+
+    const Set<Task *> &Task::get_process_tasks() const
+    {
+        return process->get_tasks();
+    }
+
+    const Set<Process *> &Task::get_children_processes() const
+    {
+        return process->get_children();
+    }
+
+    int Task::setsid()
+    {
+        return process->setsid();
     }
 
     Task::~Task()
@@ -560,6 +617,11 @@ namespace Hamster
         this->session->add_process_group(this);
     }
 
+    const SharedPtr<ProcessGroup> &ProcessGroup::get_shared_ptr() const
+    {
+        return (*processes.begin())->get_process_group();
+    }
+
     ProcessGroup::~ProcessGroup()
     {
         session->remove_process_group(this);
@@ -585,6 +647,47 @@ namespace Hamster
         tasks.emplace(leader);
 
         this->pgroup->add_process(this);
+    }
+
+    int Process::set_pgid(uint32_t pgid)
+    {
+        if (pgid == 0)
+            pgid = pid;
+
+        const auto &pgroups = pgroup->get_session()->get_process_groups();
+
+        for (ProcessGroup *pg : pgroups)
+        {
+            if (pg->get_pgid() == pgid)
+            {
+                // Found existing process group
+                pgroup->remove_process(this);
+                pgroup.assign(pg->get_shared_ptr(), SharedPtrCopyType::SHALLOW);
+                pgroup->add_process(this);
+                return 0;
+            }
+        }
+
+        // not found
+        error = H_EPERM;
+        return -1;
+    }
+
+    int Process::setsid()
+    {
+        if (pgroup->get_pgid() == pid)
+        {
+            // already a pgroup leader
+            error = H_EPERM;
+            return -1;
+        }
+
+        // make new process group with new session
+        pgroup->remove_process(this);
+        pgroup.construct(pid);
+        pgroup->add_process(this);
+
+        return 0;
     }
 
     void Process::get_uid(int *uid, int *euid, int *suid) const

@@ -96,5 +96,51 @@ namespace Hamster
 
         return total_read;
     }
+
+    int32_t sys_setpgid(Task &task, int32_t pid, int32_t pgid)
+    {
+        if (pid == 0)
+            pid = task.get_pid();
+        
+        if ((uint32_t)pid == task.get_pid())
+        {
+            int res = task.set_pgid(pgid);
+            if (res < 0)
+                return cvt_error();
+            return 0;
+        }
+        else
+        {
+            // Find the child process with the given PID
+            const Set<Process *> &children = task.get_children_processes();
+            for (Process *child : children)
+            {
+                if (child->get_pid() == (uint32_t)pid)
+                {
+                    int res = child->set_pgid(pgid);
+                    if (res < 0)
+                        return cvt_error();
+                    return 0;
+                }
+            }
+
+            // not found
+            return -H_ESRCH;
+        }
+    }
+
+    int32_t sys_setsid(Task &task)
+    {
+        int res = task.setsid();
+        if (res < 0)
+            return cvt_error();
+        return task.get_sid();
+    }
+
+    int32_t sys_sched_yield(Task &task)
+    {
+        // no-op for now
+        return 0;
+    }
 } // namespace Hamster
 

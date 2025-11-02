@@ -106,6 +106,9 @@ namespace Hamster
 
         const SharedPtr<Session> &get_session() const { return session; }
 
+        // There must be at least one process in the group
+        const SharedPtr<ProcessGroup> &get_shared_ptr() const;
+
     private:
         SharedPtr<Session> session;
         Set<class Process *> processes; // weak pointers
@@ -126,8 +129,6 @@ namespace Hamster
         Process &operator=(const Process &) = delete;
         Process(Process &&) = delete;
         Process &operator=(Process &&) = delete;
-
-        uint32_t get_pid() const { return pid; }
 
         /**
          * @brief Add a thread to the process
@@ -160,6 +161,23 @@ namespace Hamster
          */
         int exit(uint16_t code);
 
+        /**
+         * @brief Set the process group ID
+         * @param pgid The new process group ID. If 0, set to the process's PID
+         * @return 0 on success, -1 on error
+         * @note If `pgid != 0`, the process group must already exist in the same session
+         */
+        int set_pgid(uint32_t pgid);
+
+        /**
+         * @brief Make and join a new session
+         * @return 0 on success, -1 on error
+         * @note The calling process must not already be a process group leader
+         */
+        int setsid();
+
+        uint32_t get_pid() const { return pid; }
+        uint32_t get_ppid() const { return parent ? parent->pid : 0; }
         const SharedPtr<ProcessGroup> &get_process_group() const { return pgroup; }
         const SharedPtr<TaskSignalHandlers> &get_signal_handlers() const { return signal_handlers; }
         const SharedPtr<TaskFSInfo> &get_fs_info() const { return fs_info; }
@@ -173,6 +191,8 @@ namespace Hamster
         void set_gid(int gid = -1, int egid = -1, int sgid = -1);
         const Vector<int> &get_groups() const { return groups; }
         int set_groups(const Vector<int> &groups);
+        const Set<Task *> &get_tasks() const { return tasks; }
+        const Set<Process *> &get_children() const { return children; }
 
     private:
         SharedPtr<ProcessGroup> pgroup;
@@ -233,6 +253,13 @@ namespace Hamster
          * @return A weak pointer to the task, or nullptr on error and set `error`
          */
         static Task *get_task(uint32_t tid);
+
+        /**
+         * @brief Get a process by PID
+         * @param pid The PID of the process to get
+         * @return A weak pointer to the process, or nullptr on error and set `error
+         */
+        static Process *get_process(uint32_t pid);
 
         /**
          * @brief Make this task exit
@@ -368,6 +395,14 @@ namespace Hamster
         void set_robust_list(uint32_t head);
 
         /**
+         * @brief Set the process group ID
+         * @param pgid The new process group ID. 0 to set it to the PID
+         * @return 0 on success, -1 on error
+         * @note If pgid != 0, then it must specify an existing process group in the same session
+         */
+        int set_pgid(uint32_t pgid);
+
+        /**
          * @brief Register a signal handler
          * @param signo The signal number
          * @param handler The location of the userspace handler, or H_SIG_DFL/H_SIG_IGN
@@ -464,12 +499,18 @@ namespace Hamster
 
         bool is_leader() const;
         uint32_t get_pid() const;
+        uint32_t get_ppid() const;
+        uint32_t get_pgid() const;
+        uint32_t get_sid() const;
         void get_uid(int *uid = nullptr, int *euid = nullptr, int *suid = nullptr) const;
         void get_gid(int *gid = nullptr, int *egid = nullptr, int *sgid = nullptr) const;
         const Vector<int> &get_groups() const;
         void set_uid(int uid = -1, int euid = -1, int suid = -1);
         void set_gid(int gid = -1, int egid = -1, int sgid = -1);
         int set_groups(const Vector<int> &groups);
+        const Set<Task *> &get_process_tasks() const;
+        const Set<Process *> &get_children_processes() const;
+        int setsid();
 
         RiscVEmulator &get_emulator() { return emulator; }
         uint32_t get_tid() const { return tid; }
