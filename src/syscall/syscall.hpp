@@ -26,7 +26,7 @@ namespace Hamster
     int32_t sys_sched_yield(Task &task);
     int32_t sys_getppid(Task &task);
     int32_t sys_clone(Task &task, uint32_t flags, uint32_t stack_loc, uint32_t ptid_loc,
-                      uint32_t ctid_loc, uint32_t newtls);
+                      uint32_t tls, uint32_t ctid_loc);
     int32_t sys_execve(Task &task, uint32_t filename_loc, uint32_t argv_loc,
                        uint32_t envp_loc);
     int32_t sys_execveat(Task &task, int32_t dirfd, uint32_t filename_loc,

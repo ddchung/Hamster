@@ -105,6 +105,125 @@ namespace Hamster
         return 0;
     }
 
+    Task *Task::clone(uint32_t flags, uint32_t stack, uint32_t ptid_loc, uint32_t tls, uint32_t ctid_loc)
+    {
+        // validate arguments
+
+        if (((flags & H_CLONE_SIGHAND) && !(flags & H_CLONE_VM))
+         || ((flags & H_CLONE_THREAD) != (flags & H_CLONE_SIGHAND)) // Note: in Hamster, if you have one you must have both.
+         || ((flags & H_CLONE_FS) && (flags & H_CLONE_NEWNS))
+         || ((flags & H_CLONE_NEWUSER) && (flags & H_CLONE_FS))
+         || ((flags & H_CLONE_NEWIPC) && (flags & H_CLONE_SYSVSEM))
+         || ((flags & H_CLONE_NEWPID) && (flags & (H_CLONE_THREAD | H_CLONE_PARENT)))
+         || ((flags & H_CLONE_NEWUSER) && (flags & H_CLONE_THREAD))
+         || ((flags & H_CLONE_PARENT) && (getpid() == 1))
+         || ((stack % 16))
+         || ((flags & H_CLONE_PIDFD) && (flags & H_CLONE_DETACHED))
+         || ((flags & H_CLONE_PIDFD) && (flags & H_CLONE_THREAD))
+         || ((flags & H_CLONE_PIDFD) && (flags & H_CLONE_PARENT_SETTID)))
+        {
+            error = H_EINVAL;
+            return nullptr;
+        }
+
+        // check for unsupported flags
+
+        if (flags & ~(
+            H_CLONE_CHILD_CLEARTID
+          | H_CLONE_CHILD_SETTID
+          | H_CLONE_FILES
+          | H_CLONE_FS
+          | H_CLONE_PARENT
+          | H_CLONE_PARENT_SETTID
+          | H_CLONE_SETTLS
+          | H_CLONE_SIGHAND
+          | H_CLONE_THREAD
+          | H_CLONE_VFORK
+          | H_CLONE_VM))
+        {
+            error = H_EINVAL;
+            return nullptr;
+        }
+
+        // allocate TID
+
+        uint32_t tid = next_tid++;
+
+        Task *new_task = alloc<Task>();
+
+        using enum SharedPtrCopyType;
+
+        new_task->memory.assign(memory, flags & H_CLONE_VM ? SHALLOW : DEEP);
+        new_task->fd_table.assign(fd_table, flags & H_CLONE_FILES ? SHALLOW : DEEP);
+        new_task->signal_mask = signal_mask;
+        new_task->emulator = emulator;
+        new_task->emulator.memory = &new_task->memory->ms;
+        new_task->emulator.flush_caches();
+        new_task->tid = tid;
+        new_task->parent = this;
+        new_task->signal_saved_state = signal_saved_state;
+        if (flags & H_CLONE_CHILD_CLEARTID)
+            new_task->set_tid_address(ctid_loc);
+        if (flags & H_CLONE_VFORK)
+        {
+            // Block "forever", until interrupted by child
+            block([](Task &, uint64_t){}, 0, [](Task &, uint64_t){});
+            new_task->is_vfork = true;
+        }
+        new_task->is_handling_signal = is_handling_signal;
+
+        if ((flags & H_CLONE_VM) && !(flags & H_CLONE_VFORK))
+            new_task->alt_signal_stack = {};
+        else
+            new_task->alt_signal_stack = alt_signal_stack;
+        
+        // initialize new task's process
+        // Note that this also initializes the signal handlers,
+        // since CLONE_THREAD requires CLONE_SIGHAND and vice versa.
+        if (flags & H_CLONE_THREAD)
+            new_task->process.assign(process, SHALLOW);
+        else
+        {
+            SharedPtr<TaskFSInfo, size_t> fs_info;
+            int uid, euid, suid;
+            int gid, egid, sgid;
+
+            fs_info.assign(process->get_fs_info(), flags & H_CLONE_FS ? SHALLOW : DEEP);
+            process->get_uid(&uid, &euid, &suid);
+            process->get_gid(&gid, &egid, &sgid);
+
+            new_task->process.construct(tid, new_task, process->get_process_group(), process->get_signal_handlers(),
+                                        fs_info, flags & H_CLONE_PARENT ? process->get_parent() : &this->process.get(),
+                                        uid, euid, suid, gid, egid, sgid, process->get_groups());
+        }
+
+        // Store the TID if needed
+        if (((flags & H_CLONE_CHILD_SETTID) && new_task->copy_to_memory(ctid_loc, tid) != 0)
+         || ((flags & H_CLONE_PARENT_SETTID) && copy_to_memory(ptid_loc, tid) != 0))
+        {
+            dealloc(new_task);
+            error = H_EFAULT;
+            return nullptr;
+        }
+
+        // Set thread pointer (tp == x4)
+        if (flags & H_CLONE_SETTLS)
+            new_task->get_emulator().x[4] = tls;
+        
+        // Set stack if specified
+        if (stack != 0)
+            new_task->get_emulator().x[2] = stack;
+        
+        // Set return value to 0 in new task
+        new_task->get_emulator().x[10] = 0;
+
+        assert(tasks.find(tid) == tasks.end());
+        tasks[tid] = new_task;
+        new_task->add_to_scheduler();
+
+        return new_task;
+    }
+
     int Task::exit_group(uint16_t code)
     {
         return process->exit(code);

@@ -233,10 +233,12 @@ namespace Hamster
         /**
          * @brief Make a new task, from this one
          * @param flags Flags controlling which parts to share and which ones to copy
-         * @return The new task, or nullptr on error and set `error`
-         * @note See documentation on the `clone` Linux system call for more info
+         * @param stack, ptid_loc, tls, ctid_loc See Linux `clone` syscall docs
+         * @return A weak pointer to new task, or nullptr on error and set `error`
+         * @note See documentation on the `clone` Linux system call for more info. Note that
+         *       this is *NOT* the glibc wrapper that accepts a function, but the raw system call.
          */
-        Task *clone(int flags);
+        Task *clone(uint32_t flags, uint32_t stack, uint32_t ptid_loc, uint32_t tls, uint32_t ctid_loc);
 
         /**
          * @brief Make an entirely new task

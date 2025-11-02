@@ -76,14 +76,14 @@ namespace Hamster
              */
             GETPPID = 173,//
 
-            // =======================
-
             /**
              * @brief Clone a task
              * This system call creates either a new process or a new thread, depending on the flags provided.
-             * @note Userspace sig: `int clone(unsigned long flags, void *stack, int *ptid, int *ctid, unsigned long newtls);`
+             * @note Userspace sig: `int clone(unsigned long flags, void *stack, int *ptid, unsigned long tls, int *ctid);`
              */
             CLONE = 220,//
+
+            // =====================
 
             /**
              * @brief Replace the current process image with a new one

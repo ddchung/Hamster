@@ -30,5 +30,13 @@ namespace Hamster
             return cvt_error();
         return 0;
     }
+
+    int32_t sys_clone(Task &task, uint32_t flags, uint32_t stack_loc, uint32_t ptid_loc, uint32_t tls, uint32_t ctid_loc)
+    {
+        Task *new_task = task.clone(flags, stack_loc, ptid_loc, tls, ctid_loc);
+        if (!new_task)
+            return cvt_error();
+        return new_task->get_tid();
+    }
 } // namespace Hamster
 
