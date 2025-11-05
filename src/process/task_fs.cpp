@@ -89,6 +89,14 @@ namespace Hamster
         return fd_table->get_fd(fd);
     }
 
+    int Task::get_vfs_fd(int task_fd)
+    {
+        BaseTaskFD *fd = get_fd(task_fd);
+        if (!fd)
+            return -1;
+        return fd->get_vfs_fd();
+    }
+
     int Task::close_fd(int fd)
     {
         return fd_table->close(fd);

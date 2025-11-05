@@ -41,5 +41,13 @@ namespace Hamster
             return cvt_error();
         return task_fd;
     }
+
+    int32_t sys_mmap2(Task &task, uint32_t addr, uint32_t length, uint32_t prot, uint32_t flags, int32_t fd, uint32_t offset)
+    {
+        uint32_t res = task.mmap(addr, length, prot, flags, fd, offset);
+        if (res == UINT32_MAX)
+            return cvt_error();
+        return res;
+    }
 } // namespace Hamster
 

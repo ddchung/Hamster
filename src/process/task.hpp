@@ -383,10 +383,17 @@ namespace Hamster
          * @param perms The permissions for the region, composed by bitwise-ORing `PERM_*` flags
          * @param flags The mmap flags, controlling the type of mapping
          * @param fd The VFS file descriptor to back the mapping. -1 for anonymous
-         * @param offset The backing file offset
+         * @param offset The backing file offset. **SPECIFIED IN MULIPLES OF 4096**
          * @return The mapped address, or UINT32_MAX on error and set `error`
          */
         uint32_t mmap(uint32_t addr, uint32_t size, uint8_t perms, int flags, int fd = -1, uint32_t offset = 0);
+
+        /**
+         * @brief Get a VFS file descriptor from a user FD
+         * @param task_fd the userspace fd slot
+         * @return The VFS file descriptor, or -1 on error and set `error`
+         */
+        int get_vfs_fd(int task_fd);
 
         /**
          * @brief Set the program break
