@@ -184,28 +184,28 @@ namespace Hamster
              * @note Userspace sig: `int openat(int dfd, const char *pathname, int flags, mode_t mode);`, `mode_t` = `unsigned int`
              * @note The `mode_t` is used only if `flags` includes `OPEN_CREAT`
              */
-            OPENAT = 56,//
+            OPENAT = 56,////
 
             /**
              * @brief Read from a file descriptor
              * This system call reads data from a file descriptor into a buffer.
              * @note Userspace sig: `ssize_t read(int fd, void *buf, size_t count);`, `ssize_t` = `long`
              */
-            READ = 63,//
+            READ = 63,////
 
             /**
              * @brief Write to a file descriptor
              * This system call writes data from a buffer to a file descriptor.
              * @note Userspace sig: `ssize_t write(int fd, const void *buf, size_t count);`, `ssize_t` = `long`
              */
-            WRITE = 64,//
+            WRITE = 64,////
 
             /**
              * @brief Close a file descriptor
              * This system call closes a file descriptor, releasing any resources associated with it.
              * @note Userspace sig: `int close(int fd);`
              */
-            CLOSE = 57,//
+            CLOSE = 57,////
 
             /**
              * @brief Copy data from one file descriptor to another
@@ -425,7 +425,7 @@ namespace Hamster
              * This system call maps a file or device into memory, allowing it to be accessed as if it were part of the process's address space.
              * @note Userspace sig: `void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);`
              */
-            MMAP2 = 222,//
+            MMAP2 = 222,////
 
             /**
              * @brief Remap a memory region
@@ -474,39 +474,39 @@ namespace Hamster
              * @brief Get the user ID of the calling process
              * @note Userspace sig: `uid_t getuid(void);`, `uid_t` = `unsigned int`
              */
-            GETUID = 174,//
+            GETUID = 174,////
 
             /**
              * @brief Get effective user ID of the calling process
              * @note Userspace sig: `uid_t geteuid(void);`, `uid_t` = `unsigned int`
              */
-            GETEUID = 175,//
+            GETEUID = 175,////
 
             /**
              * @brief Get the real, effective, and saved set user IDs of the calling process
              * This system call retrieves the real, effective, and saved set user IDs of the calling process.
              * @note Userspace sig: `int getresuid(uid_t *ruid, uid_t *euid, uid_t *suid);`, `uid_t`
              */
-            GETRESUID = 148,//
+            GETRESUID = 148,////
 
             /**
              * @brief Get the group ID of the calling process
              * @note Userspace sig: `gid_t getgid(void);`, `gid_t` = `unsigned int`
              */
-            GETGID = 176,//
+            GETGID = 176,////
 
             /**
              * @brief Get effective group ID of the calling process
              * @note Userspace sig: `gid_t getegid(void);`, `gid_t` = `unsigned int`
              */
-            GETEGID = 177,//
+            GETEGID = 177,////
 
             /**
              * @brief Get the real, effective, and saved set group IDs of the calling process
              * This system call retrieves the real, effective, and saved set group IDs of the calling process.
              * @note Userspace sig: `int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid);`, `gid_t` = `unsigned int`
              */
-            GETRESGID = 150,//
+            GETRESGID = 150,////
 
             /**
              * @brief Get the supplementary group IDs of the calling process
@@ -526,7 +526,7 @@ namespace Hamster
              * ioctl.
              * @note Userspace sig: `int ioctl(int fd, int request, ...);`
              */
-            IOCTL = 29,//
+            IOCTL = 29,////
 
             /**
              * @brief Perform an operation on a file descriptor
@@ -548,7 +548,7 @@ namespace Hamster
              * @brief End all threads in the calling process
              * @note Userspace sig: `void exit_group(int status);`
              */
-            EXIT_GROUP = 94,//
+            EXIT_GROUP = 94,////
 
             /**
              * @brief Set a signal handler for a specific signal
