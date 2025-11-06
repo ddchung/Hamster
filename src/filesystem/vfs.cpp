@@ -1379,10 +1379,7 @@ namespace Hamster
             return -1;
         
         if (file->type() != FileType::Special)
-        {
-            error = H_ENOTTY;
-            return -1;
-        }
+            return 1; // Always allow reading from non-special files
 
         auto handle = get_special_handle((BaseSpecialFile *)file);
         if (!handle)
