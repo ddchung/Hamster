@@ -338,6 +338,39 @@ namespace Hamster
         return 0;
     }
 
+    int Task::block(int (*callback)(Task &, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t))
+    {
+        if (!callback)
+        {
+            error = H_EINVAL;
+            return -1;
+        }
+
+        if (is_blocking())
+        {
+            error = H_EAGAIN;
+            return -1;
+        }
+
+        blocking_operation_alt = callback;
+        
+        return block([](Task &task, uint64_t saved){
+            uint32_t *x = task.emulator.x;
+            int res = task.blocking_operation_alt(task, saved, x[11], x[12], x[13], x[14], x[15]);
+            if (res == -1)
+            {
+                if (error == H_EAGAIN)
+                    return;
+                res = cvt_error();
+            }
+
+            x[10] = res;
+            task.end_block();
+            task.blocking_operation_alt = nullptr;
+        }, emulator.x[10]); // save a0 because if this function is called from a 
+        //                     system call, a0 will be overwritten by the call's return value
+    }
+
     int Task::interrupt_block()
     {
         if (!is_blocking())

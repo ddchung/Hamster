@@ -318,6 +318,16 @@ namespace Hamster
         int block(BlockingCallback callback, uint64_t saved, BlockingCallback interrupt_callback = nullptr);
 
         /**
+         * @brief Enter a blocking operation
+         * @param callback The blocking callback. Called with registers from a0-a5
+         *      * and continues blocking if it errors with EAGAIN and returns -1
+         * @return 0 on success, -1 on error
+         * @note This will set the `a0` register to the return value of callback once completed, and if it is
+         *       -1, then it will set it to an error code instead
+         */
+        int block(int (*callback)(Task &, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t));
+
+        /**
          * @brief Interrupt the blocking operation
          * @return 0 on success, -1 on error
          */
@@ -563,6 +573,7 @@ namespace Hamster
         TaskSignalMask signal_mask;
         RiscVEmulator emulator;
         BlockingCallback blocking_operation = nullptr;
+        int (*blocking_operation_alt)(Task &, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); // Used by other overload of `block`
         uint64_t blocking_operation_saved = 0; // Optionally used by blocking operations
         BlockingCallback interrupt_blocking = nullptr; // Called when signal recieved while blocking
         uint32_t tid;

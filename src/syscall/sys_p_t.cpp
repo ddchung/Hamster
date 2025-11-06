@@ -10,91 +10,35 @@ namespace Hamster
 {
     int32_t sys_read(Task &task, int32_t fd, uint32_t buf_loc, uint32_t count)
     {
-        BaseTaskFD *user_fd = task.get_fd(fd);
-        if (!user_fd)
-            return cvt_error();
+        task.block([](Task &task, uint32_t task_fd, uint32_t buf_loc, uint32_t count, uint32_t, uint32_t, uint32_t) -> int {
+            BaseTaskFD *fd = task.get_fd(task_fd);
+            if (!fd)
+                return -1;
 
-        int fd_flags = user_fd->get_flags();
-
-        // Copy as many times as needed
-
-        size_t total_read = 0;
-
-        while (count > 0)
-        {
-            // Read at most to the end of the page
-            uint32_t location = buf_loc + total_read;
-            size_t to_read = std::min(count, HAMSTER_PAGE_SIZE - ((location) % HAMSTER_PAGE_SIZE));
-            uint8_t *mem = (uint8_t *)task.mem_make_iterator(location);
-            if (!mem)
+            // Check if it is readable
+            switch (fd->poll(0x1)) // 0x1 READ
             {
-                if (total_read > 0)
-                    return total_read;
-                return cvt_error();
-            }
-
-            ssize_t bytes_read = user_fd->read(mem, to_read);
-
-            if (bytes_read < 0)
-            {
-                if (total_read > 0)
-                {
-                    // Return the total bytes read so far
-                    return total_read;
-                }
-
-                if (error == H_EAGAIN)
-                {
-                    // Blocking read, block only if O_NONBLOCK isn't set and we aren't already
-                    // blocking
-                    if ((fd_flags & OPEN_NONBLOCK) == 0 && !task.is_blocking())
-                    {
-                        task.block([](Task &task, uint64_t saved) {
-                            int32_t blocking_fd = saved;
-
-                            BaseTaskFD *task_fd = task.get_fd(blocking_fd);
-                            int res;
-
-                            if (!task_fd)
-                                res = -1;
-                            else
-                                res = task_fd->poll(0x1); // READ
-
-                            if (res == 0)
-                                return; // not ready
-                            else if (res == 1)
-                            {
-                                task.get_emulator().x[10];
-                                task.get_emulator().x[10] = syscall(task, sys_read);
-                                if ((int32_t)task.get_emulator().x[10] == -H_EAGAIN)
-                                    return;
-                            }
-                            else
-                            {
-                                // error
-                                task.get_emulator().x[10] = res;
-                            }
-
-
-                            task.end_block();
-                        }, fd);
-
-                        return 0;
-                    }
-
-                    return -H_EAGAIN;
-                }
-                return cvt_error(); // Return error if it isn't EAGAIN
-            }
-
-            if (bytes_read == 0)
+            case 0:
+                error = H_EAGAIN;
+                return -1;
+            case 1:
                 break;
+            default:
+                return -1;
+            }
 
-            total_read += bytes_read;
-            count -= bytes_read;
-        }
+            // Read up to end of VM page
 
-        return total_read;
+            uint32_t to_read = std::min(count, HAMSTER_PAGE_SIZE - (buf_loc % HAMSTER_PAGE_SIZE));
+
+            void *it = task.mem_make_iterator(buf_loc);
+            if (!it)
+                return -1;
+            
+            return fd->read(it, to_read);
+        });
+
+        return 0;
     }
 
     int32_t sys_setpgid(Task &task, int32_t pid, int32_t pgid)
