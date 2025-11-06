@@ -465,7 +465,7 @@ namespace Hamster
 
         /**
          * @brief Check whether the special file is ready for reading or writing.
-         * @param op The operation to check for, a bitmask of `0x1` for read and `0x2` for write
+         * @param op The operation to check for, a bitmask of `POLL_READ` and `POLL_WRITE`
          * @return 1 if ready, 0 if not ready, -1 on error and set `error`
          */
         virtual int poll(int op) { return 1; }

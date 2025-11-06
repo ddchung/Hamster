@@ -8,6 +8,9 @@ namespace Hamster
 {
     class VFSData;
 
+    inline constexpr int POLL_READ = 1;
+    inline constexpr int POLL_WRITE = 2;
+
     class VFS
     {
     public:
@@ -532,7 +535,7 @@ namespace Hamster
         /**
          * @brief Check if a file is ready for reading or writing
          * @param fd The file descriptor of the file to check
-         * @param op The operation to check for, a bitmask of `0x1` for read and `0x2` for write
+         * @param op The operation to check for, a bitmask of `POLL_READ` and `POLL_WRITE`
          * @return 1 if ready, 0 if not ready, -1 on error and set `error`
          */
         int poll(int fd, int op);

@@ -16,7 +16,7 @@ namespace Hamster
                 return -1;
 
             // Check if it is readable
-            switch (fd->poll(0x1)) // 0x1 READ
+            switch (fd->poll(POLL_READ))
             {
             case 0:
                 error = H_EAGAIN;

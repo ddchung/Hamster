@@ -232,7 +232,7 @@ namespace Hamster
             switch (data[i])
             {
             case '1':
-            case 0x1:
+            case POLL_READ:
                 digitalWrite(LED_BUILTIN, HIGH);
                 break;
             case '0':
@@ -272,7 +272,7 @@ namespace Hamster
     template <>
     ssize_t CharacterDeviceImpl<TeensySpeakerDevice>::poll(int op)
     {
-        if (op & 0x2) // write
+        if (op & POLL_WRITE) // write
         {
             if (speaker_buffer.size() >= speaker_buffer.max_size())
                 return 0; // not ready
@@ -311,13 +311,13 @@ namespace Hamster
     template <>
     ssize_t CharacterDeviceImpl<TeensySerialDevice>::poll(int op)
     {
-        if (op & 0x1)
+        if (op & POLL_READ)
         {
             // read
             if (SerialUSB1.available() == 0)
                 return 0;
         }
-        if (op & 0x2)
+        if (op & POLL_WRITE)
         {
             // write
             if (SerialUSB1.availableForWrite() == 0)

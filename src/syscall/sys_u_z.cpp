@@ -16,7 +16,7 @@ namespace Hamster
                 return -1;
 
             // Check if file is writable
-            switch (fd->poll(0x2)) // 0x2 WRITE
+            switch (fd->poll(POLL_WRITE))
             {
             case 0:
                 error = H_EAGAIN;

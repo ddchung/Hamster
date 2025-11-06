@@ -498,7 +498,7 @@ namespace Hamster
     template <typename Backend>
     int BaseTTYHandle<Backend>::poll(int op)
     {
-        if (op & 0x1) // Read
+        if (op & POLL_READ)
         {
             if (driver->termios.lflag & H_ICANON)
             {
@@ -524,7 +524,7 @@ namespace Hamster
                 }
             }
         }
-        if (op & 0x2) // Write
+        if (op & POLL_WRITE)
         {
             // Check if we can write
             if (driver->output_stopped && (driver->termios.iflag & H_IXON))
