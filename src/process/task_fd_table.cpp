@@ -15,7 +15,7 @@ namespace Hamster
 
     BaseTaskFD *TaskFDTable::get_fd(int fd) const
     {
-        if (fd >= (int)fd_table.size())
+        if (fd < 0 || fd >= (int)fd_table.size())
         {
             error = H_EBADF;
             return nullptr;
@@ -35,7 +35,7 @@ namespace Hamster
 
     int TaskFDTable::close(int fd)
     {
-        if (fd >= (int)fd_table.size())
+        if (fd < 0 || fd >= (int)fd_table.size())
         {
             error = H_EBADF;
             return -1;
@@ -62,7 +62,7 @@ namespace Hamster
                 return -1;
         }
 
-        if (fd >= (int)fd_table.size())
+        if (fd < 0 || fd >= (int)fd_table.size())
         {
             error = H_EBADF;
             return -1;
@@ -74,7 +74,7 @@ namespace Hamster
 
     int TaskFDTable::dup(int fd, int new_fd)
     {
-        if (fd >= (int)fd_table.size() || new_fd >= (int)fd_table.size())
+        if (fd < 0 || new_fd < 0 || fd >= (int)fd_table.size() || new_fd >= (int)fd_table.size())
         {
             error = H_EBADF;
             return -1;
@@ -95,7 +95,7 @@ namespace Hamster
     {
         // note: > and not >= because if `start` == `fd_table.size()`, we
         //      allocate a slot at the end of the table
-        if (start > (int)fd_table.size())
+        if (start < 0 || start > (int)fd_table.size())
         {
             error = H_EINVAL;
             return -1;
