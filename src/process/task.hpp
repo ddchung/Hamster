@@ -288,6 +288,12 @@ namespace Hamster
         int exit_group(uint16_t code);
 
         /**
+         * @brief Get the last tick time
+         * @return The system tick that the task last executed an instruction
+         */
+        uint64_t get_last_tick();
+
+        /**
          * @brief Open a relative directory file descriptor
          * @param thread_dfd The userspace relative file descriptor
          * @param path The path
@@ -324,6 +330,7 @@ namespace Hamster
          * @return 0 on success, -1 on error
          * @note This will set the `a0` register to the return value of callback once completed, and if it is
          *       -1, then it will set it to an error code instead
+         * @note To return a literal `-EAGAIN` to userspace, return `- H_EAGAIN` instead of `-1` and setting error
          */
         int block(int (*callback)(Task &, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t));
 
@@ -576,6 +583,7 @@ namespace Hamster
         int (*blocking_operation_alt)(Task &, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); // Used by other overload of `block`
         uint64_t blocking_operation_saved = 0; // Optionally used by blocking operations
         BlockingCallback interrupt_blocking = nullptr; // Called when signal recieved while blocking
+        uint64_t last_instruction_tick = 0;
         uint32_t tid;
         Task *parent = nullptr; // may be null
         sys_sigaltstack alt_signal_stack = {};

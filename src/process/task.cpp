@@ -440,6 +440,7 @@ namespace Hamster
         else
         {
             auto status = emulator.run();
+            last_instruction_tick = _get_sys_time();
 
             using Status = RiscVEmulator::ExecuteResult::Status;
 
@@ -467,6 +468,11 @@ namespace Hamster
 
         // Update next tick
         this->BaseKTask::next_tick = _get_sys_time();
+    }
+
+    uint64_t Task::get_last_tick()
+    {
+        return last_instruction_tick;
     }
 
     void Task::add_to_scheduler()

@@ -14,11 +14,15 @@ namespace Hamster
             BaseTaskFD *fd = task.get_fd(task_fd);
             if (!fd)
                 return -1;
+            
+            bool is_nonblock = fd->get_flags() & OPEN_NONBLOCK;
 
             // Check if file is writable
             switch (fd->poll(POLL_WRITE))
             {
             case 0:
+                if (is_nonblock)
+                    return -H_EAGAIN;
                 error = H_EAGAIN;
                 return -1;
             case 1:
@@ -35,7 +39,10 @@ namespace Hamster
             if (!it)
                 return -1;
             
-            return fd->write(it, to_write);
+            int res = fd->write(it, to_write);
+            if (res == -1 && error == H_EAGAIN && is_nonblock)
+                return -H_EAGAIN;
+            return res;
         });
 
         return 0;

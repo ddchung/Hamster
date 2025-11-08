@@ -8,6 +8,14 @@
 
 namespace Hamster
 {
+    namespace
+    {
+        bool is_fd_set(uint32_t *fds, int fd)
+        {
+            return (fds[fd / 32] & (1u << (fd % 32))) != 0;
+        }
+    } // namespace
+
     int32_t sys_read(Task &task, int32_t fd, uint32_t buf_loc, uint32_t count)
     {
         task.block([](Task &task, uint32_t task_fd, uint32_t buf_loc, uint32_t count, uint32_t, uint32_t, uint32_t) -> int {
@@ -15,10 +23,14 @@ namespace Hamster
             if (!fd)
                 return -1;
 
+            bool is_nonblock = fd->get_flags() & OPEN_NONBLOCK;
+
             // Check if it is readable
             switch (fd->poll(POLL_READ))
             {
             case 0:
+                if (is_nonblock)
+                    return -H_EAGAIN;
                 error = H_EAGAIN;
                 return -1;
             case 1:
@@ -35,7 +47,10 @@ namespace Hamster
             if (!it)
                 return -1;
             
-            return fd->read(it, to_read);
+            int res = fd->read(it, to_read);
+            if (res == -1 && error == H_EAGAIN && is_nonblock)
+                return -H_EAGAIN;
+            return res;
         });
 
         return 0;
@@ -162,6 +177,115 @@ namespace Hamster
         if (task.copy_to_memory(statxbuf_loc, statxbuf) < 0)
             return cvt_error();
         
+        return 0;
+    }
+
+    int32_t sys_pselect6_time64(Task &task, int32_t nfds, uint32_t readfds_loc, uint32_t writefds_loc, uint32_t exceptfds_loc, uint32_t timeout_loc, uint32_t sigmask_loc)
+    {
+        task.block([](Task &task, uint32_t nfds, uint32_t readfds_loc, uint32_t writefds_loc, uint32_t exceptfds_loc, uint32_t timeout_loc, uint32_t sigmask_loc) {
+            // Prepare file descriptor sets
+            // Note that we will not support exceptfds for now
+            uint32_t fdset_size = (nfds + 31) / 32; // Number of 32-bit words needed
+            
+            // Prevent arbitrary values from causing stack overflow
+            if (fdset_size > 256)
+            {
+                error = H_EINVAL;
+                return -1;
+            }
+
+            uint32_t *read_fds = (uint32_t*)alloca(fdset_size * sizeof(uint32_t));
+            uint32_t *write_fds = (uint32_t*)alloca(fdset_size * sizeof(uint32_t));
+
+            if (readfds_loc != 0)
+            {
+                if (task.copy_from_memory(*read_fds, readfds_loc, fdset_size * sizeof(uint32_t)) < 0)
+                    return -1;
+            }
+            if (writefds_loc != 0)
+            {
+                if (task.copy_from_memory(*write_fds, writefds_loc, fdset_size * sizeof(uint32_t)) < 0)
+                    return -1;
+            }
+            if (exceptfds_loc != 0)
+            {
+                // Mark all of them as not ready
+                if (task.memset(exceptfds_loc, 0, fdset_size * sizeof(uint32_t)) < 0)
+                    return -1;
+            }
+
+            // check timeout
+            if (timeout_loc != 0)
+            {
+                sys_timespec timeout = {};
+                if (task.copy_from_memory(timeout, timeout_loc) < 0)
+                    return -1;
+                // Check if we ran out of time
+                uint64_t now = _get_sys_time();
+
+                if (task.get_last_tick() + timespec_to_systick(timeout) + 5 <= now)
+                {
+                    // Timeout reached, mark all as not ready
+                    if ((readfds_loc != 0 &&
+                        task.memset(readfds_loc, 0, fdset_size * sizeof(uint32_t)) < 0)
+                        || (writefds_loc != 0 &&
+                        task.memset(writefds_loc, 0, fdset_size * sizeof(uint32_t)) < 0))
+                    {
+                        return -1;
+                    }
+                    return 0; // No file descriptors ready, return 0
+                }
+            }
+
+            // Note: signal mask isn't implemented yet
+
+            for (int i = 0; i < (int32_t)nfds; ++i)
+            {
+                bool ready_read, ready_write;
+
+                BaseTaskFD *task_fd = task.get_fd(i);
+                if (!task_fd)
+                    return -1;
+
+                ready_read = is_fd_set(read_fds, i) && task_fd->poll(POLL_READ) == 1;
+                ready_write = is_fd_set(write_fds, i) && task_fd->poll(POLL_WRITE) == 1;
+
+                if (!ready_read && !ready_write)
+                    continue; // Not ready, skip
+
+                memset(read_fds, 0, fdset_size * sizeof(uint32_t));
+                memset(write_fds, 0, fdset_size * sizeof(uint32_t));
+                
+                // File descriptor is ready, update the sets
+                if (ready_read)
+                {
+                    read_fds[i / 32] |= (1u << (i % 32));
+                }
+                if (ready_write)
+                {
+                    write_fds[i / 32] |= (1u << (i % 32));
+                }
+
+                // copy to user memory
+                if (readfds_loc != 0 &&
+                    task.copy_to_memory(readfds_loc, *read_fds, fdset_size * sizeof(uint32_t)) < 0)
+                {
+                    return -1;
+                }
+                if (writefds_loc != 0 &&
+                    task.copy_to_memory(writefds_loc, *write_fds, fdset_size * sizeof(uint32_t)) < 0)
+                {
+                    return -1;
+                }
+
+                // Return the number of ready file descriptors
+                return ready_read + ready_write;
+            }
+
+            // Block
+            error = H_EAGAIN;
+            return -1;
+        });
         return 0;
     }
 } // namespace Hamster
