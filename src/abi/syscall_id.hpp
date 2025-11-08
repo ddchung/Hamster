@@ -116,7 +116,7 @@ namespace Hamster
              * This system call sends a signal to a specified process or process group.
              * @note Userspace sig: `int kill(pid_t pid, int sig);`,
              */
-            KILL = 129,//
+            KILL = 129,////
 
             /**
              * @brief Send a signal to a thread

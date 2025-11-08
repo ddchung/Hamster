@@ -67,5 +67,23 @@ namespace Hamster
         
         return 0;
     }
+
+    int32_t sys_kill(Task &task, int32_t pid, int32_t sig)
+    {
+        Task *target = Task::get_task_pid(pid);
+        if (!target)
+            return cvt_error();
+        
+        sys_siginfo siginfo = {};
+        siginfo.signo = sig;
+        siginfo.code = H_SI_USER;
+        siginfo.fields.kill.pid = task.get_pid();
+        siginfo.fields.kill.uid = sys_getuid(task);
+
+        int res = target->send_signal_process(siginfo);
+        if (res < 0)
+            return cvt_error();
+        return 0;
+    }
 } // namespace Hamster
 
