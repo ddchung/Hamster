@@ -396,7 +396,7 @@ namespace Hamster
              * @brief Check if a file exists, and potentially if it is read|write|execute accessible
              * @note Userspace sig: `long faccessat(int dirfd, const char *pathname, int mode);`
              */
-            FACCESSAT = 48,//
+            FACCESSAT = 48,////
 
             /**
              * @brief Check if a file exists, and potentially if it is read|write|execute accessible
@@ -404,7 +404,7 @@ namespace Hamster
              * and potentially checks if it is readable, writable, or executable.
              * @note Userspace sig: `long faccessat2(int dirfd, const char *pathname, int mode, int flags);`
              */
-            FACCESSAT2 = 439,//
+            FACCESSAT2 = 439,////
 
             /**
              * @brief Create an unnamed pipe
@@ -608,7 +608,7 @@ namespace Hamster
              * @brief Wait for some file descriptors to become ready for a certain operation
              * @note Userspace sig: `int pselect6_time64(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask);`
              */
-            PSELECT6_TIME64 = 413,//
+            PSELECT6_TIME64 = 413,////
 
             /**
              * @brief Sync a file and its data

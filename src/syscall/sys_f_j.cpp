@@ -132,5 +132,29 @@ namespace Hamster
         }
         return 0;
     }
+
+    int32_t sys_faccessat(Task &task, int32_t dirfd, uint32_t pathname_loc, int32_t mode)
+    {
+        return sys_faccessat2(task, dirfd, pathname_loc, mode, 0);
+    }
+
+    int32_t sys_faccessat2(Task &task, int32_t dirfd, uint32_t pathname_loc, int32_t mode, int32_t flags)
+    {
+        char *path = task.mem_get_string(pathname_loc);
+        if (!path)
+            return cvt_error();
+        
+        int rel_fd = task.open_rel_fd(dirfd, path);
+        if (rel_fd < 0)
+            return cvt_error();
+        
+        int res = task.accessat(rel_fd, path, mode, flags);
+        dealloc(path);
+        vfs.close(rel_fd);
+
+        if (res < 0)
+            return cvt_error();
+        return 0;
+    }
 } // namespace Hamster
 
