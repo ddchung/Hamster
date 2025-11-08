@@ -406,9 +406,21 @@ namespace Hamster
 
     void Task::run()
     {
-        if (pending_signals.size() > 0)
+        if (pending_signals.size() > 0 || process->get_pending_signals().size() > 0)
         {
-            const sys_siginfo *siginfo = pending_signals.peek(signal_mask);
+            TaskSignalQueue *sigqueue = &pending_signals;
+            const sys_siginfo *siginfo;
+
+            // First, check task's signal queue
+            siginfo = sigqueue->peek(signal_mask);
+
+            // Check shared signal queue if not found
+            if (!siginfo)
+            {
+                sigqueue = &process->get_pending_signals();
+                siginfo = sigqueue->peek(signal_mask);
+            }
+
             if (siginfo)
             {
                 assert(siginfo->signo >= 1 && siginfo->signo <= 64);
@@ -423,7 +435,7 @@ namespace Hamster
                 // handle the signal
                 int res = process->get_signal_handlers()->handle_signal(siginfo->signo, *this, *siginfo);
                 assert(res == 0);
-                pending_signals.pop(signal_mask);
+                sigqueue->pop(signal_mask);
                 return;
             }
 
@@ -481,6 +493,22 @@ namespace Hamster
         this->BaseKTask::id = (uint32_t)((uintptr_t)(this) >> 2);
         this->BaseKTask::next_tick = _get_sys_time();
         kscheduler.add_task(this);
+    }
+
+    void Task::pause(uint8_t signo)
+    {
+        for (Task *task : process->get_tasks())
+        {
+            task->is_paused = true;
+        }
+        process->notify_pause(signo);
+    }
+
+    void Task::unpause()
+    {
+        for (Task *task : process->get_tasks())
+            task->is_paused = false;
+        process->notify_continue();
     }
     
     Session::Session(uint32_t sid)
@@ -601,6 +629,34 @@ namespace Hamster
         }
 
         return 0;
+    }
+
+    void Process::notify_pause(uint8_t signo)
+    {
+        if (parent)
+        {
+            parent->state_changes.emplace_back();
+            auto &state_change = parent->state_changes.back();
+            state_change.pid = pid;
+            state_change.uid = uid;
+            state_change.pgid = pgroup->get_pgid();
+            state_change.type = ProcessStateChange::STOP;
+            state_change.signo = signo;
+        }
+    }
+
+    void Process::notify_continue()
+    {
+        if (parent)
+        {
+            parent->state_changes.emplace_back();
+            auto &state_change = parent->state_changes.back();
+            state_change.pid = pid;
+            state_change.uid = uid;
+            state_change.pgid = pgroup->get_pgid();
+            state_change.type = ProcessStateChange::CONT;
+            state_change.signo = H_SIGCONT;
+        }
     }
 } // namespace Hamster
 

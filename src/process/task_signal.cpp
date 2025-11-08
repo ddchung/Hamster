@@ -68,5 +68,33 @@ namespace Hamster
     {
         return process->get_signal_handlers()->is_default(signo);
     }
+
+    void TaskSignalHandlers::sighand_dfl_nop(Task &, const sys_siginfo &, const sys_sigaction &)
+    {
+    }
+
+    void TaskSignalHandlers::sighand_dfl_term(Task &task, const sys_siginfo &siginfo, const sys_sigaction &)
+    {
+        task.exit_group(make_wait_terminated(siginfo.signo));
+    }
+
+    void TaskSignalHandlers::sighand_dfl_dump(Task &task, const sys_siginfo &siginfo, const sys_sigaction &)
+    {
+        task.exit_group(make_wait_terminated_coredump(siginfo.signo));
+    }
+
+    void TaskSignalHandlers::sighand_dfl_stop(Task &task, const sys_siginfo &siginfo, const sys_sigaction &)
+    {
+        task.pause(siginfo.signo);
+    }
+
+    void TaskSignalHandlers::sighand_dfl_cont(Task &task, const sys_siginfo &, const sys_sigaction &)
+    {
+        task.unpause();
+    }
+
+    void TaskSignalHandlers::sighand_ign(Task &, const sys_siginfo &, const sys_sigaction &)
+    {
+    }
 } // namespace Hamster
 

@@ -172,11 +172,4 @@ namespace Hamster
         sighand_dfl_nop, // 63
         sighand_dfl_nop, // 64 - SIGRTMAX
     };
-
-    __attribute__((weak)) void TaskSignalHandlers::sighand_dfl_nop(Task &, const sys_siginfo &, const sys_sigaction &) {}
-    __attribute__((weak)) void TaskSignalHandlers::sighand_dfl_term(Task &, const sys_siginfo &, const sys_sigaction &) {}
-    __attribute__((weak)) void TaskSignalHandlers::sighand_dfl_dump(Task &, const sys_siginfo &, const sys_sigaction &) {}
-    __attribute__((weak)) void TaskSignalHandlers::sighand_dfl_stop(Task &, const sys_siginfo &, const sys_sigaction &) {}
-    __attribute__((weak)) void TaskSignalHandlers::sighand_dfl_cont(Task &, const sys_siginfo &, const sys_sigaction &) {}
-    __attribute__((weak)) void TaskSignalHandlers::sighand_ign(Task &, const sys_siginfo &, const sys_sigaction &) {}
 } // namespace Hamster

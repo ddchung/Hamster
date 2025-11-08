@@ -178,6 +178,17 @@ namespace Hamster
          */
         int setsid();
 
+        /**
+         * @brief Send a pause state change to parent process
+         * @param signo Signal that caused the pause
+         */
+        void notify_pause(uint8_t signo);
+
+        /**
+         * @brief Send a continue state change to parent process
+         */
+        void notify_continue();
+
         uint32_t get_pid() const { return pid; }
         uint32_t get_ppid() const { return parent ? parent->pid : 0; }
         const SharedPtr<ProcessGroup> &get_process_group() const { return pgroup; }
@@ -286,6 +297,17 @@ namespace Hamster
          * @return 0 on success, -1 on error
          */
         int exit_group(uint16_t code);
+
+        /**
+         * @brief Pause the task
+         * @param signo The signal number that caused the pause
+   */
+        void pause(uint8_t signo);
+
+        /**
+         * @brief Unpause the task
+         */
+        void unpause();
 
         /**
          * @brief Get the last tick time
