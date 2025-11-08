@@ -22,7 +22,8 @@ namespace Hamster
 
         // Put `gid` into groups
         groups = alloc<int>(process->get_groups().size() + 1);
-        ::memcpy(groups, process->get_groups().data(), process->get_groups().size() * sizeof(int));
+        if (process->get_groups().size() > 0)
+            ::memcpy(groups, process->get_groups().data(), process->get_groups().size() * sizeof(int));
         groups[process->get_groups().size()] = gid;
 
         // Only forward AT_SYMLINK_NOFOLLOW
