@@ -298,7 +298,7 @@ namespace Hamster
              * This system call changes the file offset of a file descriptor to a specified position.
              * @note Userspace sig: `int llseek(int fd, unsigned long off_high, unsigned long off_low, loff_t *result, int whence);`, `loff_t` = `long long`
              */
-            LLSEEK = 62,//
+            LLSEEK = 62,////
 
             /**
              * @brief Get file status of a path relative to a directory file descriptor
@@ -383,7 +383,7 @@ namespace Hamster
              * This system call changes the current working directory of the calling process to the specified path.
              * @note Userspace sig: `int chdir(const char *path);`
              */
-            CHDIR = 49,//
+            CHDIR = 49,////
 
             /**
              * @brief Get the current working directory
@@ -418,7 +418,7 @@ namespace Hamster
              * @brief Set the program data's end (the break)
              * @note Userspace sig: `void *brk(void *end_data_segment);`
              */
-            BRK = 214,//
+            BRK = 214,////
 
             /**
              * @brief Memory map a file or device into memory
@@ -454,7 +454,7 @@ namespace Hamster
              * for a file or directory.
              * @note Userspace sig: `int statx(int dirfd, const char *pathname, int flags, unsigned int mask, struct statx *statxbuf);`
              */
-            STATX = 291,//
+            STATX = 291,////
 
             /**
              * @brief Read a symbolic link

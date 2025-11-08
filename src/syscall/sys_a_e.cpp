@@ -123,5 +123,23 @@ namespace Hamster
             return cvt_error();
         return 0;
     }
+
+    int32_t sys_chdir(Task &task, uint32_t path_loc)
+    {
+        char *path = task.mem_get_string(path_loc);
+        if (!path)
+            return cvt_error();
+        int res = task.chdir(path);
+        dealloc(path);
+
+        if (res < 0)
+            return cvt_error();
+        return 0;
+    }
+
+    int32_t sys_brk(Task &task, uint32_t new_brk)
+    {
+        return task.mbrk(new_brk);
+    }
 } // namespace Hamster
 

@@ -86,5 +86,83 @@ namespace Hamster
         // no-op for now
         return 0;
     }
+
+    int32_t sys_statx(Task &task, int32_t dirfd, uint32_t pathname_loc, int32_t flags, uint32_t mask, uint32_t statxbuf_loc)
+    {
+        // Note: this syscall will be implemented with VFS stat and lstat, since there is no `statx` support yet.
+        //       This means that statx fields that aren't part of normal stat won't be supported
+
+        char *path = task.mem_get_string(pathname_loc);
+
+        sys_stat statbuf = {};
+        int res;
+
+        // Check if we should stat a path or the file specifed by `dirfd`
+        if ((flags & H_AT_EMPTY_PATH) && (!path || !path[0]))
+        {
+            dealloc(path);
+
+            // Use `dirfd` as the file
+            
+            BaseTaskFD *file = task.get_fd(dirfd);
+            if (!file)
+                return cvt_error();
+            
+            res = file->stat(&statbuf);
+        }
+        else
+        {
+            // Check file pointed to by `path`
+
+            if (!path || !path[0])
+            {
+                dealloc(path);
+                return -H_EINVAL;
+            }
+            
+            int rel_fd = task.open_rel_fd(dirfd, path);
+            if (rel_fd < 0)
+            {
+                dealloc(path);
+                return -1;
+            }
+
+            res = flags & H_AT_SYMLINK_NOFOLLOW ? vfs.lstatat(rel_fd, path, &statbuf) : vfs.statat(rel_fd, path, &statbuf);
+            vfs.close(rel_fd);
+            dealloc(path);
+        }
+
+        if (res < 0)
+            return cvt_error();
+        
+        // Convert to statx buffer, and advertise only basic stat support
+
+        struct sys_statx statxbuf = {};
+
+        statxbuf.mask = H_STATX_BASIC_STATS;
+        statxbuf.rdev_major = statbuf.rdev >> 20;
+        statxbuf.rdev_minor = statbuf.rdev & 0xFFFFF;
+        statxbuf.ino = statbuf.ino;
+        statxbuf.mode = statbuf.mode;
+        statxbuf.nlink = statbuf.nlink;
+        statxbuf.uid = statbuf.uid;
+        statxbuf.gid = statbuf.gid;
+        statxbuf.dev_major = statbuf.dev >> 20;
+        statxbuf.dev_minor = statbuf.dev & 0xFFFFF;
+        statxbuf.size = statbuf.size;
+        statxbuf.blksize = statbuf.blksize;
+        statxbuf.blocks = statbuf.blocks;
+        statxbuf.atime.sec = statbuf.atime;
+        statxbuf.atime.nsec = statbuf.atime_nsec;
+        statxbuf.mtime.sec = statbuf.mtime;
+        statxbuf.mtime.nsec = statbuf.mtime_nsec;
+        statxbuf.ctime.sec = statbuf.ctime;
+        statxbuf.ctime.nsec = statbuf.ctime_nsec;
+
+        if (task.copy_to_memory(statxbuf_loc, statxbuf) < 0)
+            return cvt_error();
+        
+        return 0;
+    }
 } // namespace Hamster
 

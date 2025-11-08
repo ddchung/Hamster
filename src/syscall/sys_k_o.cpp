@@ -49,5 +49,23 @@ namespace Hamster
             return cvt_error();
         return res;
     }
+
+    int32_t sys_llseek(Task &task, int32_t task_fd, uint32_t off_high, uint32_t off_low, uint32_t result_loc, int32_t whence)
+    {
+        int64_t off64 = ((int64_t)off_high << 32) | off_low;
+
+        BaseTaskFD *fd = task.get_fd(task_fd);
+        if (!fd)
+            return cvt_error();
+        
+        int64_t res = fd->seek(off64, whence);
+        if (res < 0)
+            return cvt_error();
+        
+        if (task.copy_to_memory(result_loc, res) < 0)
+            return cvt_error();
+        
+        return 0;
+    }
 } // namespace Hamster
 
