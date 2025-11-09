@@ -118,5 +118,12 @@ namespace Hamster
             return 0;
         }
     }
+
+    int32_t sys_munmap(Task &task, uint32_t addr, uint32_t len)
+    {
+        if (task.munmap(addr, len) < 0)
+            return cvt_error();
+        return 0;
+    }
 } // namespace Hamster
 
