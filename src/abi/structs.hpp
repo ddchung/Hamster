@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <abi/values.hpp>
 #include <cstdint>
 
 namespace Hamster
@@ -307,5 +308,14 @@ namespace Hamster
     {
         ts.sec = static_cast<int64_t>(systick / 1000);
         ts.nsec = static_cast<int64_t>((systick % 1000) * 1000000);
+    }
+    inline sys_siginfo make_kill_siginfo(uint8_t signo, uint32_t uid = 0, uint32_t pid = 0)
+    {
+        sys_siginfo siginfo = {};
+        siginfo.signo = signo;
+        siginfo.code = H_SI_USER;
+        siginfo.fields.kill.pid = pid;
+        siginfo.fields.kill.uid = uid;
+        return siginfo;
     }
 } // namespace Hamster
