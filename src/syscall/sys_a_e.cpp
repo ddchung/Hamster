@@ -141,5 +141,16 @@ namespace Hamster
     {
         return task.mbrk(new_brk);
     }
+
+    int32_t sys_dup(Task &task, int32_t task_fd)
+    {
+        return sys_fcntl64(task, task_fd, FILE_DUPFD, 0);
+    }
+
+    int32_t sys_dup3(Task &task, int32_t old_fd, int32_t new_fd, int32_t flags)
+    {
+        task.close_fd(new_fd);
+        return sys_fcntl64(task, old_fd, flags & OPEN_CLOEXEC ? FILE_DUPFD_CLOEXEC : FILE_DUPFD, new_fd);
+    }
 } // namespace Hamster
 

@@ -322,7 +322,7 @@ namespace Hamster
              * file descriptors to refer to the same open file.
              * @note Userspace sig: `int dup(int oldfd);`
              */
-            DUP = 23,//
+            DUP = 23,////
 
             /**
              * @brief Duplicate a file descriptor to a specific file descriptor
@@ -332,7 +332,7 @@ namespace Hamster
              * it is closed, with any errors ignored, before the operation
              * @note Userspace sig: `int dup3(int oldfd, int newfd, int flag);`
              */
-            DUP3 = 24,//
+            DUP3 = 24,////
 
             /**
              * @brief Create a new directory from a path relative to a directory file descriptor
@@ -534,7 +534,7 @@ namespace Hamster
              * retrieving its status.
              * @note Userspace sig: `int fcntl64(int fd, int cmd, ...);`
              */
-            FCNTL64 = 25,//
+            FCNTL64 = 25,////
 
             /**
              * @brief Manipulate behavior of the calling process

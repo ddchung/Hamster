@@ -160,5 +160,59 @@ namespace Hamster
             return cvt_error();
         return 0;
     }
+
+    int32_t sys_fcntl64(Task &task, int32_t task_fd, int32_t op, uint32_t arg)
+    {
+        switch (op)
+        {
+        case FILE_DUPFD:
+        case FILE_DUPFD_CLOEXEC:
+        {
+            int new_slot = task.allocate_fd(arg);
+            if (new_slot < 0)
+                return cvt_error();
+            if (task.dup_fd(task_fd, new_slot) < 0)
+                return cvt_error();
+            task.set_fd_flags(new_slot, op == FILE_DUPFD_CLOEXEC ? H_FD_CLOEXEC : 0);
+            return new_slot;
+        }
+        case FILE_GETFD:
+        {
+            int res = task.get_fd_flags(task_fd);
+            if (res < 0)
+                return cvt_error();
+            return res;
+        }
+        case FILE_SETFD:
+            if (task.set_fd_flags(task_fd, arg & H_FD_CLOEXEC) < 0)
+                return cvt_error();
+            return 0;
+        case FILE_GETFL:
+        {
+            BaseTaskFD *fd = task.get_fd(task_fd);
+            if (!fd)
+                return cvt_error();
+            int res = fd->get_flags();
+            if (res < 0)
+                return cvt_error();
+            return res;
+        }
+        case FILE_SETFL:
+        {
+            constexpr int CHANGEABLE_FLAGS = OPEN_APPEND | OPEN_NONBLOCK;
+            BaseTaskFD *fd = task.get_fd(task_fd);
+            if (!fd)
+                return cvt_error();
+            int old_flags = fd->get_flags();
+            if (old_flags < 0)
+                return cvt_error();
+            if (fd->set_flags((old_flags & ~CHANGEABLE_FLAGS) | (arg & CHANGEABLE_FLAGS)) < 0)
+                return cvt_error();
+            return 0;
+        }
+        default:
+            return -H_EINVAL;
+        }
+    }
 } // namespace Hamster
 
