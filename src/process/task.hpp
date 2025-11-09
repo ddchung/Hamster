@@ -542,6 +542,7 @@ namespace Hamster
 
         int send_signal(const sys_siginfo &siginfo); // to this task
         int send_signal_process(const sys_siginfo &siginfo); // to the process
+        int send_signal_pgroup(const sys_siginfo &siginfo); // to whole process group
         size_t pending_signals_size() const;
         size_t pending_signals_size_process() const;
 

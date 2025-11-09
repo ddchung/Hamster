@@ -14,6 +14,13 @@ namespace Hamster
         return process->get_pending_signals().push(siginfo);
     }
 
+    int Task::send_signal_pgroup(const sys_siginfo &siginfo)
+    {
+        for (Process *process : process->get_process_group()->get_processes())
+            process->get_pending_signals().push(siginfo);
+        return 0;
+    }
+
     size_t Task::pending_signals_size() const
     {
         return pending_signals.size();
