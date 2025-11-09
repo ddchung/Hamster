@@ -423,6 +423,8 @@ namespace Hamster
 
     void Task::run()
     {
+        current_task = this;
+
         if (pending_signals.size() > 0 || process->get_pending_signals().size() > 0)
         {
             TaskSignalQueue *sigqueue = &pending_signals;
@@ -497,6 +499,13 @@ namespace Hamster
 
         // Update next tick
         this->BaseKTask::next_tick = _get_sys_time();
+
+        current_task = nullptr;
+    }
+
+    Task *Task::get_current_task()
+    {
+        return current_task;
     }
 
     uint64_t Task::get_last_tick()

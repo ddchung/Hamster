@@ -506,6 +506,15 @@ namespace Hamster
          */
         int accessat(int dfd, const char *file, int mode, int flags);
 
+        /**
+         * @brief Get the currently running task. **SEE WARNINGS**
+         * @return A weak pointer to any currently running task, or nullptr if there is none
+         * @warning Please refrain from using this as much as possible, and use proper dependency
+         *        * passing. This is for any functions where it would be unfeasible to implement
+         *        * this.
+         */
+        static Task *get_current_task();
+
         // MemorySpace functions
 
         int memcpy(void *dest, uint32_t src, uint32_t len);
@@ -602,6 +611,7 @@ namespace Hamster
 
         static inline UnorderedMap<uint32_t, Task *> tasks; // weak pointers
         static inline uint32_t next_tid = 1;
+        static inline Task *current_task = nullptr;
 
         SharedPtr<Process> process;
         SharedPtr<Memory> memory;
