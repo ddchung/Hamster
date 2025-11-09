@@ -59,19 +59,23 @@ namespace Hamster
         int res;
         ioarg.i = arg;
 
-        error = 0;
+        int error = 0;
         
         if ((arg % HAMSTER_PAGE_SIZE) > HAMSTER_PAGE_SIZE - HAMSTER_MAX_IOCTL_SIZE)
         {
             task.memcpy(IOCTL_BUF, arg, HAMSTER_MAX_IOCTL_SIZE);
             ioarg.p = IOCTL_BUF;
+            Hamster::error = 0;
             res = fd->ioctl(op, ioarg);
+            error = Hamster::error;
             task.memcpy(arg, IOCTL_BUF, HAMSTER_MAX_IOCTL_SIZE);
         }
         else
         {
             ioarg.p = task.mem_make_iterator(arg);
+            Hamster::error = 0;
             res = fd->ioctl(op, ioarg);
+            error = Hamster::error;
         }
 
         if (error)
