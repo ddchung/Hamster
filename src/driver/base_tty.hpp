@@ -8,6 +8,7 @@
 #include <memory/allocator.hpp>
 #include <memory/stl_sequential.hpp>
 #include <kscheduler/kscheduler.hpp>
+#include <process/task.hpp>
 #include <abi/values.hpp>
 #include <abi/structs.hpp>
 #include <errno/errno.h>
@@ -151,31 +152,22 @@ namespace Hamster
         // Returns: 0 if allowed, 1 if not allowed, -1 on error
         int check_readable()
         {
-            // Task *current_task = scheduler.get_current_task();
-            // if (!current_task)
-            //     return -1;
+            Task *current_task = Task::get_current_task();
+            if (!current_task)
+                return 0; // Always allow kernel to read
 
-            // ProcessGroup *pg = &current_task->process->obj.pg->obj;
+            if (current_task->get_sid() != sid)
+            {
+                error = H_ENOTTY;
+                return -1;
+            }
 
-            // if (&pg->session->obj != session)
-            // {
-            //     // Not in the same session, so we can't read
-            //     error = H_ENOTTY;
-            //     return -1;
-            // }
-
-            // if (fg_pgroup && pg != fg_pgroup)
-            // {
-            //     // Check if the process blocks it
-            //     if (current_task->is_signal_blocked(H_SIGTTIN))
-            //         return 0; // Allowed to read
-
-            //     for (Process *proc : pg->processes)
-            //     {
-            //         proc->send_signal(H_SIGTTIN);
-            //     }
-            // }
-
+            if (fg_pgid && current_task->get_pgid() != fg_pgid &&
+                !current_task->is_signal_blocked(H_SIGTTIN) && 
+                !current_task->is_signal_ignored(H_SIGTTIN))
+            {
+                current_task->send_signal_process(make_kill_siginfo(H_SIGTTIN));
+            }
             return 0;
         }
 
@@ -183,33 +175,22 @@ namespace Hamster
         // Returns: 0 if allowed, 1 if not allowed, -1 on error
         int check_writable()
         {
-            // Task *current_task = scheduler.get_current_task();
-            // if (!current_task)
-            //     return -1;
+            Task *current_task = Task::get_current_task();
+            if (!current_task)
+                return 0; // Always allow kernel to write
 
-            // ProcessGroup *pg = &current_task->process->obj.pg->obj;
+            if (current_task->get_sid() != sid)
+            {
+                error = H_ENOTTY;
+                return -1;
+            }
 
-            // if (&pg->session->obj != session)
-            // {
-            //     // Not in the same session, so we can't write
-            //     error = H_ENOTTY;
-            //     return -1;
-            // }
-
-            // if (fg_pgroup && pg != fg_pgroup)
-            // {
-            //     // Check if the process blocks it
-            //     if (current_task->is_signal_blocked(H_SIGTTOU))
-            //         return 0; // Allowed to write, as it blocks SIGTTOU
-
-            //     for (Process *proc : pg->processes)
-            //     {
-            //         proc->send_signal(H_SIGTTOU);
-            //     }
-
-            //     return 1;
-            // }
-
+            if (fg_pgid && current_task->get_pgid() != fg_pgid &&
+                !current_task->is_signal_blocked(H_SIGTTOU) && 
+                !current_task->is_signal_ignored(H_SIGTTOU))
+            {
+                current_task->send_signal_process(make_kill_siginfo(H_SIGTTOU));
+            }
             return 0;
         }
 
@@ -257,17 +238,11 @@ namespace Hamster
         // Send a signal to the foreground process group
         int send_sig_to_fg(int signo)
         {
-            // if (!fg_pgroup)
-            // {
-            //     error = H_ENOTTY; // No foreground process group
-            //     return -1;
-            // }
-
-            // for (Process *proc : fg_pgroup->processes)
-            // {
-            //     proc->send_signal(signo);
-            // }
-            return 0;
+            if (!fg_pgid)
+                return -1;
+            Task *task = Task::get_task_pgid(fg_pgid);
+            
+            return task->send_signal_pgroup(make_kill_siginfo(signo));
         }
 
         int flush_output()
@@ -393,6 +368,8 @@ namespace Hamster
 
         // Session *session = nullptr;
         // ProcessGroup *fg_pgroup = nullptr;
+        uint32_t sid = 0;
+        uint32_t fg_pgid = 0;
         sys_termios termios = {};
         sys_winsize win_sz = {};
 
@@ -568,40 +545,41 @@ namespace Hamster
         case H_TIOCSCTTY:
         {
             // // Set the controlling TTY
-            // if (driver->session && arg.i == 0)
-            // {
-            //     error = H_EPERM;
-            //     return -1;
-            // }
-            // Task *current_task = scheduler.get_current_task();
-            // if (!current_task)
-            // {
+            if (driver->sid && arg.i == 0)
+            {
+                error = H_EPERM;
+                return -1;
+            }
+            Task *current_task = Task::get_current_task();
+            if (!current_task)
+            {
                 error = H_EINVAL;
                 return -1; // No current task
-            // }
-            // if (driver->session)
-            // {
-            //     // Steal the old session's TTY
-            //     driver->session->controlling_tty = {0, 0};
-            // }
-            // driver->session = &current_task->process->obj.pg->obj.session->obj;
+            }
+            if (driver->sid)
+            {
+                // Stealing not supported
+                error = H_ENOTSUP;
+                return -1;
+            }
+            driver->sid = current_task->get_sid();
             return 0;
         }
         case H_TIOCSPGRP:
         {
-            // uint32_t pgid = *(uint32_t *)arg.p;
-            // ProcessGroup *pg = scheduler.get_process_group(pgid);
-            // if (!pg)
-            // {
-            //     error = H_EPERM;
-            //     return -1;
-            // }
-            // if (&pg->session->obj != driver->session)
-            // {
-            //     error = H_EPERM;
-            //     return -1;
-            // }
-            // driver->fg_pgroup = pg;
+            uint32_t pgid = *(uint32_t *)arg.p;
+            Task *task = Task::get_task_pgid(pgid);
+            if (!task)
+            {
+                error = H_EPERM;
+                return -1;
+            }
+            if (task->get_sid() != driver->sid)
+            {
+                error = H_EPERM;
+                return -1;
+            }
+            driver->fg_pgid = task->get_pgid();
 
             return 0;
         }
