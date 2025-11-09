@@ -273,9 +273,16 @@ namespace Hamster
         /**
          * @brief Get a task by PID
          * @param pid The PID of the task to get
-         * @return A weak pointer to the task, or nullptr on error and set `error
+         * @return A weak pointer to any matching task, or nullptr on error and set `error`
          */
         static Task *get_task_pid(uint32_t pid);
+
+        /**
+         * @brief Get a task by PGID
+         * @param pgid The PGID of the task to get
+         * @return A weak pointer any task in the pgroup, or nullptr on error and set `error`
+         */
+        static Task *get_task_pgid(uint32_t pgid);
 
         /**
          * @brief Get a pointer to the init process

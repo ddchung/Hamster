@@ -73,6 +73,23 @@ namespace Hamster
         return nullptr;
     }
 
+    Task *Task::get_task_pgid(uint32_t pgid)
+    {
+        // first, check task with same TID
+        auto it = tasks.find(pgid);
+        if (it != tasks.end() && it->second->get_pgid() == pgid)
+            return it->second;
+
+        // next, search all tasks
+        for (const auto &[tid, task] : tasks)
+            if (task->get_pgid() == pgid)
+                return task;
+
+        // not found
+        error = H_ESRCH;
+        return nullptr;
+    }
+
     Process *Task::get_init_process()
     {
         auto it = tasks.find(1);
