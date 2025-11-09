@@ -68,9 +68,9 @@ namespace Hamster
         int allocate_fd(int start = 0);
 
         /**
-         * @brief Close all file descriptors that have the OPEN_CLOEXEC flag
-         * This will go through all the file descriptors, call their `get_flags`, and
-         * close them if the returned flag contains the OPEN_CLOEXEC bit. Errors are ignord.
+         * @brief Close all file descriptors that have the FD_CLOEXEC fd flag
+         * This will go through all the file descriptors, call their `get_fd_flags`, and
+         * close them if the returned flag contains the FD_CLOEXEC bit. Errors are ignord.
          * @note Used as a part of the `exec` system call
          */
         void close_cloexec();

@@ -42,6 +42,23 @@ namespace Hamster
          * @note Other file descriptor types should error with `EINVAL`
          */
         virtual int get_vfs_fd() = 0;
+
+        /**
+         * @brief Get the file descriptor flags
+         * @return The FD flags
+         * @note This is *NOT* the flags that this FD was opened with. This contains
+         *       FD_CLOEXEC
+         */
+        int get_fd_flags() { return fd_flags; }
+
+        /**
+         * @brief Set the file descriptor flags
+         * @param fd_flags The new file descriptor flags
+         */
+        void set_fd_flags(int fd_flags) { this->fd_flags = fd_flags; }
+
+    private:
+        int fd_flags;
     };
 } // namespace Hamster
 

@@ -93,9 +93,7 @@ namespace Hamster
 
     int TaskFDTable::allocate_fd(int start)
     {
-        // note: > and not >= because if `start` == `fd_table.size()`, we
-        //      allocate a slot at the end of the table
-        if (start < 0 || start > (int)fd_table.size())
+        if (start < 0)
         {
             error = H_EINVAL;
             return -1;
@@ -106,7 +104,7 @@ namespace Hamster
         for (; it < (int)fd_table.size() && fd_table[it]; ++it)
             ;
 
-        if (it == (int)fd_table.size())
+        if (it >= (int)fd_table.size())
         {
             if (it > HAMSTER_MAX_FD_TABLE_SIZE)
             {
@@ -114,7 +112,7 @@ namespace Hamster
                 return -1;
             }
             
-            fd_table.emplace_back();
+            fd_table.resize(it + 1);
         }
 
         return it;
@@ -127,8 +125,8 @@ namespace Hamster
             if (fd)
             {
                 // Remove if flags has OPEN_CLOEXEC
-                int flags = fd->fd->get_flags();
-                if (flags != -1 && (flags & OPEN_CLOEXEC))
+                int flags = fd->fd->get_fd_flags();
+                if (flags != -1 && (flags & H_FD_CLOEXEC))
                     fd.clear();
             }
         }

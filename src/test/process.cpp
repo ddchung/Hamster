@@ -122,7 +122,8 @@ void test_process()
         assert(static_cast<DummyFD *>(table.get_fd(slot))->value == 2);
 
         // close_cloexec
-        DummyFD *fd3 = alloc<DummyFD>(1, 3, OPEN_CLOEXEC); // OPEN_CLOEXEC
+        DummyFD *fd3 = alloc<DummyFD>(1, 3);
+        fd3->set_fd_flags(H_FD_CLOEXEC);
         assert(table.allocate_fd() == 2);
         assert(table.set_fd(fd3, 2) == 0);
         table.close_cloexec();
