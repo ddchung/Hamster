@@ -558,23 +558,6 @@ namespace Hamster
         this->pgroup->add_process(this);
     }
 
-    Process::~Process()
-    {
-        pgroup->remove_process(this);
-
-        // Leave parent
-        if (parent)
-            parent->children.erase(this);
-        
-        // make init adopt children
-        Process *init = Task::get_init_process();
-        for (Process *child : children)
-        {
-            child->parent = init;
-            init->children.insert(child);
-        }
-    }
-
     void Process::add_task(Task *task)
     {
         tasks.emplace(task);
@@ -625,7 +608,20 @@ namespace Hamster
                     state_change.type = ProcessStateChange::CONT;
                     state_change.signo = H_SIGCONT;
                 }
+
+                parent->children.erase(this);
             }
+
+            pgroup->remove_process(this);
+            
+            // make init adopt children
+            Process *init = Task::get_init_process();
+            if (init)
+                for (Process *child : children)
+                {
+                    child->parent = init;
+                    init->children.insert(child);
+                }
         }
 
         return 0;

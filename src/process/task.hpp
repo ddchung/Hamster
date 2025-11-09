@@ -125,7 +125,7 @@ namespace Hamster
                 const SharedPtr<TaskSignalHandlers> &signal_handlers = nullptr,
                 const SharedPtr<TaskFSInfo> &fs_info = nullptr, Process *parent = nullptr, int uid = 0, int euid = 0, int suid = 0,
                 int gid = 0, int egid = 0, int sgid = 0, const Vector<int> &groups = {});
-        ~Process();
+        ~Process() = default;
 
         Process(const Process &) = delete;
         Process &operator=(const Process &) = delete;
