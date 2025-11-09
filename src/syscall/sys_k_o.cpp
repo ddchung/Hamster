@@ -35,10 +35,17 @@ namespace Hamster
             return cvt_error();
         }
 
+        TaskVFSFD *p_fd = alloc<TaskVFSFD>(1, fd);
+        if (flags & OPEN_CLOEXEC)
+            p_fd->set_fd_flags(H_FD_CLOEXEC);
+
         // Make a new TaskVFSFD with the opened file descriptor, and put it in the
         // allocated slot
-        if (task.set_fd(alloc<TaskVFSFD>(1, fd), task_fd) < 0)
+        if (task.set_fd(p_fd, task_fd) < 0)
+        {
+            dealloc(p_fd);
             return cvt_error();
+        }
         return task_fd;
     }
 
