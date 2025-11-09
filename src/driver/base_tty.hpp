@@ -241,7 +241,8 @@ namespace Hamster
             if (!fg_pgid)
                 return -1;
             Task *task = Task::get_task_pgid(fg_pgid);
-            
+            if (!task)
+                return -1;
             return task->send_signal_pgroup(make_kill_siginfo(signo));
         }
 
