@@ -523,18 +523,26 @@ namespace Hamster
 
     void Task::pause(uint8_t signo)
     {
+        uint32_t paused = 0;
         for (Task *task : process->get_tasks())
         {
+            paused += (task->is_paused == false);
             task->is_paused = true;
         }
-        process->notify_pause(signo);
+        if (paused > 0)
+            process->notify_pause(signo);
     }
 
     void Task::unpause()
     {
+        uint32_t continued = 0;
         for (Task *task : process->get_tasks())
+        {
+            continued += (task->is_paused == true);
             task->is_paused = false;
-        process->notify_continue();
+        }
+        if (continued > 0)
+            process->notify_continue();
     }
     
     Session::Session(uint32_t sid)
