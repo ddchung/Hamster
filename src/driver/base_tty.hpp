@@ -540,7 +540,7 @@ namespace Hamster
             *(sys_winsize *)arg.p = driver->win_sz;
             return 0;
         case H_TIOCGPGRP:
-            // *(uint32_t *)arg.p = driver->fg_pgroup ? driver->fg_pgroup->pgid : 0;
+            *(uint32_t *)arg.p = driver->fg_pgid;
             return 0;
         case H_TIOCSCTTY:
         {

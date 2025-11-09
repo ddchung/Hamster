@@ -60,6 +60,8 @@ namespace Hamster
     {
         if (pid == 0)
             pid = task.get_pid();
+        if (pgid == 0)
+            pgid = pid;
         
         if ((uint32_t)pid == task.get_pid())
         {

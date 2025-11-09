@@ -66,6 +66,19 @@ namespace Hamster
 
         const auto &pgroups = pgroup->get_session()->get_process_groups();
 
+        if (pid == pgid)
+        {
+            // Make a new process group for ourselves
+
+            if (pgroup->get_pgid() == pgid)
+                return 0; // Already in our own pgroup
+
+            pgroup->remove_process(this);
+            pgroup.construct(pid, pgroup->get_session());
+            pgroup->add_process(this);
+            return 0;
+        }
+
         for (ProcessGroup *pg : pgroups)
         {
             if (pg->get_pgid() == pgid)
