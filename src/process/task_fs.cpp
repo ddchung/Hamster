@@ -90,6 +90,16 @@ namespace Hamster
         return fd_table->get_fd(fd);
     }
 
+    int Task::get_fd_flags(int fd) const
+    {
+        return fd_table->get_fd_flags(fd);
+    }
+
+    int Task::set_fd_flags(int fd, int flags)
+    {
+        return fd_table->set_fd_flags(fd, flags);
+    }
+
     int Task::get_vfs_fd(int task_fd)
     {
         BaseTaskFD *fd = get_fd(task_fd);

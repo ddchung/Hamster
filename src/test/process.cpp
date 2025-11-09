@@ -123,9 +123,9 @@ void test_process()
 
         // close_cloexec
         DummyFD *fd3 = alloc<DummyFD>(1, 3);
-        fd3->set_fd_flags(H_FD_CLOEXEC);
         assert(table.allocate_fd() == 2);
         assert(table.set_fd(fd3, 2) == 0);
+        assert(table.set_fd_flags(2, H_FD_CLOEXEC) == 0);
         table.close_cloexec();
         assert(table.get_fd(2) == nullptr);
 

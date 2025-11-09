@@ -23,6 +23,14 @@ namespace Hamster
 
             BaseTaskFD *fd;
         };
+
+        struct FDSlot
+        {
+            // *Note*: the shared pointer contains a pointer, since the Hamster
+            //         shared pointer cannot contain polymorphic types
+            SharedPtr<TaskFDHolder, size_t, SharedPtrCopyType::SHALLOW> fd;
+            int fd_flags;
+        };
     public:
         /**
          * @brief Get a BaseTaskFD from a file descriptor
@@ -31,6 +39,21 @@ namespace Hamster
          * @warning The returned pointer does not own the object. Do not free
          */
         BaseTaskFD *get_fd(int fd) const;
+
+        /**
+         * @brief Get the FD Flags of a file descriptor slot
+         * @param fd The file descriptor
+         * @return The slot's flags, or -1 on error and set `error`
+         */
+        int get_fd_flags(int fd) const;
+
+        /**
+         * @brief Set the FD flags of a file descriptor slot
+         * @param fd The file descriptor
+         * @param flags The new flags
+         * @return 0 on success, -1 on error and set `error`
+         */
+        int set_fd_flags(int fd, int flags);
 
         /**
          * @brief Close a file descriptor
@@ -81,9 +104,7 @@ namespace Hamster
         void clear() { fd_table.clear(); }
 
     private:
-        // *Note*: the shared pointer contains a pointer, since the Hamster
-        //         shared pointer cannot contain polymorphic types
-        Vector<SharedPtr<TaskFDHolder, size_t, SharedPtrCopyType::SHALLOW>> fd_table;
+        Vector<FDSlot> fd_table;
     };
 } // namespace Hamster
 

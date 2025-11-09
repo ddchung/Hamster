@@ -22,15 +22,36 @@ namespace Hamster
         }
 
         const auto &p_fd = fd_table[fd];
-        if (!p_fd)
+        if (!p_fd.fd)
         {
             error = H_EBADF;
             return nullptr;
         }
 
-        assert(p_fd->fd);
+        assert(p_fd.fd->fd);
 
-        return p_fd->fd;
+        return p_fd.fd->fd;
+    }
+
+    int TaskFDTable::get_fd_flags(int fd) const
+    {
+        if (fd < 0 || fd >= (int)fd_table.size())
+        {
+            error = H_EBADF;
+            return -1;
+        }
+        return fd_table[fd].fd_flags;
+    }
+
+    int TaskFDTable::set_fd_flags(int fd, int flags)
+    {
+        if (fd < 0 || fd >= (int)fd_table.size())
+        {
+            error = H_EBADF;
+            return -1;
+        }
+        fd_table[fd].fd_flags = flags;
+        return 0;
     }
 
     int TaskFDTable::close(int fd)
@@ -42,13 +63,13 @@ namespace Hamster
         }
 
         auto &p_fd = fd_table[fd];
-        if (!p_fd)
+        if (!p_fd.fd)
         {
             error = H_EBADF;
             return -1;
         }
 
-        p_fd.clear();
+        p_fd.fd.clear();
         return 0;
     }
 
@@ -68,7 +89,8 @@ namespace Hamster
             return -1;
         }
 
-        fd_table[fd].construct(task_fd);
+        fd_table[fd].fd.construct(task_fd);
+        fd_table[fd].fd_flags = 0;
         return 0;
     }
 
@@ -81,7 +103,7 @@ namespace Hamster
         }
 
         auto &p_fd = fd_table[fd];
-        if (!p_fd)
+        if (!p_fd.fd)
         {
             error = H_EBADF;
             return -1;
@@ -101,7 +123,7 @@ namespace Hamster
 
         // Skip used fd's
         int it = start;
-        for (; it < (int)fd_table.size() && fd_table[it]; ++it)
+        for (; it < (int)fd_table.size() && fd_table[it].fd; ++it)
             ;
 
         if (it >= (int)fd_table.size())
@@ -122,12 +144,11 @@ namespace Hamster
     {
         for (auto &fd : fd_table)
         {
-            if (fd)
+            if (fd.fd)
             {
-                // Remove if flags has OPEN_CLOEXEC
-                int flags = fd->fd->get_fd_flags();
-                if (flags != -1 && (flags & H_FD_CLOEXEC))
-                    fd.clear();
+                // Remove if flags has FD_CLOEXEC
+                if (fd.fd_flags & H_FD_CLOEXEC)
+                    fd.fd.clear();
             }
         }
     }

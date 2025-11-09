@@ -554,6 +554,8 @@ namespace Hamster
         // TaskFDTable functions
 
         BaseTaskFD *get_fd(int fd) const;
+        int get_fd_flags(int fd) const;
+        int set_fd_flags(int fd, int flags);
         int close_fd(int fd);
         int set_fd(BaseTaskFD *task_fd, int fd = -1);
         int dup_fd(int fd, int new_fd);
