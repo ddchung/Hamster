@@ -21,6 +21,50 @@ namespace Hamster
         return 0;
     }
 
+    void Task::signal_all_processes(const sys_siginfo &siginfo)
+    {
+        Set<uint32_t> signaled;
+        
+        // Mark PID 1 as already signaled, to prevent signaling it
+        signaled.insert(1);
+
+        for (const auto &[tid, task] : tasks)
+        {
+            uint32_t pid = task->get_pid();
+            if (!signaled.contains(pid))
+            {
+                signaled.insert(pid);
+
+                if (check_can_signal(*task, siginfo) < 0)
+                    continue; // can't send signal to this process
+
+                task->send_signal_process(siginfo);
+            }
+        }
+    }
+
+    int Task::check_can_signal(Task &other, const sys_siginfo &siginfo)
+    {
+        // always allow SIGCONT
+        if (siginfo.signo == H_SIGCONT)
+            return 0;
+
+        int self_uid, self_euid;
+        int other_uid, other_suid;
+
+        get_uid(&self_uid, &self_euid);
+        other.get_uid(&other_uid, nullptr, &other_suid);
+
+        if (self_uid != other_uid && self_uid != other_suid
+         && self_euid != other_uid && self_euid != other_suid)
+        {
+            // not allowed
+            error = H_EPERM;
+            return -1;
+        }
+        return 0;
+    }
+
     size_t Task::pending_signals_size() const
     {
         return pending_signals.size();

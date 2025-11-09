@@ -306,15 +306,23 @@ namespace Hamster
         int exit_group(uint16_t code);
 
         /**
-         * @brief Pause the task
+         * @brief Pause the process
          * @param signo The signal number that caused the pause
    */
         void pause(uint8_t signo);
 
         /**
-         * @brief Unpause the task
+         * @brief Unpause the process
          */
         void unpause();
+
+        /**
+         * @brief Check if the task is permitted to send a signal to another task
+         * @param other The other task
+         * @param signal The signal in question
+         * @return 0 if OK, -1 otherwise and set `error`
+         */
+        int check_can_signal(Task &other, const sys_siginfo &signal);
 
         /**
          * @brief Get the last tick time
@@ -373,6 +381,12 @@ namespace Hamster
          * @brief End the blocking operation. Should be used only in blocking callbacks
          */
         void end_block();
+
+        /**
+         * @brief Send a signal to all permitted processes except PID 1
+         * @param siginfo The signal to send
+         */
+        void signal_all_processes(const sys_siginfo &siginfo);
 
         /**
          * @brief Load an executable into the task's memory space
@@ -601,6 +615,7 @@ namespace Hamster
         uint32_t get_tid() const { return tid; }
         Task *get_parent() const { return parent; }
         bool is_blocking() const { return blocking_operation != nullptr; }
+        bool is_pause() const { return is_paused; }
 
     private:
         // Private zero-initialize, with shared pointers = nullptr
