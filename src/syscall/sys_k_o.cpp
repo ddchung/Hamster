@@ -67,5 +67,50 @@ namespace Hamster
         
         return 0;
     }
+
+    int32_t sys_kill(Task &task, int32_t pid, int32_t sig)
+    {
+        if (sig < 0 || sig > H_SIGRTMAX)
+            return -H_EINVAL;
+
+        Task *target;
+        sys_siginfo siginfo = make_kill_siginfo(sig, sys_getuid(task), task.get_pid());
+        if (pid > 0)
+        {
+            // Send to specified process
+            target = Task::get_task_pid(pid);
+            if (!target)
+                return cvt_error();
+            if (task.check_can_signal(*target, siginfo) < 0)
+                return cvt_error();
+            if (sig != 0 && target->send_signal_process(siginfo) < 0)
+                return cvt_error();
+            return 0;
+        }
+        else if (pid == 0)
+        {
+            // send to own pgroup
+            if (sig != 0 && task.send_signal_pgroup(siginfo) < 0)
+                return cvt_error();
+            return 0;
+        }
+        else if (pid == -1)
+        {
+            // send to all processes except init
+            if (sig != 0)
+                task.signal_all_processes(siginfo);
+            return 0;
+        }
+        else
+        {
+            // Send to process group with pgid == -`pid`
+            target = Task::get_task_pgid(-pid);
+            if (!target)
+                return cvt_error();
+            if (sig != 0 && target->send_signal_pgroup(siginfo) < 0)
+                return cvt_error();
+            return 0;
+        }
+    }
 } // namespace Hamster
 
