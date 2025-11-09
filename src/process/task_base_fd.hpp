@@ -58,7 +58,7 @@ namespace Hamster
         void set_fd_flags(int fd_flags) { this->fd_flags = fd_flags; }
 
     private:
-        int fd_flags;
+        int fd_flags = 0;
     };
 } // namespace Hamster
 
