@@ -84,6 +84,14 @@ namespace Hamster
         return handlers[signo - 1].handler == SIG_DFL;
     }
 
+    const sys_sigaction &TaskSignalHandlers::get_action(uint8_t signo)
+    {
+        static sys_sigaction empty = {};
+        if (is_handler(signo) != 1)
+            return empty;
+        return handlers[signo - 1].action;
+    }
+
     int TaskSignalHandlers::handle_signal(uint8_t signo, Task &task, const sys_siginfo &siginfo)
     {
         if (signo < 1 || signo > 64)

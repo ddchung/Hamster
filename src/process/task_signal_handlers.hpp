@@ -65,6 +65,13 @@ namespace Hamster
         int is_default(uint8_t signo);
 
         /**
+         * @brief Get a signal action
+         * @param signo The signal to get
+         * @return The action. This is only valid if `is_handler(signo)`. Otherwise returns zero filled struct
+         */
+        const sys_sigaction &get_action(uint8_t signo);
+
+        /**
          * @brief Call a signal handler
          * @param signo The signal number
          * @param task The task
