@@ -304,8 +304,8 @@ namespace Hamster
                 }
 
                 // OK, full match, return
-                siginfo->fields.kill.pid = it->pid;
-                siginfo->fields.kill.uid = it->uid;
+                siginfo->fields.child.pid = it->pid;
+                siginfo->fields.child.uid = it->uid;
                 siginfo->signo = H_SIGCHLD;
 
                 if ((options & H_WNOWAIT) == 0)
@@ -617,35 +617,36 @@ namespace Hamster
         else
         {
             // Notify parent of exit
-            if (parent)
+            if (parent && !parent->signal_handlers->is_ignored(H_SIGCHLD) && !(parent->signal_handlers->get_action(H_SIGCHLD).flags & H_SA_NOCLDWAIT))
             {
+                // Make "zombie" struct
                 parent->state_changes.emplace_back();
                 auto &state_change = parent->state_changes.back();
                 state_change.pid = pid;
                 state_change.uid = uid;
                 state_change.pgid = pgroup->get_pgid();
+                state_change.type = ProcessStateChange::EXIT;
+                state_change.exit_code = code;
 
-                if (is_wait_exited(code) || is_wait_terminated(code) || is_wait_terminated_coredump(code))
-                {
-                    state_change.type = ProcessStateChange::EXIT;
-                    state_change.exit_code = code;
-                }
-                else if (is_wait_stopped(code))
-                {
-                    state_change.type = ProcessStateChange::STOP;
-                    // retrieve signal number
-                    // see make_wait_stopped in abi/values.hpp
-                    state_change.signo = code >> 8;
-                }
-                else
-                {
-                    state_change.type = ProcessStateChange::CONT;
-                    state_change.signo = H_SIGCONT;
-                }
+                // Send SIGCHLD
 
-                parent->children.erase(this);
+                sys_siginfo siginfo = {};
+
+                if (is_wait_exited(code))
+                    siginfo.code = H_CLD_EXITED;
+                else if (is_wait_terminated(code))
+                    siginfo.code = H_CLD_KILLED;
+                else if (is_wait_terminated_coredump(code))
+                    siginfo.code = H_CLD_DUMPED;
+                
+                siginfo.signo = H_SIGCHLD;
+                siginfo.fields.child.pid = pid;
+                siginfo.fields.child.uid = uid;
+                siginfo.fields.child.status = code;
+                parent->pending_signals.push(siginfo);
             }
-
+            if (parent)
+                parent->children.erase(this);
             pgroup->remove_process(this);
             
             // make init adopt children
