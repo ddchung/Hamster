@@ -290,5 +290,36 @@ namespace Hamster
         });
         return 0;
     }
+
+    int32_t sys_rt_sigaction(Task &task, int32_t signo, uint32_t act_loc, uint32_t oldact_loc, uint32_t sigset_size)
+    {
+        if (signo < 1 || signo > H_SIGRTMAX || sigset_size != sizeof(sys_sigset))
+            return -H_EINVAL;
+        
+        if (signo == H_SIGKILL || signo == H_SIGSTOP)
+            return -H_EINVAL;
+        
+        // Copy old action to memory
+        if (oldact_loc && task.copy_to_memory(oldact_loc, task.get_sigaction(signo)) < 0)
+            return cvt_error();
+        
+        if (act_loc)
+        {
+            sys_sigaction action;
+            if (task.copy_from_memory(action, act_loc) < 0)
+                return cvt_error();
+            
+            if (task.sigaction(signo, action) < 0)
+                return cvt_error();
+        }
+
+        return 0;
+    }
+
+    int32_t sys_rt_sigreturn(Task &task)
+    {
+        task.sigreturn();
+        return 0;
+    }
 } // namespace Hamster
 

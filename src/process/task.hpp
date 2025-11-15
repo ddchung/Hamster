@@ -507,10 +507,23 @@ namespace Hamster
         /**
          * @brief Register a signal handler
          * @param signo The signal number
-         * @param handler The location of the userspace handler, or H_SIG_DFL/H_SIG_IGN
+         * @param handler The handler
          * @return 0 on success, -1 on error
          */
-        int sigaction(uint8_t signo, uint32_t handler);
+        int sigaction(uint8_t signo, sys_sigaction handler);
+
+        /**
+         * @brief Get a signal action for a handler
+         * @param signo The signal number
+         * @return The action for the handler
+         */
+        sys_sigaction get_sigaction(uint8_t signo);
+
+        /**
+         * @brief Restore pre-signal state
+         * @note This restores all registers and CPU state to how it was before
+         */
+        void sigreturn();
 
         /**
          * @brief Check for a state changes in child processes

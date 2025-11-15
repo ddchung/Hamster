@@ -147,5 +147,124 @@ namespace Hamster
     void TaskSignalHandlers::sighand_ign(Task &, const sys_siginfo &, const sys_sigaction &)
     {
     }
+
+    int Task::sigaction(uint8_t signo, sys_sigaction action)
+    {
+        if (signo < 1 || signo > 64)
+        {
+            error = H_EINVAL;
+            return -1;
+        }
+
+        switch (action.handler)
+        {
+        case H_SIG_DFL:
+            return process->get_signal_handlers()->set_default(signo);
+        case H_SIG_IGN:
+            return process->get_signal_handlers()->set_ignore(signo);
+        default:
+            // Custom handler
+            if (memory->ms.check_executable(action.handler) != 0)
+            {
+                error = H_EFAULT;
+                return -1;
+            }
+
+            return process->get_signal_handlers()->set_handler(signo, [](Task &task, const sys_siginfo &info, const sys_sigaction &action) {
+                // Defer all userspace signal handlers such that only one runs at a time
+                // TODO: nested signals
+                if (task.is_handling_signal)
+                {
+                    // re-send
+                    task.send_signal(info);
+                    return;
+                }
+
+                task.is_handling_signal = true;
+                task.signal_saved_state = task.save_state();
+
+                // Mask signal if needed
+                if ((action.flags & H_SA_NODEFER) == 0)
+                    task.signal_mask.block(info.signo);
+                
+                task.signal_mask.block(action.mask);
+
+                auto &sp = task.get_emulator().x[2];
+
+                // align stack pointer
+                sp &= ~0xF;
+
+                if (action.flags & H_SA_RESTORER)
+                    task.get_emulator().x[1] = action.restorer; // ra - return address
+                else
+                {
+                    // Push restorer onto stack
+                    sp -= sizeof(H_SIGHAND_TRAMPOLINE);
+                    if (task.memcpy(sp, H_SIGHAND_TRAMPOLINE, sizeof(H_SIGHAND_TRAMPOLINE)) < 0)
+                        return;
+                    task.get_emulator().x[1] = sp; // ra
+                }
+
+                // arguments
+
+                task.get_emulator().x[10] = info.signo; // a0 - first argument
+
+                if (action.flags & H_SA_SIGINFO)
+                {
+                    sp -= sizeof(sys_siginfo);
+                    if (task.copy_to_memory(sp, info) < 0)
+                        return;
+                    task.get_emulator().x[11] = sp; // a1 - second arg
+
+                    sp -= sizeof(sys_ucontext);
+
+                    // ucontext from earlier
+                    if (task.copy_to_memory(sp, task.signal_saved_state) < 0)
+                        return;
+                    task.get_emulator().x[12] = sp; // a2 - third arg
+                }
+
+                // Set pc
+                task.get_emulator().pc = action.handler;
+
+                // Reset if flagged or fault signal
+                if (action.flags & H_SA_RESETHAND || info.signo == H_SIGSEGV || info.signo == H_SIGILL || info.signo == H_SIGFPE)
+                    task.process->get_signal_handlers()->set_default(info.signo);
+                
+                // done
+                return;
+            }, action);
+        }
+    }
+
+    sys_sigaction Task::get_sigaction(uint8_t signo)
+    {
+        sys_sigaction act = {};
+
+        if (process->get_signal_handlers()->is_default(signo))
+        {
+            act.handler = H_SIG_DFL;
+            return act;
+        }
+        else if (process->get_signal_handlers()->is_ignored(signo))
+        {
+            act.handler = H_SIG_IGN;
+            return act;
+        }
+        else
+        {
+            act = process->get_signal_handlers()->get_action(signo);
+            return act;
+        }
+    }
+
+    void Task::sigreturn()
+    {
+        if (is_handling_signal)
+        {
+            load_state(signal_saved_state);
+            is_handling_signal = false;
+        }
+    }
 } // namespace Hamster
 
