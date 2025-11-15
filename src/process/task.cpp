@@ -473,6 +473,7 @@ namespace Hamster
         {
             auto status = emulator.run();
             last_instruction_tick = _get_sys_time();
+            sys_siginfo siginfo = {};
 
             using Status = RiscVEmulator::ExecuteResult::Status;
 
@@ -488,11 +489,20 @@ namespace Hamster
                 _trace("TID %" PRIu32 ": EBREAK\n", tid);
                 break;
             case Status::IllegalInstruction:
+                siginfo.signo = H_SIGILL;
+                siginfo.code = H_ILL_ILLOPC;
+                siginfo.fields.fault.addr = emulator.pc;
+                send_signal(siginfo);
+                break;
             case Status::IllegalLoad:
             case Status::IllegalStore:
+                siginfo.signo = H_SIGSEGV;
+                siginfo.code = H_SEGV_BNDERR;
+                siginfo.fields.fault.addr = emulator.pc;
+                send_signal(siginfo);
+                break;
             case Status::Error:
-                // TODO: Send SIGILL, SIGBUS, SIGSEGV
-                _trace("TID %" PRIu32 ": ERROR!\n", tid);
+                // TODO: Handle generic error
                 this->exit(make_wait_terminated_coredump(H_SIGKILL));
                 break;
             }
