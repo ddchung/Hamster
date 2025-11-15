@@ -428,21 +428,21 @@ namespace Hamster
         if (pending_signals.size() > 0 || process->get_pending_signals().size() > 0)
         {
             TaskSignalQueue *sigqueue = &pending_signals;
-            const sys_siginfo *siginfo;
+            const sys_siginfo *p_siginfo;
 
             // First, check task's signal queue
-            siginfo = sigqueue->peek(signal_mask);
+            p_siginfo = sigqueue->peek(signal_mask);
 
             // Check shared signal queue if not found
-            if (!siginfo)
+            if (!p_siginfo)
             {
                 sigqueue = &process->get_pending_signals();
-                siginfo = sigqueue->peek(signal_mask);
+                p_siginfo = sigqueue->peek(signal_mask);
             }
 
-            if (siginfo)
+            if (p_siginfo)
             {
-                assert(siginfo->signo >= 1 && siginfo->signo <= 64);
+                assert(p_siginfo->signo >= 1 && p_siginfo->signo <= 64);
 
                 // stop any blocking operation in progress
                 if (blocking_operation)
@@ -450,11 +450,12 @@ namespace Hamster
                     interrupt_block();
                     end_block();
                 }
+                sys_siginfo siginfo = *p_siginfo;
+                sigqueue->pop(signal_mask);
 
                 // handle the signal
-                int res = process->get_signal_handlers()->handle_signal(siginfo->signo, *this, *siginfo);
+                int res = process->get_signal_handlers()->handle_signal(siginfo.signo, *this, siginfo);
                 assert(res == 0);
-                sigqueue->pop(signal_mask);
                 return;
             }
 
