@@ -544,6 +544,26 @@ namespace Hamster
         if (continued > 0)
             process->notify_continue();
     }
+
+    sys_ucontext Task::save_state()
+    {
+        sys_ucontext ucontext = {};
+        ucontext.sigmask = signal_mask.to_sigset();
+        ucontext.context.regs.pc = emulator.pc;
+        ::memcpy(ucontext.context.regs.regs, emulator.x + 1, sizeof(uint32_t) * 31); // + 1 to skip zero register
+        ucontext.context.fpstate.d.fcsr = emulator.fcsr;
+        ::memcpy(ucontext.context.fpstate.d.f, emulator.f, sizeof(emulator.f));
+        return ucontext;
+    }
+
+    void Task::load_state(const sys_ucontext &ucontext)
+    {
+        signal_mask.from_sigset(ucontext.sigmask);
+        emulator.pc = ucontext.context.regs.pc;
+        ::memcpy(emulator.x + 1, ucontext.context.regs.regs, sizeof(uint32_t) * 31); // +1 again to skip zero
+        emulator.fcsr = ucontext.context.fpstate.d.fcsr;
+        ::memcpy(emulator.f, ucontext.context.fpstate.d.f, sizeof(emulator.f));
+    }
     
     Session::Session(uint32_t sid)
         : sid(sid)

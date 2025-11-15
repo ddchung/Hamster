@@ -492,6 +492,19 @@ namespace Hamster
         int set_pgid(uint32_t pgid);
 
         /**
+         * @brief Save the current CPU state of the task
+         * @return The saved ucontext
+         */
+        sys_ucontext save_state();
+
+        /**
+         * @brief Load a saved CPU state
+         * @param state The CPU state to load
+         * @return 0 on success, -1 on error
+         */
+        void load_state(const sys_ucontext &state);
+
+        /**
          * @brief Register a signal handler
          * @param signo The signal number
          * @param handler The location of the userspace handler, or H_SIG_DFL/H_SIG_IGN
