@@ -7,6 +7,17 @@
 
 namespace Hamster
 {
+    void TaskSignalMask::block(sys_sigset signals)
+    {
+        mask |= signals.sig[0];
+        mask |= (uint64_t)signals.sig[1] << 32;
+    }
+
+    void TaskSignalMask::from_sigset(sys_sigset sigset)
+    {
+        mask = sigset.sig[0] | (uint64_t) sigset.sig[1] << 32;
+    }
+
     void TaskSignalMask::set_blocked(uint8_t signo, bool blocked)
     {
         if (signo < 1 || signo > 64)

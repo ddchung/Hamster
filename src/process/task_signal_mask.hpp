@@ -17,6 +17,18 @@ namespace Hamster
         void block(uint8_t signo) { set_blocked(signo, true); }
 
         /**
+         * @brief Block many signals at once
+         * @param signals Signals to block
+         */
+        void block(sys_sigset signals);
+
+        /**
+         * @brief Set the signal mask
+         * @param sigmask The new signal mask. 1 is blocked, 0 is not
+         */
+        void from_sigset(sys_sigset sigmask);
+
+        /**
          * @brief Unblock a signal
          * @param signo The signal number to unblock
          */
