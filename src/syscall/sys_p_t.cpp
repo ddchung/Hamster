@@ -3,6 +3,7 @@
 #include <syscall/syscall.hpp>
 #include <process/task.hpp>
 #include <process/task_vfs_fd.hpp>
+#include <process/task_pipe.hpp>
 #include <abi/values.hpp>
 #include <abi/structs.hpp>
 
@@ -319,6 +320,35 @@ namespace Hamster
     int32_t sys_rt_sigreturn(Task &task)
     {
         task.sigreturn();
+        return 0;
+    }
+
+    int32_t sys_pipe2(Task &task, uint32_t pipefd_loc, int32_t flags)
+    {
+        auto pipes = TaskPipe::make_pair(flags & OPEN_NONBLOCK);
+
+        // Add both pipes
+        int fd1 = task.set_fd(pipes.first);
+        int fd2 = task.set_fd(pipes.second);
+
+        if (fd1 < 0 || fd2 < 0)
+        {
+            if (fd1 >= 0) task.close_fd(fd1);
+            if (fd2 >= 0) task.close_fd(fd2);
+            return cvt_error();
+        }
+
+        if (flags & OPEN_CLOEXEC)
+        {
+            task.set_fd_flags(fd1, H_FD_CLOEXEC);
+            task.set_fd_flags(fd2, H_FD_CLOEXEC);
+        }
+
+        int32_t pipefds[2] = {fd1, fd2};
+
+        if (task.copy_to_memory(pipefd_loc, pipefds) < 0)
+            return cvt_error();
+        
         return 0;
     }
 } // namespace Hamster
