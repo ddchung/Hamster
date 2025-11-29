@@ -118,13 +118,13 @@ void test_process()
         int slot = table.allocate_fd();
         assert(slot >= 0);
         DummyFD *fd2 = alloc<DummyFD>(1, 2);
-        assert(table.set_fd(fd2, slot) == 0);
+        assert(table.set_fd(fd2, slot) == slot);
         assert(static_cast<DummyFD *>(table.get_fd(slot))->value == 2);
 
         // close_cloexec
         DummyFD *fd3 = alloc<DummyFD>(1, 3);
         assert(table.allocate_fd() == 2);
-        assert(table.set_fd(fd3, 2) == 0);
+        assert(table.set_fd(fd3, 2) == 2);
         assert(table.set_fd_flags(2, H_FD_CLOEXEC) == 0);
         table.close_cloexec();
         assert(table.get_fd(2) == nullptr);

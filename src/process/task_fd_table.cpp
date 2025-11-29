@@ -91,7 +91,7 @@ namespace Hamster
 
         fd_table[fd].fd.construct(task_fd);
         fd_table[fd].fd_flags = 0;
-        return 0;
+        return fd;
     }
 
     int TaskFDTable::dup(int fd, int new_fd)

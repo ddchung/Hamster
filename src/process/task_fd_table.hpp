@@ -61,12 +61,11 @@ namespace Hamster
          */
         int close(int fd);
 
-        // TODO: Make `set_fd` return the fd, instead of 0 on success
         /**
          * @brief Set a file descriptor
          * @param task_fd The BaseTaskFD object. Will take ownership
          * @param fd The FD to map to. -1 to allocate the next one
-         * @return 0 on success, -1 on error
+         * @return The file descriptor slot on success, -1 on error
          * @warning This will close a BaseTaskFD if there already is one
          *        * in that slot
          */
