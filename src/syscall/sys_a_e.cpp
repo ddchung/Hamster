@@ -233,5 +233,49 @@ namespace Hamster
 
         return 0;
     }
+
+    int32_t sys_clock_nanosleep_time64(Task &task, int32_t clock_id, int32_t flags, uint32_t req_loc, uint32_t rem_loc)
+    {
+        task.block([](Task &task, uint32_t clock_id, uint32_t flags, uint32_t req_loc, uint32_t rem_loc, uint32_t, uint32_t) {
+            sys_timespec req;
+
+            if (!req_loc)
+            {
+                error = H_EINVAL;
+                return -1;
+            }
+
+            if (task.copy_from_memory(req, req_loc) < 0)
+                return -1;
+
+            uint64_t req_ms = req.sec * 1000 + req.nsec / 1000000;
+            uint64_t now = _get_sys_time();
+
+            if (flags & H_TIMER_ABSTIME)
+            {
+                switch (clock_id)
+                {
+                case H_CLOCK_REALTIME:
+                    now += clock_rt_offset;
+                    [[fallthrough]];
+                case H_CLOCK_MONOTONIC:
+                    if (now >= req_ms)
+                        return 0; // passed requested timepoint
+                    break;
+                default:
+                    error = H_EINVAL;
+                    return -1;
+                }
+            }
+            else if (task.get_last_tick() + req_ms <= now)
+                return 0; // Done sleeping
+            
+            // See comment on Task::block
+            error = H_EAGAIN;
+            return -1;
+        });
+
+        return 0;
+    }
 } // namespace Hamster
 
