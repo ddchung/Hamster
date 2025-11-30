@@ -211,14 +211,16 @@ namespace Hamster
         else
         {
             SharedPtr<TaskFSInfo, size_t> fs_info;
+            SharedPtr<TaskSignalHandlers, size_t> signal_handlers;
             int uid, euid, suid;
             int gid, egid, sgid;
 
             fs_info.assign(process->get_fs_info(), flags & H_CLONE_FS ? SHALLOW : DEEP);
+            signal_handlers.assign(process->get_signal_handlers(), DEEP);
             process->get_uid(&uid, &euid, &suid);
             process->get_gid(&gid, &egid, &sgid);
 
-            new_task->process.construct(tid, new_task, process->get_process_group(), process->get_signal_handlers(),
+            new_task->process.construct(tid, new_task, process->get_process_group(), signal_handlers,
                                         fs_info, flags & H_CLONE_PARENT ? process->get_parent() : &this->process.get(),
                                         uid, euid, suid, gid, egid, sgid, process->get_groups());
         }
@@ -489,6 +491,7 @@ namespace Hamster
                 _trace("TID %" PRIu32 ": EBREAK\n", tid);
                 break;
             case Status::IllegalInstruction:
+                _trace("TID %" PRIu32 ": illegal instruction at pc 0x%08" PRIx32 "\n", tid, emulator.pc);
                 siginfo.signo = H_SIGILL;
                 siginfo.code = H_ILL_ILLOPC;
                 siginfo.fields.fault.addr = emulator.pc;
