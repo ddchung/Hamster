@@ -131,11 +131,13 @@ namespace Hamster
 
     void TaskSignalHandlers::sighand_dfl_term(Task &task, const sys_siginfo &siginfo, const sys_sigaction &)
     {
+        task.interrupt_block();
         task.exit_group(make_wait_terminated(siginfo.signo));
     }
 
     void TaskSignalHandlers::sighand_dfl_dump(Task &task, const sys_siginfo &siginfo, const sys_sigaction &)
     {
+        task.interrupt_block();
         task.exit_group(make_wait_terminated_coredump(siginfo.signo));
     }
 
@@ -185,6 +187,8 @@ namespace Hamster
                     return;
                 }
 
+                task.interrupt_block();
+
                 task.is_handling_signal = true;
                 task.signal_saved_state = task.save_state();
 
@@ -228,6 +232,8 @@ namespace Hamster
                         return;
                     task.get_emulator().x[12] = sp; // a2 - third arg
                 }
+
+                sp &= ~0xF;
 
                 // Set pc
                 task.get_emulator().pc = action.handler;

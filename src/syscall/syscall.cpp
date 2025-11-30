@@ -258,21 +258,12 @@ namespace Hamster
         template <SysTraceParam... Args>
         void trace_syscall(const char *name, Task &task, int32_t *args)
         {
-            _trace("TID \033[34m%" PRIu32 "\033[0m\tsystem call \033[32m%s\033[0m,\targs: {", task.get_tid(), name);
+            _trace("TID \033[34m%" PRIu32 "\033[0m\tsystem call \033[32m%s\033[0m,\tpc: 0x%08" PRIx32 "\targs: {", task.get_tid(), name, task.get_emulator().pc);
             ((
                  print_arg(Args.type, task, Args.name, (uint32_t)*args),
                  _trace(",\t"),
                  ++args),
              ...);
-        }
-
-        void trace_syscall_result(int32_t result)
-        {
-            _trace("} -> \033[36m%" PRIi32, result);
-
-            if (result < 0 && (ssize_t)result > -(ssize_t)(sizeof(error_names) / sizeof(error_names[0])))
-                _trace("\t\033[31m(error %s)", error_names[-result]);
-            _trace("\033[0m\n");
         }
 #define SysTraceParam(...) \
     SysTraceParam { __VA_ARGS__ }
@@ -285,6 +276,20 @@ namespace Hamster
 #define SysTraceParam(...) 0
 #endif // NTRACE
     } // namespace
+
+    void trace_syscall_result(Task &task, int32_t result)
+    {
+        if (task.is_blocking())
+        {
+            _trace("} -> \033[36m?\033[0m (started blocking)\n");
+            return;
+        }
+        _trace("} -> \033[36m%" PRIi32, result);
+
+        if (result < 0 && (ssize_t)result > -(ssize_t)(sizeof(error_names) / sizeof(error_names[0])))
+            _trace("\t\033[31m(error %s)", error_names[-result]);
+        _trace("\033[0m\n");
+    }
 
     int32_t cvt_error()
     {
@@ -305,49 +310,49 @@ namespace Hamster
         case SyscallID::EXIT:
             trace_syscall<SysTraceParam("code", PT_INT)>("exit", task, args);
             result = syscall(task, sys_exit);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETPID:
             trace_syscall<>("getpid", task, args);
             result = syscall(task, sys_getpid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETTID:
             trace_syscall<>("gettid", task, args);
             result = syscall(task, sys_gettid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SETPGID:
             trace_syscall<
                 SysTraceParam("pid", PT_INT),
                 SysTraceParam("pgid", PT_INT)>("setpgid", task, args);
             result = syscall(task, sys_setpgid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETPGID:
             trace_syscall<SysTraceParam("pid", PT_INT)>("getpgid", task, args);
             result = syscall(task, sys_getpgid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETSID:
             trace_syscall<SysTraceParam("pid", PT_INT)>("getsid", task, args);
             result = syscall(task, sys_getsid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SETSID:
             trace_syscall<>("setsid", task, args);
             result = syscall(task, sys_setsid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SCHED_YIELD:
             trace_syscall<>("sched_yield", task, args);
             result = syscall(task, sys_sched_yield);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETPPID:
             trace_syscall<>("getppid", task, args);
             result = syscall(task, sys_getppid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::CLONE:
             trace_syscall<
@@ -378,7 +383,7 @@ namespace Hamster
                 SysTraceParam("tls", PT_INT),
                 SysTraceParam("ctid", PT_PTR)>("clone", task, args);
             result = syscall(task, sys_clone);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::EXECVE:
             trace_syscall<
@@ -386,7 +391,7 @@ namespace Hamster
                 SysTraceParam("argv", PT_PTR),
                 SysTraceParam("envp", PT_PTR)>("execve", task, args);
             result = syscall(task, sys_execve);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::EXECVEAT:
             trace_syscall<
@@ -396,7 +401,7 @@ namespace Hamster
                 SysTraceParam("envp", PT_PTR),
                 SysTraceParam("flags", PT_UINT)>("execveat", task, args);
             result = syscall(task, sys_execveat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::WAITID:
             trace_syscall<
@@ -406,7 +411,7 @@ namespace Hamster
                 SysTraceParam("options", PT_INT),
                 SysTraceParam("ru", PT_PTR)>("waitid", task, args);
             result = syscall(task, sys_waitid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::WAIT4:
             trace_syscall<
@@ -415,14 +420,14 @@ namespace Hamster
                 SysTraceParam("options", PT_INT),
                 SysTraceParam("ru", PT_PTR)>("wait4", task, args);
             result = syscall(task, sys_wait4);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::KILL:
             trace_syscall<
                 SysTraceParam("pid", PT_INT),
                 SysTraceParam("sig", PT_INT)>("kill", task, args);
             result = syscall(task, sys_kill);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::TGKILL:
             trace_syscall<
@@ -430,7 +435,7 @@ namespace Hamster
                 SysTraceParam("tid", PT_INT),
                 SysTraceParam("sig", PT_INT)>("tgkill", task, args);
             result = syscall(task, sys_tgkill);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETRANDOM:
             trace_syscall<
@@ -438,20 +443,20 @@ namespace Hamster
                 SysTraceParam("buflen", PT_UINT),
                 SysTraceParam("flags", PT_UINT)>("getrandom", task, args);
             result = syscall(task, sys_getrandom);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SETUID:
             trace_syscall<
                 SysTraceParam("uid", PT_UINT)>("setuid", task, args);
             result = syscall(task, sys_setuid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SETREUID:
             trace_syscall<
                 SysTraceParam("ruid", PT_UINT),
                 SysTraceParam("euid", PT_UINT)>("setreuid", task, args);
             result = syscall(task, sys_setreuid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SETRESUID:
             trace_syscall<
@@ -459,20 +464,20 @@ namespace Hamster
                 SysTraceParam("euid", PT_UINT),
                 SysTraceParam("suid", PT_UINT)>("setresuid", task, args);
             result = syscall(task, sys_setresuid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SETGID:
             trace_syscall<
                 SysTraceParam("gid", PT_UINT)>("setgid", task, args);
             result = syscall(task, sys_setgid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SETREGID:
             trace_syscall<
                 SysTraceParam("rgid", PT_UINT),
                 SysTraceParam("egid", PT_UINT)>("setregid", task, args);
             result = syscall(task, sys_setregid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SETRESGID:
             trace_syscall<
@@ -480,7 +485,7 @@ namespace Hamster
                 SysTraceParam("egid", PT_UINT),
                 SysTraceParam("sgid", PT_UINT)>("setresgid", task, args);
             result = syscall(task, sys_setresgid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::OPENAT:
             trace_syscall<
@@ -504,7 +509,7 @@ namespace Hamster
                 >),
                 SysTraceParam("mode", PT_INT)>("openat", task, args);
             result = syscall(task, sys_openat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::READ:
             trace_syscall<
@@ -512,7 +517,7 @@ namespace Hamster
                 SysTraceParam("buf", PT_PTR),
                 SysTraceParam("count", PT_UINT)>("read", task, args);
             result = syscall(task, sys_read);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::WRITE:
             trace_syscall<
@@ -520,13 +525,13 @@ namespace Hamster
                 SysTraceParam("buf", PT_PTR),
                 SysTraceParam("count", PT_UINT)>("write", task, args);
             result = syscall(task, sys_write);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::CLOSE:
             trace_syscall<
                 SysTraceParam("fd", PT_INT)>("close", task, args);
             result = syscall(task, sys_close);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SENDFILE64:
             trace_syscall<
@@ -535,7 +540,7 @@ namespace Hamster
                 SysTraceParam("offset", PT_PTR),
                 SysTraceParam("count", PT_UINT)>("sendfile64", task, args);
             result = syscall(task, sys_sendfile64);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SPLICE:
             trace_syscall<
@@ -546,7 +551,7 @@ namespace Hamster
                 SysTraceParam("len", PT_UINT),
                 SysTraceParam("flags", PT_UINT)>("splice", task, args);
             result = syscall(task, sys_splice);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::STATFS:
             trace_syscall<
@@ -554,7 +559,7 @@ namespace Hamster
                 SysTraceParam("size", PT_UINT),
                 SysTraceParam("buf", PT_PTR)>("statfs", task, args);
             result = syscall(task, sys_statfs);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::FSTATFS:
             trace_syscall<
@@ -562,7 +567,7 @@ namespace Hamster
                 SysTraceParam("size", PT_UINT),
                 SysTraceParam("buf", PT_PTR)>("fstatfs", task, args);
             result = syscall(task, sys_fstatfs);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::MOUNT:
             trace_syscall<
@@ -572,14 +577,14 @@ namespace Hamster
                 SysTraceParam("mountflags", PT_UINT),
                 SysTraceParam("data", PT_PTR)>("mount", task, args);
             result = syscall(task, sys_mount);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::UMOUNT2:
             trace_syscall<
                 SysTraceParam("target", PT_STR),
                 SysTraceParam("flags", PT_INT)>("umount2", task, args);
             result = syscall(task, sys_umount2);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::FCHOWNAT:
             trace_syscall<
@@ -589,7 +594,7 @@ namespace Hamster
                 SysTraceParam("group", PT_UINT),
                 SysTraceParam("flags", PT_INT)>("fchownat", task, args);
             result = syscall(task, sys_fchownat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::FCHOWN:
             trace_syscall<
@@ -597,7 +602,7 @@ namespace Hamster
                 SysTraceParam("owner", PT_UINT),
                 SysTraceParam("group", PT_UINT)>("fchown", task, args);
             result = syscall(task, sys_fchown);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::FCHMODAT:
             trace_syscall<
@@ -606,14 +611,14 @@ namespace Hamster
                 SysTraceParam("mode", PT_UINT),
                 SysTraceParam("flags", PT_INT)>("fchmodat", task, args);
             result = syscall(task, sys_fchmodat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::FCHMOD:
             trace_syscall<
                 SysTraceParam("fd", PT_INT),
                 SysTraceParam("mode", PT_UINT)>("fchmod", task, args);
             result = syscall(task, sys_fchmod);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::FTRUNCATE64:
             trace_syscall<
@@ -621,7 +626,7 @@ namespace Hamster
                 SysTraceParam("off_high", PT_UINT),
                 SysTraceParam("off_low", PT_UINT)>("ftruncate64", task, args);
             result = syscall(task, sys_ftruncate64);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::TRUNCATE64:
             trace_syscall<
@@ -629,7 +634,7 @@ namespace Hamster
                 SysTraceParam("off_high", PT_UINT),
                 SysTraceParam("off_low", PT_UINT)>("truncate64", task, args);
             result = syscall(task, sys_truncate64);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::LLSEEK:
             trace_syscall<
@@ -639,7 +644,7 @@ namespace Hamster
                 SysTraceParam("result", PT_PTR),
                 SysTraceParam("whence", PT_INT)>("llseek", task, args);
             result = syscall(task, sys_llseek);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::NEWFSTATAT:
             trace_syscall<
@@ -648,20 +653,20 @@ namespace Hamster
                 SysTraceParam("statbuf", PT_PTR),
                 SysTraceParam("flags", PT_INT)>("newfstatat", task, args);
             result = syscall(task, sys_newfstatat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::NEWFSTAT:
             trace_syscall<
                 SysTraceParam("fd", PT_INT),
                 SysTraceParam("statbuf", PT_PTR)>("newfstat", task, args);
             result = syscall(task, sys_newfstat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::DUP:
             trace_syscall<
                 SysTraceParam("oldfd", PT_INT)>("dup", task, args);
             result = syscall(task, sys_dup);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::DUP3:
             trace_syscall<
@@ -669,7 +674,7 @@ namespace Hamster
                 SysTraceParam("newfd", PT_INT),
                 SysTraceParam("flags", PT_INT)>("dup3", task, args);
             result = syscall(task, sys_dup3);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::MKDIRAT:
             trace_syscall<
@@ -677,7 +682,7 @@ namespace Hamster
                 SysTraceParam("pathname", PT_STR),
                 SysTraceParam("mode", PT_UINT)>("mkdirat", task, args);
             result = syscall(task, sys_mkdirat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::UNLINKAT:
             trace_syscall<
@@ -685,7 +690,7 @@ namespace Hamster
                 SysTraceParam("pathname", PT_STR),
                 SysTraceParam("flags", PT_INT)>("unlinkat", task, args);
             result = syscall(task, sys_unlinkat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::LINKAT:
             trace_syscall<
@@ -695,7 +700,7 @@ namespace Hamster
                 SysTraceParam("newpathname", PT_STR),
                 SysTraceParam("flags", PT_INT)>("linkat", task, args);
             result = syscall(task, sys_linkat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::RENAMEAT:
             trace_syscall<
@@ -704,7 +709,7 @@ namespace Hamster
                 SysTraceParam("newdirfd", PT_INT),
                 SysTraceParam("newpathname", PT_STR)>("renameat", task, args);
             result = syscall(task, sys_renameat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::RENAMEAT2:
             trace_syscall<
@@ -714,7 +719,7 @@ namespace Hamster
                 SysTraceParam("newpathname", PT_STR),
                 SysTraceParam("flags", PT_UINT)>("renameat2", task, args);
             result = syscall(task, sys_renameat2);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETDENTS64:
             trace_syscall<
@@ -722,20 +727,20 @@ namespace Hamster
                 SysTraceParam("dirp", PT_PTR),
                 SysTraceParam("count", PT_UINT)>("getdents64", task, args);
             result = syscall(task, sys_getdents64);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::CHDIR:
             trace_syscall<
                 SysTraceParam("path", PT_STR)>("chdir", task, args);
             result = syscall(task, sys_chdir);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETCWD:
             trace_syscall<
                 SysTraceParam("buf", PT_PTR),
                 SysTraceParam("size", PT_UINT)>("getcwd", task, args);
             result = syscall(task, sys_getcwd);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::FACCESSAT:
             trace_syscall<
@@ -743,7 +748,7 @@ namespace Hamster
                 SysTraceParam("pathname", PT_STR),
                 SysTraceParam("mode", PT_INT)>("faccessat", task, args);
             result = syscall(task, sys_faccessat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::FACCESSAT2:
             trace_syscall<
@@ -752,20 +757,20 @@ namespace Hamster
                 SysTraceParam("mode", PT_INT),
                 SysTraceParam("flags", PT_INT)>("faccessat2", task, args);
             result = syscall(task, sys_faccessat2);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::PIPE2:
             trace_syscall<
                 SysTraceParam("pipefd", PT_PTR),
                 SysTraceParam("flags", PT_INT)>("pipe2", task, args);
             result = syscall(task, sys_pipe2);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::BRK:
             trace_syscall<
                 SysTraceParam("end_data_segment", PT_PTR)>("brk", task, args);
             result = syscall(task, sys_brk);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::MMAP2:
             trace_syscall<
@@ -776,7 +781,7 @@ namespace Hamster
                 SysTraceParam("fd", PT_INT),
                 SysTraceParam("offset", PT_UINT)>("mmap2", task, args);
             result = syscall(task, sys_mmap2);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::MREMAP:
             trace_syscall<
@@ -786,14 +791,14 @@ namespace Hamster
                 SysTraceParam("flags", PT_UINT),
                 SysTraceParam("new_address", PT_PTR)>("mremap", task, args);
             result = syscall(task, sys_mremap);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::MUNMAP:
             trace_syscall<
                 SysTraceParam("addr", PT_PTR),
                 SysTraceParam("length", PT_UINT)>("munmap", task, args);
             result = syscall(task, sys_munmap);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::MPROTECT:
             trace_syscall<
@@ -801,7 +806,7 @@ namespace Hamster
                 SysTraceParam("len", PT_UINT),
                 SysTraceParam("prot", PT_INT)>("mprotect", task, args);
             result = syscall(task, sys_mprotect);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::STATX:
             trace_syscall<
@@ -811,7 +816,7 @@ namespace Hamster
                 SysTraceParam("mask", PT_UINT),
                 SysTraceParam("statxbuf", PT_PTR)>("statx", task, args);
             result = syscall(task, sys_statx);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::READLINKAT:
             trace_syscall<
@@ -820,7 +825,7 @@ namespace Hamster
                 SysTraceParam("buf", PT_PTR),
                 SysTraceParam("bufsiz", PT_UINT)>("readlinkat", task, args);
             result = syscall(task, sys_readlinkat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SYMLINKAT:
             trace_syscall<
@@ -828,17 +833,17 @@ namespace Hamster
                 SysTraceParam("newdirfd", PT_INT),
                 SysTraceParam("linkpath", PT_STR)>("symlinkat", task, args);
             result = syscall(task, sys_symlinkat);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETUID:
             trace_syscall<>("getuid", task, args);
             result = syscall(task, sys_getuid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETEUID:
             trace_syscall<>("geteuid", task, args);
             result = syscall(task, sys_geteuid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETRESUID:
             trace_syscall<
@@ -846,17 +851,17 @@ namespace Hamster
                 SysTraceParam("euid", PT_PTR),
                 SysTraceParam("suid", PT_PTR)>("getresuid", task, args);
             result = syscall(task, sys_getresuid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETGID:
             trace_syscall<>("getgid", task, args);
             result = syscall(task, sys_getgid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETEGID:
             trace_syscall<>("getegid", task, args);
             result = syscall(task, sys_getegid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETRESGID:
             trace_syscall<
@@ -864,21 +869,21 @@ namespace Hamster
                 SysTraceParam("egid", PT_PTR),
                 SysTraceParam("sgid", PT_PTR)>("getresgid", task, args);
             result = syscall(task, sys_getresgid);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::GETGROUPS:
             trace_syscall<
                 SysTraceParam("size", PT_UINT),
                 SysTraceParam("list", PT_PTR)>("getgroups", task, args);
             result = syscall(task, sys_getgroups);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::SETGROUPS:
             trace_syscall<
                 SysTraceParam("size", PT_UINT),
                 SysTraceParam("list", PT_PTR)>("setgroups", task, args);
             result = syscall(task, sys_setgroups);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::IOCTL:
             trace_syscall<
@@ -886,7 +891,7 @@ namespace Hamster
                 SysTraceParam("request", PT_INT),
                 SysTraceParam("arg", PT_PTR)>("ioctl", task, args);
             result = syscall(task, sys_ioctl);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::FCNTL64:
             trace_syscall<
@@ -894,7 +899,7 @@ namespace Hamster
                 SysTraceParam("cmd", PT_INT),
                 SysTraceParam("arg", PT_PTR)>("fcntl64", task, args);
             result = syscall(task, sys_fcntl64);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::PRCTL:
             trace_syscall<
@@ -904,13 +909,13 @@ namespace Hamster
                 SysTraceParam("arg4", PT_PTR),
                 SysTraceParam("arg5", PT_PTR)>("prctl", task, args);
             result = syscall(task, sys_prctl);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::EXIT_GROUP:
             trace_syscall<
                 SysTraceParam("status", PT_INT)>("exit_group", task, args);
             result = syscall(task, sys_exit_group);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::RT_SIGACTION:
             trace_syscall<
@@ -919,12 +924,12 @@ namespace Hamster
                 SysTraceParam("oldact", PT_PTR),
                 SysTraceParam("sigsetsize", PT_UINT)>("rt_sigaction", task, args);
             result = syscall(task, sys_rt_sigaction);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::RT_SIGRETURN:
             trace_syscall<>("rt_sigreturn", task, args);
             result = syscall(task, sys_rt_sigreturn);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::RT_SIGPROCMASK:
             trace_syscall<
@@ -933,14 +938,14 @@ namespace Hamster
                 SysTraceParam("oldset", PT_PTR),
                 SysTraceParam("sigsetsize", PT_UINT)>("rt_sigprocmask", task, args);
             result = syscall(task, sys_rt_sigprocmask);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::RT_SIGPENDING:
             trace_syscall<
                 SysTraceParam("set", PT_PTR),
                 SysTraceParam("sigsetsize", PT_UINT)>("rt_sigpending", task, args);
             result = syscall(task, sys_rt_sigpending);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::RT_SIGTIMEDWAIT_TIME64:
             trace_syscall<
@@ -949,7 +954,7 @@ namespace Hamster
                 SysTraceParam("timeout", PT_PTR),
                 SysTraceParam("sigsetsize", PT_UINT)>("rt_sigtimedwait_time64", task, args);
             result = syscall(task, sys_rt_sigtimedwait_time64);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::RT_SIGQUEUEINFO:
             trace_syscall<
@@ -957,20 +962,20 @@ namespace Hamster
                 SysTraceParam("sig", PT_INT),
                 SysTraceParam("info", PT_PTR)>("rt_sigqueueinfo", task, args);
             result = syscall(task, sys_rt_sigqueueinfo);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::RT_SIGSUSPEND:
             trace_syscall<
                 SysTraceParam("unewset", PT_PTR),
                 SysTraceParam("sigsetsize", PT_UINT)>("rt_sigsuspend", task, args);
             result = syscall(task, sys_rt_sigsuspend);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::UNAME:
             trace_syscall<
                 SysTraceParam("buf", PT_PTR)>("uname", task, args);
             result = syscall(task, sys_uname);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::PSELECT6_TIME64:
             trace_syscall<
@@ -981,33 +986,33 @@ namespace Hamster
                 SysTraceParam("timeout", PT_PTR),
                 SysTraceParam("sigmask", PT_PTR)>("pselect6_time64", task, args);
             result = syscall(task, sys_pselect6_time64);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::FSYNC:
             trace_syscall<
                 SysTraceParam("fd", PT_INT)>("fsync", task, args);
             result = syscall(task, sys_fsync);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::FDATASYNC:
             trace_syscall<
                 SysTraceParam("fd", PT_INT)>("fdatasync", task, args);
             result = syscall(task, sys_fdatasync);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::CLOCK_GETRES_TIME64:
             trace_syscall<
                 SysTraceParam("clock_id", PT_INT),
                 SysTraceParam("res", PT_PTR)>("clock_getres_time64", task, args);
             result = syscall(task, sys_clock_getres_time64);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::CLOCK_GETTIME64:
             trace_syscall<
                 SysTraceParam("clock_id", PT_INT),
                 SysTraceParam("tp", PT_PTR)>("clock_gettime64", task, args);
             result = syscall(task, sys_clock_gettime64);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::CLOCK_NANOSLEEP_TIME64:
             trace_syscall<
@@ -1016,14 +1021,14 @@ namespace Hamster
                 SysTraceParam("req", PT_PTR),
                 SysTraceParam("rem", PT_PTR)>("clock_nanosleep_time64", task, args);
             result = syscall(task, sys_clock_nanosleep_time64);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         case SyscallID::CLOCK_SETTIME64:
             trace_syscall<
                 SysTraceParam("clock_id", PT_INT),
                 SysTraceParam("tp", PT_PTR)>("clock_settime64", task, args);
             result = syscall(task, sys_clock_settime64);
-            trace_syscall_result(result);
+            trace_syscall_result(task, result);
             break;
         default:
             // Unsupported syscall ID

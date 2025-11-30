@@ -320,8 +320,37 @@ namespace Hamster
             }
         }
 
-        // not found
-        error = H_EAGAIN;
+        // Check if child process even exists
+
+        for (Process *process : process->get_children())
+        {
+            bool match = false;
+            switch (idtype)
+            {
+            case H_P_PID:
+                match = (process->get_pid() == id);
+                break;
+            case H_P_PGID:
+                match = (process->get_process_group()->get_pgid() == id);
+                break;
+            case H_P_ALL:
+                match = true;
+                break;
+            default:
+                error = H_EINVAL;
+                return -1;
+            }
+
+            if (match)
+            {
+                // there is a waitable process, block
+                error = H_EAGAIN;
+                return -1;
+            }
+        }
+
+        // No matching child
+        error = H_ECHILD;
         return -1;
     }
 
@@ -348,6 +377,7 @@ namespace Hamster
             interrupt_callback = [](Task &task, uint64_t saved) {
                 task.get_emulator().x[10] = -H_EINTR;
                 task.end_block();
+                _trace("TID \033[34m%" PRIu32 "\033[0m\tFinished blocking operation, result: \033[36m%" PRIi32 "\033[0m\n", task.get_tid(), -H_EINTR);
             };
     
         blocking_operation = callback;
@@ -386,6 +416,8 @@ namespace Hamster
             x[10] = res;
             task.end_block();
             task.blocking_operation_alt = nullptr;
+
+            _trace("TID \033[34m%" PRIu32 "\033[0m\tFinished blocking operation, result: \033[36m%" PRIi32 "\033[0m\n", task.get_tid(), res);
         }, emulator.x[10]); // save a0 because if this function is called from a 
         //                     system call, a0 will be overwritten by the call's return value
     }
@@ -399,6 +431,7 @@ namespace Hamster
         }
 
         interrupt_blocking(*this, blocking_operation_saved);
+        end_block();
         return 0;
     }
 
@@ -446,12 +479,6 @@ namespace Hamster
             {
                 assert(p_siginfo->signo >= 1 && p_siginfo->signo <= 64);
 
-                // stop any blocking operation in progress
-                if (blocking_operation)
-                {
-                    interrupt_block();
-                    end_block();
-                }
                 sys_siginfo siginfo = *p_siginfo;
                 sigqueue->pop(signal_mask);
 

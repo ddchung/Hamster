@@ -58,8 +58,8 @@ namespace Hamster
             if (res < 0)
                 return -1;
 
-            if (siginfo_loc && (task.copy_to_memory(siginfo_loc, siginfo) < 0
-                || task.memset(rusage_loc, 0, sizeof(sys_rusage)) < 0))
+            if ((siginfo_loc && task.copy_to_memory(siginfo_loc, siginfo) < 0)
+             || (rusage_loc && task.memset(rusage_loc, 0, sizeof(sys_rusage)) < 0))
             {
                 error = H_EFAULT;
                 return -1;
