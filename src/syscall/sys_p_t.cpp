@@ -422,5 +422,26 @@ namespace Hamster
             return cvt_error();
         return 0;
     }
+
+    int32_t sys_truncate64(Task &task, uint32_t path_loc, uint32_t off_high, uint32_t off_low)
+    {
+        int64_t off = ((uint64_t)off_high << 32) | off_low;
+
+        char *path = task.mem_get_string(path_loc);
+        if (!path)
+            return cvt_error();
+        
+        int fd = task.open_rel_file(H_AT_FDCWD, path, OPEN_WRONLY);
+        dealloc(path);
+        if (fd < 0)
+            return cvt_error();
+        
+        int res = vfs.truncate(fd, off);
+        vfs.close(fd);
+
+        if (res < 0)
+            return cvt_error();
+        return 0;
+    }
 } // namespace Hamster
 

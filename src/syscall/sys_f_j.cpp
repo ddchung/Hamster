@@ -358,5 +358,51 @@ namespace Hamster
         
         return buf_loc;
     }
+
+    int32_t sys_ftruncate64(Task &task, int32_t fd, uint32_t off_high, uint32_t off_low)
+    {
+        int64_t off = ((uint64_t)off_high << 32) | off_low;
+
+        BaseTaskFD *file = task.get_fd(fd);
+        if (!file)
+            return cvt_error();
+        
+        if (file->truncate(off) < 0)
+            return cvt_error();
+        return 0;
+    }
+
+    int32_t sys_fchmod(Task &task, int32_t task_fd, uint32_t mode)
+    {
+        int fd = task.get_vfs_fd(task_fd);
+        if (fd < 0)
+            return cvt_error();
+        if (vfs.chmod(fd, mode) < 0)
+            return cvt_error();
+        return 0;
+    }
+
+    int32_t sys_fchmodat(Task &task, int32_t dirfd, uint32_t path_loc, uint32_t mode, int32_t flags)
+    {
+        // We don't support AT_SYMLINK_NOFOLLOW
+        if (flags != 0)
+            return -H_ENOTSUP;
+        
+        char *path = task.mem_get_string(path_loc);
+        if (!path)
+            return cvt_error();
+        
+        int file = task.open_rel_file(dirfd, path, OPEN_WRONLY);
+        dealloc(path);
+        if (file < 0)
+            return cvt_error();
+        
+        int res = vfs.chmod(file, mode);
+        vfs.close(file);
+
+        if (res < 0)
+            return cvt_error();
+        return 0;
+    }
 } // namespace Hamster
 
