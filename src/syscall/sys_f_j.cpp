@@ -231,6 +231,8 @@ namespace Hamster
             return cvt_error();
         }
 
+        vfs.seek(vfs_fd, 0, H_SEEK_SET);
+
         char *const *list = file->list();
         if (!list)
             return -H_EINVAL;
@@ -332,6 +334,29 @@ namespace Hamster
         file->seek(bytes_read, H_SEEK_CUR);
 
         return bytes_read; // Return the number of bytes read
+    }
+
+    int32_t sys_getcwd(Task &task, uint32_t buf_loc, uint32_t size)
+    {
+        char *cwd = task.getcwd();
+
+        size_t cwd_len = strlen(cwd);
+
+        if (cwd_len + 1 > size)
+        {
+            dealloc(cwd);
+            return -H_ERANGE;
+        }
+        
+        if (task.memcpy(buf_loc, cwd, cwd_len + 1) < 0)
+        {
+            dealloc(cwd);
+            return cvt_error();
+        }
+
+        dealloc(cwd);
+        
+        return buf_loc;
     }
 } // namespace Hamster
 
