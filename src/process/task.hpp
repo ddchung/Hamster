@@ -601,6 +601,7 @@ namespace Hamster
 
         void block_signal(uint8_t signo);
         void unblock_signal(uint8_t signo);
+        void set_signal_mask(const sys_sigset &sigset);
         void set_signal_blocked(uint8_t signo, bool blocked);
         int is_signal_blocked(uint8_t signo) const;
         uint64_t get_signal_mask(bool invert = false) const;

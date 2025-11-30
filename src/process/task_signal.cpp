@@ -85,6 +85,11 @@ namespace Hamster
         signal_mask.unblock(signo);
     }
 
+    void Task::set_signal_mask(const sys_sigset &sigset)
+    {
+        signal_mask.from_sigset(sigset);
+    }
+
     void Task::set_signal_blocked(uint8_t signo, bool blocked)
     {
         signal_mask.set_blocked(signo, blocked);

@@ -34,6 +34,7 @@ namespace Hamster
         virtual int poll(int op) = 0;
         virtual int sync() = 0;
         virtual int datasync() = 0;
+        virtual char *const *list() { return nullptr; }
 
         /**
          * @brief Get the VFS file descriptor
