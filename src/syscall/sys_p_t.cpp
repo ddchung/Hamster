@@ -351,5 +351,46 @@ namespace Hamster
         
         return 0;
     }
+
+    int32_t sys_rt_sigprocmask(Task &task, int32_t how, uint32_t set_loc, uint32_t oldset_loc, uint32_t sigset_size)
+    {
+        if (sigset_size != sizeof(sys_sigset))
+            return -H_EINVAL;
+
+        sys_sigset old_set = task.get_signal_sigset();
+
+        if (oldset_loc && task.copy_to_memory(oldset_loc, old_set) < 0)
+            return cvt_error();
+        
+        if (set_loc)
+        {
+            sys_sigset set;
+
+            if (task.copy_from_memory(set, set_loc) < 0)
+                return cvt_error();
+            
+            switch (how)
+            {
+            case H_SIG_BLOCK:
+                old_set.sig[0] |= set.sig[0];
+                old_set.sig[1] |= set.sig[1];
+                break;
+            case H_SIG_UNBLOCK:
+                old_set.sig[0] &= ~set.sig[0];
+                old_set.sig[1] &= ~set.sig[1];
+                break;
+            case H_SIG_SETMASK:
+                old_set.sig[0] = set.sig[0];
+                old_set.sig[1] = set.sig[1];
+                break;
+            default:
+                return -H_EINVAL;
+            }
+
+            task.set_signal_mask(old_set);
+        }
+
+        return 0;
+    }
 } // namespace Hamster
 
