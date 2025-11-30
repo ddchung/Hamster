@@ -59,3 +59,13 @@ static_assert((HAMSTER_PAGE_SIZE & (HAMSTER_PAGE_SIZE - 1)) == 0, "Page size mus
 
 #define HAMSTER_LIKELY(x) (__builtin_expect(!!(x), 1))
 #define HAMSTER_UNLIKELY(x) (__builtin_expect(!!(x), 0))
+
+// uname
+
+#define HAMSTER_SYSNAME "Hamster"
+#define HAMSTER_NODENAME "localhost"
+#define HAMSTER_RELEASE "dev"
+#define HAMSTER_VERSION "0.0"
+#define HAMSTER_MACHINE "riscv32"
+#define HAMSTER_DOMAINNAME "localdomain"
+

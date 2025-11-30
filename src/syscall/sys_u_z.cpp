@@ -121,5 +121,22 @@ namespace Hamster
             return cvt_error();
         return 0;
     }
+
+    int32_t sys_uname(Task &task, uint32_t buf_loc)
+    {
+        constexpr sys_utsname default_uname = {
+            .sysname = "Hamster",
+            .nodename = "localhost",
+            .release = "dev",
+            .version = "0.0",
+            .machine = "riscv32",
+            .domainname = "localdomain",
+        };
+
+        if (task.copy_to_memory(buf_loc, default_uname) < 0)
+            return cvt_error();
+
+        return 0;
+    }
 } // namespace Hamster
 
