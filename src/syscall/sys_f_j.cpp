@@ -404,5 +404,33 @@ namespace Hamster
             return cvt_error();
         return 0;
     }
+
+    int32_t sys_fchownat(Task &task, int32_t dirfd, uint32_t path_loc, uint32_t uid, uint32_t gid, int32_t flags)
+    {
+        char *path = task.mem_get_string(path_loc);
+        if (!path)
+            return cvt_error();
+        
+        int rel_fd = task.open_rel_fd(dirfd, path);
+        
+        int res = flags & H_AT_SYMLINK_NOFOLLOW ? vfs.lchownat(rel_fd, path, uid, gid) : vfs.chownat(rel_fd, path, uid, gid);
+        dealloc(path);
+        vfs.close(rel_fd);
+
+        if (res < 0)
+            return cvt_error();
+        return 0;
+    }
+
+    int32_t sys_fchown(Task &task, int32_t task_fd, uint32_t uid, uint32_t gid)
+    {
+        int fd = task.get_vfs_fd(task_fd);
+        if (fd < 0)
+            return cvt_error();
+        
+        if (vfs.chown(fd, uid, gid) < 0)
+            return cvt_error();
+        return 0;
+    }
 } // namespace Hamster
 
