@@ -5,6 +5,7 @@
 #include <memory/stl_sequential.hpp>
 #include <abi/values.hpp>
 #include <abi/structs.hpp>
+#include <platform/clock_realtime.hpp>
 
 namespace Hamster
 {
@@ -153,6 +154,84 @@ namespace Hamster
             return -H_EINVAL;
         task.close_fd(new_fd);
         return sys_fcntl64(task, old_fd, flags & OPEN_CLOEXEC ? FILE_DUPFD_CLOEXEC : FILE_DUPFD, new_fd);
+    }
+
+    int32_t sys_clock_getres_time64(Task &task, int32_t clock_id, uint32_t res_loc)
+    {
+        sys_timespec res;
+
+        if (!res_loc)
+            return -H_EFAULT;
+
+        switch (clock_id)
+        {
+        case H_CLOCK_REALTIME:
+        case H_CLOCK_MONOTONIC:
+            res.nsec = 1'000'000; // 1ms
+            res.sec = 0;
+            break;
+        default:
+            return -H_EINVAL;
+        }
+
+        if (task.copy_to_memory(res_loc, res) < 0)
+            return cvt_error();
+        return 0;
+    }
+
+    int32_t sys_clock_gettime64(Task &task, int32_t clock_id, uint32_t tp_loc)
+    {
+        sys_timespec ts = {};
+
+        if (!tp_loc)
+            return -H_EFAULT;
+
+        uint64_t now = _get_sys_time();
+
+        switch (clock_id)
+        {
+        case H_CLOCK_REALTIME:
+            ts.nsec = (now + clock_rt_offset) % 1000 * 1'000'000; // 1 million ms in ns
+            ts.sec = (now + clock_rt_offset) / 1000;
+            break;
+        case H_CLOCK_MONOTONIC:
+            ts.nsec += now % 1000 * 1'000'000;
+            ts.sec += now / 1000;
+            break;
+        default:
+            return -H_EINVAL;
+        }
+
+        if (task.copy_to_memory(tp_loc, ts) < 0)
+            return cvt_error();
+        return 0;
+    }
+
+    int32_t sys_clock_settime64(Task &task, int32_t clock_id, uint32_t ts_loc)
+    {
+        sys_timespec ts;
+
+        if (!ts_loc)
+            return -H_EFAULT;
+
+        if (task.copy_from_memory(ts, ts_loc) < 0)
+            return cvt_error();
+
+        uint64_t ts_ms = ts.sec * 1000 + (ts.nsec + 500'000) / 1'000'000;
+        uint64_t now = _get_sys_time();
+
+        switch (clock_id)
+        {
+        case H_CLOCK_REALTIME:
+            clock_rt_offset = now - ts_ms;
+            break;
+        case H_CLOCK_MONOTONIC:
+            return -H_EPERM;
+        default:
+            return -H_EINVAL;
+        }
+
+        return 0;
     }
 } // namespace Hamster
 
