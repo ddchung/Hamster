@@ -443,5 +443,11 @@ namespace Hamster
             return cvt_error();
         return 0;
     }
+
+    int32_t sys_renameat(Task &task, int32_t old_dfd, uint32_t oldpath_loc, int32_t new_dfd, uint32_t newpath_loc)
+    {
+        // Call renameat2 with flags=0
+        return sys_renameat2(task, old_dfd, oldpath_loc, new_dfd, newpath_loc, 0);
+    }
 } // namespace Hamster
 

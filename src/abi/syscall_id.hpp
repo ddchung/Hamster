@@ -256,42 +256,42 @@ namespace Hamster
              * This system call changes the ownership of a file at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int fchownat(int dirfd, const char *pathname, uid_t owner, gid_t group, int flags);`, `uid_t` = `unsigned int`, `gid_t` = `unsigned int`
              */
-            FCHOWNAT = 54,//
+            FCHOWNAT = 54,////
 
             /**
              * @brief Change the ownership of a file specified by a file descriptor
              * This system call changes the ownership of a file descriptor.
              * @note Userspace sig: `int fchown(int fd, uid_t owner, gid_t group);`, `uid_t` = `unsigned int`, `gid_t` =
              */
-            FCHOWN = 55,//
+            FCHOWN = 55,////
 
             /**
              * @brief Change the permissions of a file specified by path relative to a directory file descriptor
              * This system call changes the permissions of a file at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int fchmodat(int dirfd, const char *pathname, mode_t mode, int flags);`, `mode_t` = `unsigned int`
              */
-            FCHMODAT = 53,//
+            FCHMODAT = 53,////
 
             /**
              * @brief Change the permissions of a file specified by a file descriptor
              * This system call changes the permissions of a file descriptor.
              * @note Userspace sig: `int fchmod(int fd, mode_t mode);`, `mode_t` = `unsigned int`
              */
-            FCHMOD = 52,//
+            FCHMOD = 52,////
 
             /**
              * @brief Resize a file, specified by file descriptor
              * This system call resizes a file to a specified size, which can be larger or smaller than the current size.
              * @note Userspace sig: `int ftruncate64(int fd, off_t length);`, `off_t` = `long long`
              */
-            FTRUNCATE64 = 46,//
+            FTRUNCATE64 = 46,////
 
             /**
              * @brief Resize a file, specified by path
              * This system call resizes a file at the specified path to a specified size, which can be larger or smaller than the current size.
              * @note Userspace sig: `int truncate64(const char *path, off_t length);`, `off_t` = `long long`
              */
-            TRUNCATE64 = 45,//
+            TRUNCATE64 = 45,////
 
             /**
              * @brief Change the file offset of a file descriptor
@@ -346,7 +346,7 @@ namespace Hamster
              * This system call removes a file or directory at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int unlinkat(int dirfd, const char *pathname, int flags);`
              */
-            UNLINKAT = 35,//
+            UNLINKAT = 35,////
 
             /**
              * @brief Create a hard link to a file from a path relative to a directory file descriptor
@@ -360,7 +360,7 @@ namespace Hamster
              * This system call renames a file or directory at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int renameat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath);`
              */
-            RENAMEAT = 38,//
+            RENAMEAT = 38,////
 
             /**
              * @brief Rename a file or directory from a path relative to a directory file descriptor with an additional flag
@@ -368,7 +368,7 @@ namespace Hamster
              * allowing for additional flags to control the operation.
              * @note Userspace sig: `int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, unsigned int flags);`
              */
-            RENAMEAT2 = 276,//
+            RENAMEAT2 = 276,////
 
             /**
              * @brief Read the directory entries of a directory file descriptor
@@ -376,7 +376,7 @@ namespace Hamster
              * buffer.
              * @note Userspace sig: `ssize_t getdents(int fd, struct dirent *dirp, size_t count);`, `ssize_t` = `long`
              */
-            GETDENTS64 = 61,//
+            GETDENTS64 = 61,////
 
             /**
              * @brief Change the current working directory
@@ -390,7 +390,7 @@ namespace Hamster
              * This system call retrieves the current working directory of the calling process.
              * @note Userspace sig: `char *getcwd(char *buf, size_t size);`, `size_t` = `unsigned long`
              */
-            GETCWD = 17,//
+            GETCWD = 17,////
 
             /**
              * @brief Check if a file exists, and potentially if it is read|write|execute accessible
@@ -412,7 +412,7 @@ namespace Hamster
              * be used for inter-process communication.
              * @note Userspace sig: `int pipe(int pipefd[2], int flags);`
              */
-            PIPE2 = 59,//
+            PIPE2 = 59,////
 
             /**
              * @brief Set the program data's end (the break)
@@ -439,7 +439,7 @@ namespace Hamster
              * This system call unmaps a previously mapped memory region, releasing the resources associated with it.
              * @note Userspace sig: `int munmap(void *addr, size_t length);`
              */
-            MUNMAP = 215,//
+            MUNMAP = 215,////
 
             /**
              * @brief Change the protection of a memory region
@@ -554,7 +554,7 @@ namespace Hamster
              * @brief Set a signal handler for a specific signal
              * @note Userspace sig: `int rt_sigaction(int signum, const struct sigaction *act, struct sigaction *oldact, size_t sigsetsize);`
              */
-            RT_SIGACTION = 134,//
+            RT_SIGACTION = 134,////
 
             /**
              * @brief Get the signals that are pending (waiting to be delivered, but blocked) for the calling process
@@ -566,7 +566,7 @@ namespace Hamster
              * @brief Get and/or set the signal mask of the calling process
              * @note Userspace sig: `int rt_sigprocmask(int how, const sigset_t *set, sigset_t *oldset, size_t sigsetsize);`
              */
-            RT_SIGPROCMASK = 135,//
+            RT_SIGPROCMASK = 135,////
 
             /**
              * @brief Send a signal to a process
@@ -578,7 +578,7 @@ namespace Hamster
              * @brief Return from a signal handler
              * @note Userspace sig: `int rt_sigreturn(void);`
              */
-            RT_SIGRETURN = 139,//
+            RT_SIGRETURN = 139,////
 
             /**
              * @brief Temporarily change the signal mask, and wait for a signal to be delivered that either calls a signal handler or terminates the process
@@ -602,7 +602,7 @@ namespace Hamster
              * @brief Get info about the system
              * @note Userspace sig: `int uname(struct utsname *buf);`
              */
-            UNAME = 160,//
+            UNAME = 160,////
 
             /**
              * @brief Wait for some file descriptors to become ready for a certain operation
@@ -627,25 +627,25 @@ namespace Hamster
              * Right now, all clocks have 1 millisecond resolution.
              * @note Userspace sig: `int clock_getres_time64(clockid_t clock_id, struct timespec *res);`
              */
-            CLOCK_GETRES_TIME64 = 406,
+            CLOCK_GETRES_TIME64 = 406,////
 
             /**
              * @brief Get the current time of a specific clock
              * @note Userspace sig: `int clock_gettime64(clockid_t clock_id, struct timespec *tp);`
              */
-            CLOCK_GETTIME64 = 403,
+            CLOCK_GETTIME64 = 403,////
 
             /**
              * @brief Sleep for a certain time
              * @note Userspace sig: `int clock_nanosleep_time64(clockid_t clock_id, int flags, const struct timespec *req, struct timespec *rem);`
              */
-            CLOCK_NANOSLEEP_TIME64 = 407,
+            CLOCK_NANOSLEEP_TIME64 = 407,////
 
             /**
              * @brief Set the time of a specific clock
              * @note Userspace sig: `int clock_settime64(clockid_t clock_id, const struct timespec *tp);`
              */
-            CLOCK_SETTIME64 = 404,
+            CLOCK_SETTIME64 = 404,////
         };
     } // namespace SyscallID
 } // namespace Hamster
