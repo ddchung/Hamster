@@ -392,5 +392,35 @@ namespace Hamster
 
         return 0;
     }
+
+    int32_t sys_renameat2(Task &task, int32_t old_dfd, uint32_t oldpath_loc, int32_t new_dfd, uint32_t newpath_loc, uint32_t flags)
+    {
+        // TODO: support flags
+        if (flags != 0)
+            return -H_ENOTSUP;
+
+        char *old_path = task.mem_get_string(oldpath_loc);
+        char *new_path = task.mem_get_string(newpath_loc);
+
+        if (!old_path || !new_path)
+        {
+            dealloc(old_path);
+            dealloc(new_path);
+            return cvt_error();
+        }
+
+        int old_rel_fd = task.open_rel_fd(old_dfd, old_path);
+        int new_rel_fd = task.open_rel_fd(new_dfd, new_path);
+
+        int res = vfs.renameat(old_rel_fd, old_path, new_rel_fd, new_path);
+        vfs.close(old_rel_fd);
+        vfs.close(new_rel_fd);
+        dealloc(old_path);
+        dealloc(new_path);
+
+        if (res < 0)
+            return cvt_error();
+        return 0;
+    }
 } // namespace Hamster
 
