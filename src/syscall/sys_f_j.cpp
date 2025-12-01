@@ -432,5 +432,15 @@ namespace Hamster
             return cvt_error();
         return 0;
     }
+
+    int32_t sys_getrandom(Task &task, uint32_t buf_loc, uint32_t size, uint32_t flags)
+    {
+        // Flags aren't used
+        (void)flags;
+        for (uint32_t it = buf_loc; it < buf_loc + size; ++it)
+            if (task.copy_to_memory(it, (uint8_t)rand()) < 0)
+                return cvt_error();
+        return size;
+    }
 } // namespace Hamster
 

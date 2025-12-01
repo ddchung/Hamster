@@ -449,5 +449,186 @@ namespace Hamster
         // Call renameat2 with flags=0
         return sys_renameat2(task, old_dfd, oldpath_loc, new_dfd, newpath_loc, 0);
     }
+
+    int32_t sys_tgkill(Task &task, int32_t tgid, int32_t tid, int32_t signal)
+    {
+        // tgid is ignored
+        (void)tgid;
+
+        Task *target = Task::get_task(tid);
+        if (!target)
+            return cvt_error();
+        
+        sys_siginfo siginfo = make_kill_siginfo(signal, sys_getuid(task), task.get_pid());
+
+        if (task.check_can_signal(*target, siginfo) < 0)
+            return cvt_error();
+        
+        if (target->send_signal(siginfo) < 0)
+            return cvt_error();
+        
+        return 0;
+    }
+
+    int32_t sys_setuid(Task &task, uint32_t new_uid)
+    {
+        int uid, euid, suid;
+        task.get_uid(&uid, &euid, &suid);
+
+        if (new_uid != uid && new_uid != suid && euid != 0)
+            return -H_EPERM;
+        
+        if (euid == 0)
+        {
+            uid = new_uid;
+            suid = new_uid;
+        }
+
+        euid = new_uid;
+
+        task.set_uid(uid, euid, suid);
+
+        return 0;
+    }
+
+    int32_t sys_setgid(Task &task, uint32_t new_gid)
+    {
+        int gid, egid, sgid;
+        task.get_gid(&gid, &egid, &sgid);
+
+        if (new_gid != gid && new_gid != sgid && egid != 0)
+            return -H_EPERM;
+        
+        if (egid == 0)
+        {
+            gid = new_gid;
+            sgid = new_gid;
+        }
+
+        egid = new_gid;
+
+        task.set_gid(gid, egid, sgid);
+
+        return 0;
+    }
+
+    int32_t sys_setreuid(Task &task, uint32_t new_uid, uint32_t new_euid)
+    {
+        int uid, euid, suid;
+        task.get_uid(&uid, &euid, &suid);
+
+        if (new_uid != (uint32_t)-1)
+        {
+            // If the process isn't privileged, and new new real UID is not the same as either
+            // the old real UID or effective UID, fail with H_EPERM
+            if (uid != 0 && new_uid != uid && new_uid != euid)
+                return -H_EPERM;
+
+            uid = new_uid;
+        }
+
+        if (new_euid != (uint32_t)-1)
+        {
+            // If the process isn't privileged, and new effective UID is not the same as one of:
+            // - The old real UID
+            // - The effective UID
+            // - The saved set-user ID
+            // Then fail with H_EPERM
+            if (uid != 0 && new_euid != uid && new_euid != euid && new_euid != suid)
+                return -H_EPERM;
+            euid = new_euid;
+        }
+
+        task.set_uid(uid, euid, suid);
+
+        return 0;
+    }
+
+    int32_t sys_setregid(Task &task, uint32_t new_gid, uint32_t new_egid)
+    {
+        int gid, egid, sgid;
+        task.get_gid(&gid, &egid, &sgid);
+
+        if (new_gid != (uint32_t)-1)
+        {
+            if (gid != 0 && new_gid != gid && new_gid != egid)
+                return -H_EPERM;
+
+            gid = new_gid;
+        }
+
+        if (new_egid != (uint32_t)-1)
+        {
+            if (gid != 0 && new_egid != gid && new_egid != egid && new_egid != sgid)
+                return -H_EPERM;
+            egid = new_egid;
+        }
+
+        task.set_gid(gid, egid, sgid);
+
+        return 0;
+    }
+
+    int32_t sys_setresuid(Task &task, uint32_t new_uid, uint32_t new_euid, uint32_t new_suid)
+    {
+        int uid, euid, suid;
+        task.get_uid(&uid, &euid, &suid);
+
+        if (new_uid != (uint32_t)-1)
+        {
+            if (uid != 0 && new_uid != uid && new_uid != euid && new_uid != suid)
+                return -H_EPERM;
+            uid = new_uid;
+        }
+
+        if (new_euid != (uint32_t)-1)
+        {
+            if (uid != 0 && new_euid != uid && new_euid != euid && new_euid != suid)
+                return -H_EPERM;
+            euid = new_euid;
+        }
+
+        if (new_suid != (uint32_t)-1)
+        {
+            if (uid != 0 && new_suid != uid && new_suid != euid && new_suid != suid)
+                return -H_EPERM;
+            suid = new_suid;
+        }
+
+        task.set_uid(uid, euid, suid);
+
+        return 0;
+    }
+
+    int32_t sys_setresgid(Task &task, uint32_t new_gid, uint32_t new_egid, uint32_t new_sgid)
+    {
+        int gid, egid, sgid;
+        task.get_gid(&gid, &egid, &sgid);
+
+        if (new_gid != (uint32_t)-1)
+        {
+            if (gid != 0 && new_gid != gid && new_gid != egid && new_gid != sgid)
+                return -H_EPERM;
+            gid = new_gid;
+        }
+
+        if (new_egid != (uint32_t)-1)
+        {
+            if (gid != 0 && new_egid != gid && new_egid != egid && new_egid != sgid)
+                return -H_EPERM;
+            egid = new_egid;
+        }
+
+        if (new_sgid != (uint32_t)-1)
+        {
+            if (gid != 0 && new_sgid != gid && new_sgid != egid && new_sgid != sgid)
+                return -H_EPERM;
+            sgid = new_sgid;
+        }
+
+        task.set_gid(gid, egid, sgid);
+
+        return 0;
+    }
 } // namespace Hamster
 

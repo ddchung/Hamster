@@ -123,7 +123,7 @@ namespace Hamster
              * This system call sends a signal to a specified thread.
              * @note Userspace sig: `int tgkill(int tgid, int tid, int sig);`
              */
-            TGKILL = 234,//
+            TGKILL = 234,////
 
             /**
              * @brief Get random numbers
@@ -132,21 +132,21 @@ namespace Hamster
              * guaranteed to be cryptographically secure.
              * @note Userspace sig: `int getrandom(void *buf, size_t buflen, unsigned int flags);`, `size_t` = `unsigned long`
              */
-            GETRANDOM = 278,//
+            GETRANDOM = 278,////
 
             /**
              * @brief Set the user ID of the calling process
              * This sets the effective UID, and if the EUID was 0, then all the other UIDs are also set
              * @note Userspace sig: `int setuid(uid_t uid);`, `uid_t` = `unsigned int`
              */
-            SETUID = 146,//
+            SETUID = 146,////
 
             /**
              * @brief Set the real and effective user IDs of the calling process
              * This sets the real UID and effective UID of the calling process.
              * @note Userspace sig: `int setreuid(uid_t ruid, uid_t euid);`, `uid_t` = `unsigned int`
              */
-            SETREUID = 145,//
+            SETREUID = 145,////
 
             /**
              * @brief Set the real, effective, and saved set user IDs of the calling process
@@ -154,21 +154,21 @@ namespace Hamster
              * Note that on Hamster, the saved set user ID is not implemented yet, so it is ignored
              * @note Userspace sig: `int setresuid(uid_t ruid, uid_t euid, uid_t suid);`, `uid_t` = `unsigned int`
              */
-            SETRESUID = 147,//
+            SETRESUID = 147,////
 
             /**
              * @brief Set the group ID of the calling process
              * This sets the effective GID, and if the EGID was 0, then all the other GIDs are also set
              * @note Userspace sig: `int setgid(gid_t gid);`, `gid_t` = `unsigned int`
              */
-            SETGID = 144,//
+            SETGID = 144,////
 
             /**
              * @brief Set the real and effective group IDs of the calling process
              * This sets the real GID and effective GID of the calling process.
              * @note Userspace sig: `int setregid(gid_t rgid, gid_t egid);`, `gid_t` = `unsigned int`
              */
-            SETREGID = 143,//
+            SETREGID = 143,////
 
             /**
              * @brief Set the real, effective, and saved set group IDs of the calling process
@@ -176,7 +176,7 @@ namespace Hamster
              * Note that on Hamster, the saved set group ID is not implemented yet, so it is ignored
              * @note Userspace sig: `int setresgid(gid_t rgid, gid_t egid, gid_t sgid);`, `gid_t` = `unsigned int`
              */
-            SETRESGID = 149,//
+            SETRESGID = 149,////
 
             /**
              * @brief Open a file
@@ -339,7 +339,7 @@ namespace Hamster
              * This system call creates a new directory at the specified path relative to a directory file descriptor
              * @note Userspace sig: `int mkdirat(int dirfd, const char *pathname, mode_t mode);`, `mode_t` = `unsigned int`
              */
-            MKDIRAT = 34,//
+            MKDIRAT = 34,////
 
             /**
              * @brief Remove a file or directory from a path relative to a directory file descriptor
