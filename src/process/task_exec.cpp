@@ -54,8 +54,8 @@ namespace Hamster
                 Elf32_auxv_t &ent = ents[it];
 
                 // push val first
-                if (push_stack(mem_sp, sp, ent.a_type) < 0 ||
-                    push_stack(mem_sp, sp, ent.a_un.a_val) < 0)
+                if (push_stack(mem_sp, sp, ent.a_un.a_val) < 0 ||
+                    push_stack(mem_sp, sp, ent.a_type) < 0)
                     return; // fail
             }
         }
@@ -131,8 +131,8 @@ namespace Hamster
         // Clear all instruction caches
         emulator.flush_caches();
 
-        uint64_t entry_point = 0, ph_num = 0, brk = 0;
-        if (load_elf(fd, memory, entry_point, ph_num, brk) < 0)
+        uint64_t entry_point = 0, ph_num = 0, brk = 0, ph_loc = 0;
+        if (load_elf(fd, memory, entry_point, ph_num, brk, ph_loc) < 0)
             return -1;
         
         this->memory->brk = brk;
@@ -202,9 +202,7 @@ namespace Hamster
             {AT_FLAGS, 0},
             {AT_PHNUM, (uint32_t)ph_num},
             {AT_PHENT, sizeof(Elf32_Phdr)},
-
-            // The ELF loader loads the program headers here
-            {AT_PHDR, HAMSTER_STACK_TOP + 1},
+            {AT_PHDR, (uint32_t)ph_loc},
             {AT_CLKTCK, 100},
             {AT_PAGESZ, HAMSTER_PAGE_SIZE},
             {AT_HWCAP, 4393}, // RISC-V RV32IMAFD

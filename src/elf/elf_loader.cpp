@@ -10,7 +10,7 @@ namespace Hamster
 {
     namespace
     {
-        int load_elf32(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk)
+        int load_elf32(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk, uint64_t &phdr_loc)
         {
             mem_space.unmap_all();
 
@@ -85,6 +85,9 @@ namespace Hamster
 
                 if (phdr.p_type == PT_LOAD)
                 {
+                    if (phdr.p_offset == 0)
+                        phdr_loc = phdr.p_vaddr + ehdr.e_phoff;
+
                     // Load segment
                     if (file.seek(phdr.p_offset, H_SEEK_SET) < 0)
                     {
@@ -122,7 +125,7 @@ namespace Hamster
     } // namespace
     
 
-    int load_elf(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk)
+    int load_elf(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk, uint64_t &phdr_loc)
     {
         // Prepare file
         if (file.seek(0, H_SEEK_SET) < 0)
@@ -149,7 +152,7 @@ namespace Hamster
 
         if (e_ident[EI_CLASS] == ELFCLASS32)
         {
-            return load_elf32(file, mem_space, entry_point, ph_num, brk);
+            return load_elf32(file, mem_space, entry_point, ph_num, brk, phdr_loc);
         }
         else
         {
