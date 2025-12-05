@@ -475,7 +475,7 @@ namespace Hamster
         int uid, euid, suid;
         task.get_uid(&uid, &euid, &suid);
 
-        if (new_uid != uid && new_uid != suid && euid != 0)
+        if ((int32_t)new_uid != uid && (int32_t)new_uid != suid && euid != 0)
             return -H_EPERM;
         
         if (euid == 0)
@@ -496,7 +496,7 @@ namespace Hamster
         int gid, egid, sgid;
         task.get_gid(&gid, &egid, &sgid);
 
-        if (new_gid != gid && new_gid != sgid && egid != 0)
+        if ((int32_t)new_gid != gid && (int32_t)new_gid != sgid && egid != 0)
             return -H_EPERM;
         
         if (egid == 0)
@@ -521,7 +521,7 @@ namespace Hamster
         {
             // If the process isn't privileged, and new new real UID is not the same as either
             // the old real UID or effective UID, fail with H_EPERM
-            if (uid != 0 && new_uid != uid && new_uid != euid)
+            if (uid != 0 && (int32_t)new_uid != uid && (int32_t)new_uid != euid)
                 return -H_EPERM;
 
             uid = new_uid;
@@ -534,7 +534,7 @@ namespace Hamster
             // - The effective UID
             // - The saved set-user ID
             // Then fail with H_EPERM
-            if (uid != 0 && new_euid != uid && new_euid != euid && new_euid != suid)
+            if (uid != 0 && (int32_t)new_euid != uid && (int32_t)new_euid != euid && (int32_t)new_euid != suid)
                 return -H_EPERM;
             euid = new_euid;
         }
@@ -551,7 +551,7 @@ namespace Hamster
 
         if (new_gid != (uint32_t)-1)
         {
-            if (gid != 0 && new_gid != gid && new_gid != egid)
+            if (gid != 0 && (int32_t)new_gid != gid && (int32_t)new_gid != egid)
                 return -H_EPERM;
 
             gid = new_gid;
@@ -559,7 +559,7 @@ namespace Hamster
 
         if (new_egid != (uint32_t)-1)
         {
-            if (gid != 0 && new_egid != gid && new_egid != egid && new_egid != sgid)
+            if (gid != 0 && (int32_t)new_egid != gid && (int32_t)new_egid != egid && (int32_t)new_egid != sgid)
                 return -H_EPERM;
             egid = new_egid;
         }
@@ -576,21 +576,21 @@ namespace Hamster
 
         if (new_uid != (uint32_t)-1)
         {
-            if (uid != 0 && new_uid != uid && new_uid != euid && new_uid != suid)
+            if (uid != 0 && (int32_t)new_uid != uid && (int32_t)new_uid != euid && (int32_t)new_uid != suid)
                 return -H_EPERM;
             uid = new_uid;
         }
 
         if (new_euid != (uint32_t)-1)
         {
-            if (uid != 0 && new_euid != uid && new_euid != euid && new_euid != suid)
+            if (uid != 0 && (int32_t)new_euid != uid && (int32_t)new_euid != euid && (int32_t)new_euid != suid)
                 return -H_EPERM;
             euid = new_euid;
         }
 
         if (new_suid != (uint32_t)-1)
         {
-            if (uid != 0 && new_suid != uid && new_suid != euid && new_suid != suid)
+            if (uid != 0 && (int32_t)new_suid != uid && (int32_t)new_suid != euid && (int32_t)new_suid != suid)
                 return -H_EPERM;
             suid = new_suid;
         }
@@ -607,21 +607,21 @@ namespace Hamster
 
         if (new_gid != (uint32_t)-1)
         {
-            if (gid != 0 && new_gid != gid && new_gid != egid && new_gid != sgid)
+            if (gid != 0 && (int32_t)new_gid != gid && (int32_t)new_gid != egid && (int32_t)new_gid != sgid)
                 return -H_EPERM;
             gid = new_gid;
         }
 
         if (new_egid != (uint32_t)-1)
         {
-            if (gid != 0 && new_egid != gid && new_egid != egid && new_egid != sgid)
+            if (gid != 0 && (int32_t)new_egid != gid && (int32_t)new_egid != egid && (int32_t)new_egid != sgid)
                 return -H_EPERM;
             egid = new_egid;
         }
 
         if (new_sgid != (uint32_t)-1)
         {
-            if (gid != 0 && new_sgid != gid && new_sgid != egid && new_sgid != sgid)
+            if (gid != 0 && (int32_t)new_sgid != gid && (int32_t)new_sgid != egid && (int32_t)new_sgid != sgid)
                 return -H_EPERM;
             sgid = new_sgid;
         }
