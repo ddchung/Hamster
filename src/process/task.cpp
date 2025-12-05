@@ -526,6 +526,7 @@ namespace Hamster
                 break;
             case Status::IllegalLoad:
             case Status::IllegalStore:
+                _trace("TID %" PRIu32 ": segfault at pc 0x%08" PRIx32 "\n", tid, emulator.pc);
                 siginfo.signo = H_SIGSEGV;
                 siginfo.code = H_SEGV_BNDERR;
                 siginfo.fields.fault.addr = emulator.pc;

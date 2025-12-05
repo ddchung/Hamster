@@ -1031,6 +1031,7 @@ namespace Hamster
             trace_syscall_result(task, result);
             break;
         default:
+            _trace("TID %" PRIu32 "\tUnknown system call %" PRIu32 " at pc 0x%08" PRIx32 " -> ENOSYS - Invalid system call number\n", task.get_tid(), sys_id, task.get_emulator().pc);
             // Unsupported syscall ID
             result = -H_ENOSYS;
             break;
