@@ -123,7 +123,7 @@ namespace Hamster
              * This system call sends a signal to a specified thread.
              * @note Userspace sig: `int tgkill(int tgid, int tid, int sig);`
              */
-            TGKILL = 234,////
+            TGKILL = 131,////
 
             /**
              * @brief Get random numbers

@@ -32,7 +32,8 @@ namespace Hamster
         uint32_t get_page(uint32_t address) const
         {
             uint32_t index = PAGE_TABLE_INDEX(address);
-            assert(index < HAMSTER_PAGES_PER_PROC);
+            if (index >= HAMSTER_PAGES_PER_PROC)
+                return PAGE_ID_UNUSED;
             return page_ids[index];
         }
 
