@@ -172,5 +172,25 @@ namespace Hamster
             return cvt_error();
         return 0;
     }
+
+    int32_t sys_mprotect(Task &task, uint32_t addr, uint32_t size, int32_t prot)
+    {
+        if (!task.mem_is_mapped(addr, size))
+            return -H_ENOMEM;
+        
+        if (prot & (H_PROT_GROWSUP | H_PROT_GROWSDOWN))
+        {
+            // We don't support these
+            return -H_ENOTSUP;
+        }
+
+        uint8_t perms = (prot & 0x1 ? PERM_READ : 0) |
+                        (prot & 0x2 ? PERM_WRITE : 0) |
+                        (prot & 0x4 ? PERM_EXEC : 0);
+
+        if (task.mprotect(addr, size, perms) < 0)
+            return cvt_error();
+        return 0;
+    }
 } // namespace Hamster
 
