@@ -42,7 +42,9 @@ namespace Hamster
 
         struct FutexWaiter
         {
-            void (*callback)();
+            void (*callback)(void *);
+            void *callback_arg;
+            uint32_t bitset;
             PageEntry *page;
             uint16_t offset;
         };
@@ -279,23 +281,26 @@ namespace Hamster
          * @brief Perform a futex wait operation
          * @param id The id of the page
          * @param addr The offset in the page
-         * @param callback The callback to call when woken up
+         * @param callback The callback to call when woken up. The callback takes a single void* argument
+         * @param callback_arg The argument to pass to the callback
+         * @param bitset Used for selecting which waiters to wake. See futex(2) for more information
          * @return 0 on success, -1 on error and set `error`
          * @warning Shared file mappings do not support futexes
          */
-        int futex_wait(uint32_t id, size_t addr, void (*callback)());
+        int futex_wait(uint32_t id, size_t addr, void (*callback)(void *), void *callback_arg, uint32_t bitset = UINT32_MAX);
 
         /**
          * @brief Perform a futex wake operation
          * @param id The id of the page
          * @param addr The offset in the page
-         * @param count How many waiters to ake
+         * @param count How many waiters to wake up
+         * @param bitset Used for selecting which waiters to wake. See futex(2) for more information
          * @note This will wake up (call the callback) of at most `count`
          *       waiters waiting on the specified futex word
          * @return The number of waiters woken up, -1 on error and set `error`
          * @warning Shared file mappings do not support futexes
          */
-        int futex_wake(uint32_t id, size_t addr, uint32_t count);
+        int futex_wake(uint32_t id, size_t addr, uint32_t count, uint32_t bitset = UINT32_MAX);
 
         /**
          * @brief Do a futex requeue

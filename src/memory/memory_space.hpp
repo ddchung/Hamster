@@ -258,20 +258,34 @@ namespace Hamster
          * @brief Perform a futex wait operation
          * @param addr The address of the futex word
          * @param callback The callback to call when woken
+         * @param arg The argument to pass to the callback
+         * @param bitset Used for selecting which waiters to wake. See futex(2) for more information
          * @return 0 on success, -1 on error
          * @warning Futexes do not support shared file mappings
          * @warning `addr` must be aligned
          */
-        int futex_wait(uint32_t addr, void (*callback)());
+        int futex_wait(uint32_t addr, void (*callback)(void *), void *arg, uint32_t bitset = UINT32_MAX);
+
+        /**
+         * @brief Perform a futex wait operation
+         * @param addr The address of the futex word
+         * @param callback The callback to call when woken
+         * @param bitset Used for selecting which waiters to wake. See futex(2) for more information
+         * @return 0 on success, -1 on error
+         * @warning Futexes do not support shared file mappings
+         * @warning `addr` must be aligned
+         */
+        int futex_wait(uint32_t addr, void (*callback)(), uint32_t bitset = UINT32_MAX);
 
         /**
          * @brief Wake up at most `count` waiters on a futex word
          * @param addr The address of the futex word
          * @param count The maximum number of waiters to wake up
+         * @param bitset Used for selecting which waiters to wake. See futex(2) for more information
          * @return The number of waiters woken, or -1 and set `error` on error
          * @warning `addr` must be aligned, and not on a shared file mapping
          */
-        int futex_wake(uint32_t addr, uint32_t count);
+        int futex_wake(uint32_t addr, uint32_t count, uint32_t bitset = UINT32_MAX);
 
         /**
          * @brief Wake up at most `wake_count` waiters, then if there are extra,

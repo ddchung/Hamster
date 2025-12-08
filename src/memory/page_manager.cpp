@@ -291,10 +291,11 @@ namespace Hamster
         return entry->data + addr;
     }
 
-    int PageManager::futex_wait(uint32_t id, size_t addr, void (*callback)())
+    int PageManager::futex_wait(uint32_t id, size_t addr, void (*callback)(void *), void *data, uint32_t bitset)
     {
         PageEntry *entry = page_table[id];
         assert(entry);
+        assert(bitset != 0);
         assert(addr < HAMSTER_PAGE_SIZE);
 
         // Shared file mappings are not supported by futexes
@@ -310,16 +311,17 @@ namespace Hamster
             return -1;
         }
 
-        futex_waiters.emplace_back(callback, entry, addr);
+        futex_waiters.emplace_back(callback, data, bitset, entry, addr);
 
         return 0;
     }
 
-    int PageManager::futex_wake(uint32_t id, size_t addr, uint32_t count)
+    int PageManager::futex_wake(uint32_t id, size_t addr, uint32_t count, uint32_t bitset)
     {
         PageEntry *entry = page_table[id];
         assert(entry);
         assert(addr < HAMSTER_PAGE_SIZE);
+        assert(bitset != 0);
 
         if (entry->fd && entry->shared)
         {
@@ -328,10 +330,10 @@ namespace Hamster
         }
 
         size_t woken = 0;
-        futex_waiters.remove_if([entry, addr, count, &woken](const FutexWaiter &waiter){
-            if (waiter.page == entry && waiter.offset == addr && woken++ < count)
+        futex_waiters.remove_if([entry, addr, count, &woken, bitset](const FutexWaiter &waiter){
+            if (waiter.page == entry && waiter.offset == addr && (waiter.bitset & bitset) && woken++ < count)
             {
-                waiter.callback();
+                waiter.callback(waiter.callback_arg);
                 return true;
             }
             return false;
@@ -368,7 +370,7 @@ namespace Hamster
             if ((uint32_t)processed < wake_count)
             {
                 // Wake up
-                waiter.callback();
+                waiter.callback(waiter.callback_arg);
 
                 futex_waiters.erase(it++);
             }

@@ -538,6 +538,31 @@ void test_memory()
 
         assert(i == 0x4321);
     }
+
+    // Futexes with bitsets
+    {
+        Hamster::MemorySpace ms;
+
+        int i = 0;
+
+        assert(ms.map_anonymous(0, HAMSTER_PAGE_SIZE, Hamster::PERM_READ | Hamster::PERM_WRITE) == 0);
+
+        ms.futex_wait(0, [](void *data){
+            *(int *)data = 0x1234;
+        }, &i, 1 << 0);
+
+        ms.futex_wait(0, [](void *data){
+            *(int *)data = 0x2345;
+        }, &i, 1 << 1);
+
+        assert(ms.futex_wake(0, UINT32_MAX, 1 << 3) == 0);
+        assert(i == 0);
+        assert(ms.futex_wake(0, 1, 1 << 1) == 1);
+        assert(ms.futex_wake(0, 1, 1 << 1) == 0);
+        assert(i == 0x2345);
+        assert(ms.futex_wake(0, 1) == 1);
+        assert(i == 0x1234);
+    }
 }
 
 #endif // NDEBUG

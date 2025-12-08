@@ -336,7 +336,7 @@ namespace Hamster
         return page_manager.make_iterator_read(id, addr % HAMSTER_PAGE_SIZE);
     }
 
-    int MemorySpace::futex_wait(uint32_t addr, void (*callback)())
+    int MemorySpace::futex_wait(uint32_t addr, void (*callback)(void *), void *arg, uint32_t bitset)
     {
         assert(addr % 4 == 0);
 
@@ -349,10 +349,15 @@ namespace Hamster
             return -1;
         }
 
-        return page_manager.futex_wait(page_id, offset, callback);
+        return page_manager.futex_wait(page_id, offset, callback, arg, bitset);
     }
 
-    int MemorySpace::futex_wake(uint32_t addr, uint32_t count)
+    int MemorySpace::futex_wait(uint32_t addr, void (*callback)(), uint32_t bitset)
+    {
+        return futex_wait(addr, [](void *arg){ ((void (*)())arg)(); }, (void *)callback, bitset);
+    }
+
+    int MemorySpace::futex_wake(uint32_t addr, uint32_t count, uint32_t bitset)
     {
         assert(addr % 4 == 0);
 
@@ -365,7 +370,7 @@ namespace Hamster
             return -1;
         }
 
-        return page_manager.futex_wake(page_id, offset, count);
+        return page_manager.futex_wake(page_id, offset, count, bitset);
     }
 
     int MemorySpace::futex_requeue(uint32_t wake_addr, uint32_t wake_count, uint32_t requeue_addr, uint32_t requeue_count)
