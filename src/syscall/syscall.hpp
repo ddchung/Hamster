@@ -165,15 +165,15 @@ namespace Hamster
                                 int32_t fd_out, uint32_t off_out_loc,
                                 uint32_t len, uint32_t flags);
     int32_t sys_get_robust_list(Task &task, int32_t pid, uint32_t head_ptr_loc, uint32_t len_loc);
-    int32_t sys_pread64(Task &task, uint32_t fd, uint32_t buf_loc, uint32_t count, uint32_t _pad, uint32_t off_low,
+    int32_t sys_pread64(Task &task, int32_t fd, uint32_t buf_loc, uint32_t count, uint32_t _pad, uint32_t off_low,
                         uint32_t off_high);
-    int32_t sys_preadv(Task &task, uint32_t fd, uint32_t vec_loc, uint32_t vlen, uint32_t pos_low, uint32_t pos_high);
-    int32_t sys_preadv2(Task &task, uint32_t fd, uint32_t vec_loc, uint32_t vlen, uint32_t pos_low, uint32_t pos_high,
+    int32_t sys_preadv(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen, uint32_t pos_low, uint32_t pos_high);
+    int32_t sys_preadv2(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen, uint32_t pos_low, uint32_t pos_high,
                         uint32_t flags);
-    int32_t sys_pwrite64(Task &task, uint32_t fd, uint32_t buf_loc, uint32_t count, uint32_t _pad, uint32_t off_low,
+    int32_t sys_pwrite64(Task &task, int32_t fd, uint32_t buf_loc, uint32_t count, uint32_t _pad, uint32_t off_low,
                          uint32_t off_high);
-    int32_t sys_pwritev(Task &task, uint32_t fd, uint32_t vec_loc, uint32_t vlen, uint32_t pos_low, uint32_t pos_high);
-    int32_t sys_pwritev2(Task &task, uint32_t fd, uint32_t vec_loc, uint32_t vlen, uint32_t pos_low, uint32_t pos_high,
+    int32_t sys_pwritev(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen, uint32_t pos_low, uint32_t pos_high);
+    int32_t sys_pwritev2(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen, uint32_t pos_low, uint32_t pos_high,
                          uint32_t flags);
     int32_t sys_riscv_flush_icache(Task &task, uint32_t start_loc, uint32_t end_loc, uint32_t flags);
     int32_t sys_set_robust_list(Task &task, uint32_t head_loc, uint32_t len);
@@ -181,8 +181,8 @@ namespace Hamster
     int32_t sys_sigaltstack(Task &task, uint32_t ss_loc, uint32_t old_ss_loc);
     int32_t sys_futex_time64(Task &task, uint32_t uaddr_loc, int32_t futex_op, uint32_t val,
                              uint32_t timeout_loc, uint32_t uaddr2_loc, uint32_t val3);
-    int32_t sys_readv(Task &task, uint32_t fd, uint32_t vec_loc, uint32_t vlen);
-    int32_t sys_writev(Task &task, uint32_t fd, uint32_t vec_loc, uint32_t vlen);
+    int32_t sys_readv(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen);
+    int32_t sys_writev(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen);
 
     /**
      * @brief Call a system call
