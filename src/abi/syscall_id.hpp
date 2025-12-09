@@ -8,6 +8,7 @@ namespace Hamster
 {
     namespace SyscallID
     {
+        // See: https://web.archive.org/web/20250717225154/https://gpages.juszkiewicz.com.pl/syscalls-table/syscalls.html, `riscv32` column
         enum ID : uint16_t
         {
             /**
@@ -646,6 +647,83 @@ namespace Hamster
              * @note Userspace sig: `int clock_settime64(clockid_t clock_id, const struct timespec *tp);`
              */
             CLOCK_SETTIME64 = 404,////
+
+            /**
+             * @brief Change the process's root directory
+             */
+            CHROOT = 51,
+
+            /**
+             * @brief Close all file descriptors in a range
+             */
+            CLOSE_RANGE = 436,
+
+            /**
+             * @brief Copy data between two file descriptors
+             */
+            COPY_FILE_RANGE = 285,
+            
+            /**
+             * @brief Get the robust list of a thread
+             */
+            GET_ROBUST_LIST = 100,
+
+            /**
+             * @brief Read from a file descriptor at a given offset
+             */
+            PREAD64 = 67,
+
+            /**
+             * @brief Read from a file descriptor at a given offset into multiple buffers
+             */
+            PREADV = 69,
+            PREADV2 = 286,
+
+            /**
+             * @brief Write to a file descriptor at a given offset
+             */
+            PWRITE64 = 68,
+
+            /**
+             * @brief Write to a file descriptor at a given offset from multiple buffers
+             */
+            PWRITEV = 70,
+            PWRITEV2 = 287,
+
+            /**
+             * @brief Read from a file descriptor into multiple buffers
+             */
+            READV = 65,
+
+            /**
+             * @brief Write to a file descriptor from multiple buffers
+             */
+            WRITEV = 66,
+
+            /**
+             * @brief Flush the instruction cache
+             */
+            RISCV_FLUSH_ICACHE = 259,
+
+            /**
+             * @brief Set the robust list of a thread
+             */
+            SET_ROBUST_LIST = 99,
+
+            /**
+             * @brief Set the clear TID address
+             */
+            SET_TID_ADDRESS = 96,
+
+            /**
+             * @brief Set the alternate signal stack
+             */
+            SIGALTSTACK = 132,
+
+            /**
+             * @brief Operate with futexes
+             */
+            FUTEX_TIME64 = 422,
         };
     } // namespace SyscallID
 } // namespace Hamster
