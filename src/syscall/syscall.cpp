@@ -5,9 +5,9 @@
 #include <platform/platform.hpp>
 #include <errno/errno.h>
 #include <cstring>
+#include <cinttypes>
 
 #ifndef NTRACE
-#include <cinttypes>
 #include <tuple>
 #endif
 
@@ -269,7 +269,7 @@ namespace Hamster
     SysTraceParam { __VA_ARGS__ }
 #else // NTRACE
         template <int...>
-        inline void trace_syscall(...)
+        inline void trace_syscall(const char *, Task &, int32_t *)
         {
         }
 
@@ -277,6 +277,7 @@ namespace Hamster
 #endif // NTRACE
     } // namespace
 
+#ifndef NTRACE
     void trace_syscall_result(Task &task, int32_t result)
     {
         if (task.is_blocking())
@@ -290,6 +291,11 @@ namespace Hamster
             _trace("\t\033[31m(error %s)", error_names[-result]);
         _trace("\033[0m\n");
     }
+#else
+    void trace_syscall_result(Task &, int32_t)
+    {
+    }
+#endif
 
     int32_t cvt_error()
     {

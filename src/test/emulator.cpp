@@ -7,6 +7,8 @@
 
 using namespace Hamster;
 
+#ifndef NDEBUG
+
 void test_emulator()
 {
     RiscVEmulator emu;
@@ -1419,3 +1421,5 @@ void test_emulator()
     //     assert(emu.x[17] == 10);
     // }
 }
+
+#endif // NDEBUG
