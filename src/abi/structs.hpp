@@ -292,6 +292,12 @@ namespace Hamster
         uint32_t size;
     };
 
+    struct sys_iovec
+    {
+        uint32_t data;
+        uint32_t size;
+    };
+
     inline uint64_t timespec_to_systick(const sys_timespec &ts)
     {
         // right now, 1 systick = 1 ms
