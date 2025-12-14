@@ -514,8 +514,7 @@ namespace Hamster
                 emulator.x[10] = syscall(*this, emulator.x[17]);
                 break;
             case Status::EBREAK:
-                // TODO: EBREAK
-                _trace("TID %" PRIu32 ": EBREAK\n", tid);
+                send_signal(make_kill_siginfo(H_SIGTRAP));
                 break;
             case Status::IllegalInstruction:
                 _trace("TID %" PRIu32 ": illegal instruction at pc 0x%08" PRIx32 "\n", tid, emulator.pc);
