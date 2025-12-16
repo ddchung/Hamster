@@ -724,6 +724,11 @@ namespace Hamster
              * @brief Operate with futexes
              */
             FUTEX_TIME64 = 422,
+
+            /**
+             * @brief Kill a thread
+             */
+            TKILL = 130,
         };
     } // namespace SyscallID
 } // namespace Hamster

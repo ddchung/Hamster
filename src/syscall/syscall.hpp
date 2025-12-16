@@ -183,6 +183,7 @@ namespace Hamster
                              uint32_t timeout_loc, uint32_t uaddr2_loc, uint32_t val3);
     int32_t sys_readv(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen);
     int32_t sys_writev(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen);
+    int32_t sys_tkill(Task &task, int32_t tid, int32_t sig);
 
     /**
      * @brief Call a system call

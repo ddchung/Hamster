@@ -1193,6 +1193,13 @@ namespace Hamster
             result = syscall(task, sys_writev);
             trace_syscall_result(task, result);
             break;
+        case SyscallID::TKILL:
+            trace_syscall<
+                SysTraceParam("tid", PT_INT),
+                SysTraceParam("sig", PT_INT)>("tkill", task, args);
+            result = syscall(task, sys_tkill);
+            trace_syscall_result(task, result);
+            break;
         default:
             _trace("TID %" PRIu32 "\tUnknown system call %" PRIu32 " at pc 0x%08" PRIx32 " -> ENOSYS - Invalid system call number\n", task.get_tid(), sys_id, task.get_emulator().pc);
             // Unsupported syscall ID
@@ -1370,4 +1377,5 @@ namespace Hamster
                                                    uint32_t timeout_loc, uint32_t uaddr2_loc, uint32_t val3) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_readv(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_writev(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_tkill(Task &task, int32_t tid, int32_t sig) { return -H_ENOSYS; }
 } // namespace Hamster

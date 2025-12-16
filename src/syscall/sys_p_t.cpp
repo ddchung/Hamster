@@ -458,21 +458,7 @@ namespace Hamster
     int32_t sys_tgkill(Task &task, int32_t tgid, int32_t tid, int32_t signal)
     {
         // tgid is ignored
-        (void)tgid;
-
-        Task *target = Task::get_task(tid);
-        if (!target)
-            return cvt_error();
-        
-        sys_siginfo siginfo = make_kill_siginfo(signal, sys_getuid(task), task.get_pid());
-
-        if (task.check_can_signal(*target, siginfo) < 0)
-            return cvt_error();
-        
-        if (target->send_signal(siginfo) < 0)
-            return cvt_error();
-        
-        return 0;
+        return sys_tkill(task, tid, signal);
     }
 
     int32_t sys_setuid(Task &task, uint32_t new_uid)
@@ -649,6 +635,23 @@ namespace Hamster
             return sys_readv(task, fd, vec_loc + sizeof(sys_iovec), vlen - 1);
         
         return sys_read(task, fd, vec.data, vec.size);
+    }
+    
+    int32_t sys_tkill(Task &task, int32_t tid, int32_t signal)
+    {
+        Task *target = Task::get_task(tid);
+        if (!target)
+            return cvt_error();
+        
+        sys_siginfo siginfo = make_kill_siginfo(signal, sys_getuid(task), task.get_pid());
+
+        if (task.check_can_signal(*target, siginfo) < 0)
+            return cvt_error();
+        
+        if (target->send_signal(siginfo) < 0)
+            return cvt_error();
+        
+        return 0;
     }
 } // namespace Hamster
 
