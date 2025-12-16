@@ -39,6 +39,10 @@
 // 0x00000000...0x08000000 (128MiB)
 #define HAMSTER_PAGES_PER_PROC 32768
 
+// Page table page ID type
+// uint16_t or uint32_t. This defines the maximmum pages in the whole system
+#define HAMSTER_PAGE_ID_TYPE uint16_t
+
 // Maximum global total number of futexes
 #define HAMSTER_MAX_FUTEXES 1024
 
