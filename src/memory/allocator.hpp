@@ -7,12 +7,24 @@
 #include <cstdint>
 #include <new>
 #include <type_traits>
+#include <cstring>
 
 namespace Hamster
 {
     template <typename T, typename... Args>
     T *alloc(std::size_t N = 1, Args &&...args)
     {
+        // Optimization for trivially constructible/destructible types
+        if constexpr (std::is_trivially_constructible_v<T, Args...> && std::is_trivially_destructible_v<T>)
+        {
+            void *raw = _malloc(N * sizeof(T));
+            assert(raw != nullptr);
+            if constexpr (sizeof...(Args) > 0) // TODO: Should we zero-initialize if no args?
+                for (std::size_t i = 0; i < N; ++i)
+                    new ((uint8_t *)raw + i * sizeof(T)) T(std::forward<Args>(args)...);
+            return reinterpret_cast<T *>(raw);
+        }
+
         static_assert(std::is_object<T>::value, "T must be object type");
         const std::size_t alignment = alignof(T);
         const std::size_t data_size = sizeof(T) * N;
@@ -53,6 +65,13 @@ namespace Hamster
     template <typename T>
     void dealloc(T *cv_p)
     {
+        // See alloc<T>
+        if constexpr (std::is_trivially_constructible_v<T> && std::is_trivially_destructible_v<T>)
+        {
+            _free((void *)cv_p);
+            return;
+        }
+
         using U = std::remove_cv_t<std::remove_pointer_t<T>>;
 
         U *p = (U *)cv_p;

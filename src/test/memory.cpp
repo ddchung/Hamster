@@ -7,6 +7,7 @@
 #include <memory/stl_map.hpp>
 #include <memory/tree.hpp>
 #include <memory/circular_buffer.hpp>
+#include <memory/static_pool.hpp>
 #include <memory/allocator.hpp>
 #include <platform/platform.hpp>
 #include <memory/shared_ptr.hpp>
@@ -562,6 +563,83 @@ void test_memory()
         assert(i == 0x2345);
         assert(ms.futex_wake(0, 1) == 1);
         assert(i == 0x1234);
+    }
+
+    // Test static pool
+    {
+        Hamster::StaticPool<int, 10> pool;
+        for (int i = 0; i < 10; ++i)
+            assert(pool.allocate() != nullptr);
+        assert(pool.allocate() == nullptr); // pool exhausted
+        
+        // Re-initialize (don't seperate these two lines)
+        pool.~StaticPool();new (&pool) Hamster::StaticPool<int, 10>();
+
+        int *ptrs[10];
+        for (int i = 0; i < 10; ++i)
+        {
+            ptrs[i] = pool.allocate();
+            assert(ptrs[i] != nullptr);
+            *ptrs[i] = i;
+        }
+
+        assert(pool.allocate() == nullptr); // pool exhausted
+
+        for (int i = 0; i < 10; ++i)
+        {
+            assert(*ptrs[i] == i);
+            pool.deallocate(ptrs[i]);
+        }
+
+        assert(pool.allocate() != nullptr); // should succeed now
+
+        struct NonTrivial
+        {
+            int *data, val;
+            NonTrivial(int *data, int val) : data(data), val(val) {}
+            ~NonTrivial() { *data = val; }
+        };
+
+        Hamster::StaticPool<NonTrivial, 5> nt_pool;
+        NonTrivial *nt_ptrs[5];
+
+        for (int i = 0; i < 5; ++i)
+        {
+            ptrs[i] = pool.allocate(0);
+            assert(ptrs[i] != nullptr);
+            nt_ptrs[i] = nt_pool.allocate(ptrs[i], i * 10);
+            assert(nt_ptrs[i] != nullptr);
+        }
+
+        assert(nt_pool.allocate(nullptr, 0) == nullptr);
+
+        for (int i = 4; i >= 0; --i)
+        {
+            assert(*ptrs[i] == 0);
+            nt_pool.deallocate(nt_ptrs[i]);
+            assert(*ptrs[i] == i * 10);
+            pool.deallocate(ptrs[i]);
+        }
+
+        // Re-initialize
+        for (int i = 0; i < 5; ++i)
+        {
+            ptrs[i] = pool.allocate(0);
+            assert(ptrs[i] != nullptr);
+            nt_ptrs[i] = nt_pool.allocate(ptrs[i], i * 10);
+            assert(nt_ptrs[i] != nullptr);
+        }
+
+        assert(nt_pool.allocate(nullptr, 0) == nullptr);
+
+        // Destroy pool (should call destructors)
+        nt_pool.~StaticPool();new (&nt_pool) Hamster::StaticPool<NonTrivial, 5>();
+
+        for (int i = 0; i < 5; ++i)
+        {
+            assert(*ptrs[i] == i * 10);
+            pool.deallocate(ptrs[i]);
+        }
     }
 }
 
