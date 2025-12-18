@@ -356,9 +356,6 @@ namespace Hamster
                 // Send SIGWINCH to the foreground process group
                 send_sig_to_fg(H_SIGWINCH);
             }
-
-            // Update the terminal size
-            win_sz = new_size;
         }
 
         // Ensure they are accessible
