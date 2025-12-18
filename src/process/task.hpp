@@ -469,7 +469,7 @@ namespace Hamster
          * @param old_stack The old alternate signal stack. nullptr to ignore
          * @return 0 on success, -1 on error
          */
-        int sigaltstack(const sys_sigaltstack *new_stack, sys_sigaltstack *old_stack);
+        int sigaltstack(const struct sys_sigaltstack *new_stack, struct sys_sigaltstack *old_stack);
 
         /**
          * @brief Set the clear_child_tid address
@@ -573,8 +573,9 @@ namespace Hamster
         int munmap_all();
         int mprotect(uint32_t addr, uint32_t size, uint8_t perms);
         int8_t mem_get_permissions(uint32_t loc, uint32_t size = 1);
-        int futex_wait(uint32_t addr, void (*callback)());
-        int futex_wake(uint32_t addr, uint32_t count);
+        int futex_wait(uint32_t addr, void (*callback)(), uint32_t bitset = UINT32_MAX);
+        int futex_wait(uint32_t addr, void (*callback)(void *), void *arg, uint32_t bitset = UINT32_MAX);
+        int futex_wake(uint32_t addr, uint32_t count, uint32_t bitset = UINT32_MAX);
         int futex_requeue(uint32_t wake_addr, uint32_t wake_count, uint32_t requeue_addr, uint32_t requeue_count);
 
         // TaskFDTable functions
@@ -670,7 +671,7 @@ namespace Hamster
         uint64_t last_instruction_tick = 0;
         uint32_t tid;
         Task *parent = nullptr; // may be null
-        sys_sigaltstack alt_signal_stack = {};
+        struct sys_sigaltstack alt_signal_stack = {};
         sys_ucontext signal_saved_state = {};
         uint32_t clear_child_tid = 0;
         uint32_t robust_list = 0;

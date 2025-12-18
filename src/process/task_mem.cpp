@@ -114,14 +114,19 @@ namespace Hamster
         return memory->ms.mprotect(addr, size, permissions);
     }
 
-    int Task::futex_wait(uint32_t addr, void (*callback)())
+    int Task::futex_wait(uint32_t addr, void (*callback)(), uint32_t bitset)
     {
-        return memory->ms.futex_wait(addr, callback);
+        return memory->ms.futex_wait(addr, callback, bitset);
     }
 
-    int Task::futex_wake(uint32_t addr, uint32_t count)
+    int Task::futex_wait(uint32_t addr, void (*callback)(void *), void *arg, uint32_t bitset)
     {
-        return memory->ms.futex_wake(addr, count);
+        return memory->ms.futex_wait(addr, callback, arg, bitset);
+    }
+
+    int Task::futex_wake(uint32_t addr, uint32_t count, uint32_t bitset)
+    {
+        return memory->ms.futex_wake(addr, count, bitset);
     }
 
     int Task::futex_requeue(uint32_t wake_addr, uint32_t wake_count, uint32_t requeue_addr, uint32_t requeue_count)
