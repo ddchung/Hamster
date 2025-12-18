@@ -116,8 +116,15 @@ namespace Hamster
         assert(tasks.find(tid)->second == this);
         tasks.erase(tid);
 
+        if (clear_child_tid != 0)
+        {
+            // See set_tid_address(2)
+            copy_to_memory(clear_child_tid, 0);
+            futex_wake(clear_child_tid, 1);
+            clear_child_tid = 0;
+        }
+
         // TODO: traverse robust futex list
-        // TODO: clear_child_tid
         
         if (is_vfork && parent)
             parent->interrupt_block();

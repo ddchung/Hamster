@@ -653,5 +653,11 @@ namespace Hamster
         
         return 0;
     }
+
+    int32_t sys_set_tid_address(Task &task, uint32_t tid_loc)
+    {
+        task.set_tid_address(tid_loc);
+        return task.get_tid();
+    }
 } // namespace Hamster
 
