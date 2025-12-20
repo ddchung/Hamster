@@ -1,912 +1,761 @@
+// Hamster tasks
 
 #include <process/task.hpp>
-#include <process/scheduler.hpp>
-#include <errno/errno.h>
 #include <memory/allocator.hpp>
-#include <abi/values.hpp>
-#include <cassert>
-#include <utility>
-#include <cstring>
-#include <algorithm>
-
 #include <platform/platform.hpp>
+#include <syscall/syscall.hpp>
+#include <errno/errno.h>
+#include <cassert>
+#include <cinttypes>
 
 namespace Hamster
 {
-    namespace
+    Task *Task::create_task(int fd, const char *const *argv, const char *const *envp)
     {
-        // Default signal handlers
+        Task *task = alloc<Task>();
 
-        void sighand_nop(Task *, sys_siginfo *, sys_sigaction *)
+        uint32_t tid = next_tid++;
+
+        task->tid = tid;
+
+        // Note: we don't add the task to the process yet, since the Process constructor
+        //       will handler that since we passed `task` as the leader
+        task->process.construct(tid, task);
+        task->memory.construct();
+        task->fd_table.construct();
+        // Note: task->emulator.memory is a weak pointer, which
+        //       is destroyed before task->memory
+        task->emulator.memory = &task->memory->ms;
+
+        tasks[tid] = task;
+        task->add_to_scheduler();
+
+        int res = task->exec(fd, argv, envp);
+        if (res < 0)
         {
-            Task *current_task = scheduler.get_current_task();
-            if (current_task)
-                _trace("TID %d received signal %d, doing nothing\n", current_task->tid, current_task->emulator.x[17]);
-        }
-
-        void sighand_term(Task *task, sys_siginfo *siginfo, sys_sigaction *)
-        {
-            assert(task);
-            assert(siginfo);
-            task->exit(make_wait_terminated(siginfo->signo));
-
-            Task *current_task = scheduler.get_current_task();
-            if (current_task)
-                _trace("TID %d received signal %d, terminating\n", current_task->tid, siginfo->signo);
-        }
-
-        void sighand_dump(Task *task, sys_siginfo *siginfo, sys_sigaction *)
-        {
-            assert(task);
-            assert(siginfo);
-            task->exit(make_wait_terminated_coredump(siginfo->signo));
-
-            Task *current_task = scheduler.get_current_task();
-            if (current_task)
-                _trace("TID %d received signal %d, terminating with core dump at PC 0x%08x\n", current_task->tid, siginfo->signo, current_task->emulator.pc);
-        }
-
-        void sighand_stop(Task *task, sys_siginfo * siginfo, sys_sigaction *)
-        {
-            assert(task);
-            assert(siginfo);
-            task->is_paused = true;
-
-            Process *parent_process = scheduler.get_process(task->process->obj.ppid);
-
-            if (parent_process)
-            {
-                ProcessStateChange state_change;
-                state_change.type = ProcessStateChangeType::STOP;
-                state_change.signal = siginfo->signo;
-                parent_process->children_state_changes[task->get_pid()] = state_change;
-            }
-
-            Task *current_task = scheduler.get_current_task();
-            if (current_task)
-                _trace("TID %d received signal %d, stopping\n", current_task->tid, siginfo->signo);
-        }
-
-        void sighand_cont(Task *task, sys_siginfo *siginfo, sys_sigaction *)
-        {
-            assert(task);
-            assert(siginfo);
-            task->is_paused = false;
-
-            Process *parent_process = scheduler.get_process(task->process->obj.ppid);
-
-            if (parent_process)
-            {
-                ProcessStateChange state_change;
-                state_change.type = ProcessStateChangeType::CONTINUE;
-                state_change.signal = siginfo->signo;
-                parent_process->children_state_changes[task->get_pid()] = state_change;
-            }
-        }
-
-        constexpr SignalHandler sighand_default_nop = {sighand_nop, {.handler = H_SIG_DFL, .flags = 0, .restorer = 0, .mask = {}}};
-        constexpr SignalHandler sighand_default_term = {sighand_term, {.handler = H_SIG_DFL, .flags = 0, .restorer = 0, .mask = {}}};
-        constexpr SignalHandler sighand_default_dump = {sighand_dump, {.handler = H_SIG_DFL, .flags = 0, .restorer = 0, .mask = {}}};
-        constexpr SignalHandler sighand_default_stop = {sighand_stop, {.handler = H_SIG_DFL, .flags = 0, .restorer = 0, .mask = {}}};
-        constexpr SignalHandler sighand_default_cont = {sighand_cont, {.handler = H_SIG_DFL, .flags = 0, .restorer = 0, .mask = {}}};
-
-        SignalHandler default_signal_handlers[64] = {
-            {nullptr, {}},                // 0 - not used
-            sighand_default_term,         // 1 - SIGHUP (terminate)
-            sighand_default_term,         // 2 - SIGINT (terminate)
-            sighand_default_term,         // 3 - SIGQUIT (terminate + core)
-            sighand_default_dump,         // 4 - SIGILL (terminate + core)
-            sighand_default_dump,         // 5 - SIGTRAP (terminate + core)
-            sighand_default_dump,         // 6 - SIGABRT/SIGIOT (terminate + core)
-            sighand_default_dump,         // 7 - SIGBUS (terminate + core)
-            sighand_default_dump,         // 8 - SIGFPE (terminate + core)
-            sighand_default_term,         // 9 - SIGKILL (terminate, cannot catch/ignore)
-            sighand_default_term,         // 10 - SIGUSR1 (terminate)sighand_default_cont
-            sighand_default_dump,         // 11 - SIGSEGV (terminate + core)
-            sighand_default_term,         // 12 - SIGUSR2 (terminate)
-            sighand_default_term,         // 13 - SIGPIPE (terminate)
-            sighand_default_term,         // 14 - SIGALRM (terminate)
-            sighand_default_term,         // 15 - SIGTERM (terminate)
-            sighand_default_term,         // 16 - SIGSTKFLT (terminate)
-            sighand_default_nop,          // 17 - SIGCHLD (ignore)
-            sighand_default_cont,         // 18 - SIGCONT (continue, if stopped)
-            sighand_default_stop,         // 19 - SIGSTOP (stop, cannot catch/ignore)
-            sighand_default_stop,         // 20 - SIGTSTP (stop)
-            sighand_default_stop,         // 21 - SIGTTIN (stop)
-            sighand_default_stop,         // 22 - SIGTTOU (stop)
-            sighand_default_nop,          // 23 - SIGURG (ignore)
-            sighand_default_dump,         // 24 - SIGXCPU (terminate + core)
-            sighand_default_dump,         // 25 - SIGXFSZ (terminate + core)
-            sighand_default_term,         // 26 - SIGVTALRM (terminate)
-            sighand_default_term,         // 27 - SIGPROF (terminate)
-            sighand_default_nop,          // 28 - SIGWINCH (ignore)
-            sighand_default_nop,          // 29 - SIGIO/SIGPOLL (ignore)
-            sighand_default_term,         // 30 - SIGPWR (terminate)
-            sighand_default_dump,         // 31 - SIGSYS (terminate + core)
-
-            // 32 - 63 Realtime signals, NOP by default
-            sighand_default_nop,          // 32 - SIGRTMIN
-            sighand_default_nop,          // 33 - SIGRTMIN+1
-            sighand_default_nop,          // 34 - SIGRTMIN+2
-            sighand_default_nop,          // 35 - etc.
-            sighand_default_nop,          // 36
-            sighand_default_nop,          // 37
-            sighand_default_nop,          // 38
-            sighand_default_nop,          // 39
-            sighand_default_nop,          // 40
-            sighand_default_nop,          // 41
-            sighand_default_nop,          // 42
-            sighand_default_nop,          // 43
-            sighand_default_nop,          // 44
-            sighand_default_nop,          // 45
-            sighand_default_nop,          // 46
-            sighand_default_nop,          // 47
-            sighand_default_nop,          // 48
-            sighand_default_nop,          // 49
-            sighand_default_nop,          // 50
-            sighand_default_nop,          // 51
-            sighand_default_nop,          // 52
-            sighand_default_nop,          // 53
-            sighand_default_nop,          // 54
-            sighand_default_nop,          // 55
-            sighand_default_nop,          // 56
-            sighand_default_nop,          // 57
-            sighand_default_nop,          // 58
-            sighand_default_nop,          // 59
-            sighand_default_nop,          // 60
-            sighand_default_nop,          // 61
-            sighand_default_nop,          // 62
-            sighand_default_nop,          // 63 - (SIGRTMAX - 1)
-        };
-    } // namespace
-
-    Task::~Task()
-    {
-        // Remove from process tasks
-        if (process)
-        {
-            auto it = std::find(process->obj.tasks.begin(), process->obj.tasks.end(), this);
-            if (it != process->obj.tasks.end())
-            {
-                process->obj.tasks.erase(it);
-            }
-        }
-
-        // Cleanup resources, and send exit signal if necessary
-        if (process->refcount <= 1)
-        {
-            scheduler.adopt_children(process->obj.pid);
-
-            Process *parent = scheduler.get_process(process->obj.ppid);
-            if (parent)
-            {
-                if (exit_signal & 0xFF)
-                {
-                    sys_siginfo siginfo;
-
-                    siginfo.signo = exit_signal & 0xFF;
-                    siginfo.errno_value = 0;
-                    if ((exit_signal & 0xFF) == H_SIGCHLD)
-                    {
-                        if (is_wait_exited(exit_code))
-                            siginfo.code = H_CLD_EXITED;
-                        else if (is_wait_terminated(exit_code))
-                            siginfo.code = H_CLD_KILLED;
-                        else if (is_wait_terminated_coredump(exit_code))
-                            siginfo.code = H_CLD_DUMPED;
-                        else
-                            siginfo.code = H_CLD_STOPPED;
-
-                        siginfo.fields.child.pid = process->obj.pid;
-                        siginfo.fields.child.uid = process->obj.euid;
-                        siginfo.fields.child.status = exit_code;
-                        siginfo.fields.child.utime = 0;
-                        siginfo.fields.child.stime = 0;
-                    }
-                    else
-                    {
-                        siginfo.code = H_SI_USER;
-                        siginfo.fields.kill.pid = process->obj.pid;
-                        siginfo.fields.kill.uid = process->obj.euid;
-                    }
-                    parent->send_signal(siginfo);
-                }
-
-                ProcessStateChange state_change;
-
-                if (is_wait_exited(exit_code))
-                {
-                    state_change.type = ProcessStateChangeType::EXIT;
-                    state_change.exit_code = exit_code >> 8;
-                }
-                else
-                {
-                    state_change.type = ProcessStateChangeType::TERMINATE;
-                    state_change.signal = exit_code & 0x7F;
-                }
-
-                parent->children_state_changes[get_pid()] = state_change;
-            }
-
-            // Clean up resources
-            if (fd_table->refcount == 1)
-            {
-                for (size_t i = 0; i < fd_table->obj.fds.size(); ++i)
-                    close(i);
-                fd_table->obj.fds.clear();
-            }
-        }
-
-        destroy_task_member(memory);
-        destroy_task_member(program_brk);
-        destroy_task_member(fd_table);
-        destroy_task_member(process);
-    }
-
-    Task::Task(Task &&other)
-        : Task()
-    {
-        if (this == &other)
-            return;
-        
-        Task temp = std::move(other);
-        other = std::move(*this);
-        *this = std::move(temp);
-    }
-
-    Task &Task::operator=(Task &&other)
-    {
-        if (this == &other)
-            return *this;
-        
-        std::swap(memory, other.memory);
-        std::swap(program_brk, other.program_brk);
-        std::swap(fd_table, other.fd_table);
-        std::swap(process, other.process);
-        std::swap(pending_signals, other.pending_signals);
-        std::swap(emulator, other.emulator);
-        std::swap(tid, other.tid);
-        std::swap(ptid, other.ptid);
-        std::swap(sig_mask, other.sig_mask);
-        std::swap(blocking_operation, other.blocking_operation);
-        std::swap(blocking_operation_saved, other.blocking_operation_saved);
-        std::swap(exit_code, other.exit_code);
-        std::swap(exit_signal, other.exit_signal);
-
-        // bitfield, so we need to swap them manually
-        bool tmp = is_paused;
-        is_paused = other.is_paused;
-        other.is_paused = tmp;
-        tmp = is_dead;
-        is_dead = other.is_dead;
-        other.is_dead = tmp;
-
-        return *this;
-    }
-
-    Process::~Process()
-    {
-        // Remove from process group
-        if (pg)
-        {
-            auto it = std::find(pg->obj.processes.begin(), pg->obj.processes.end(), this);
-            if (it != pg->obj.processes.end())
-            {
-                pg->obj.processes.erase(it);
-            }
-        }
-
-        destroy_task_member(signal_handlers);
-        destroy_task_member(fs_info);
-        destroy_task_member(pg);
-    }
-
-    Process::Process(Process &&other)
-        : Process()
-    {
-        if (this == &other)
-            return;
-
-        Process temp = std::move(other);
-        other = std::move(*this);
-        *this = std::move(temp);
-    }
-
-    Process &Process::operator=(Process &&other)
-    {
-        if (this == &other)
-            return *this;
-
-        std::swap(signal_handlers, other.signal_handlers);
-        std::swap(fs_info, other.fs_info);
-        std::swap(pg, other.pg);
-        std::swap(tasks, other.tasks);
-        std::swap(shared_pending_signals, other.shared_pending_signals);
-        std::swap(children_state_changes, other.children_state_changes);
-        std::swap(supplementary_gids, other.supplementary_gids);
-        std::swap(pid, other.pid);
-        std::swap(ppid, other.ppid);
-        std::swap(uid, other.uid);
-        std::swap(euid, other.euid);
-        std::swap(suid, other.suid);
-        std::swap(gid, other.gid);
-        std::swap(egid, other.egid);
-        std::swap(sgid, other.sgid);
-
-        return *this;
-    }
-
-    int Process::send_signal(int signo, uint32_t uid, uint32_t pid)
-    {
-        sys_siginfo siginfo = {};
-        siginfo.signo = signo;
-        siginfo.errno_value = 0;
-        siginfo.code = 0; // No specific code for this signal
-        siginfo.fields.kill.uid = uid;
-        siginfo.fields.kill.pid = pid;
-
-        return send_signal(siginfo);
-    }
-
-    int Process::send_signal(const sys_siginfo &siginfo)
-    {
-        if (siginfo.signo < 0 || siginfo.signo >= 64)
-        {
-            error = H_EINVAL; // Invalid signal number
-            return -1;
-        }
-
-        if (siginfo.signo >= H_SIGRTMIN && siginfo.signo <= H_SIGRTMAX)
-        {
-            shared_pending_signals.rt_sigqueue.push_back({siginfo});
-        }
-        else
-        {
-            auto it = shared_pending_signals.normal_signals.find(siginfo.signo);
-            if (it != shared_pending_signals.normal_signals.end())
-            {
-                // Signal is already pending, do nothing
-            }
-            else
-            {
-                shared_pending_signals.normal_signals[siginfo.signo] = {siginfo};
-            }
-        }
-
-        return 0;
-    }
-
-    int Process::set_default_signal_handlers()
-    {
-        memcpy(signal_handlers->obj.sig_handlers, default_signal_handlers, sizeof(default_signal_handlers));
-
-        return 0;
-    }
-
-    int Process::set_signal_handler(int signo, SignalHandler handler)
-    {
-        if (signo < 0 || signo >= 64)
-        {
-            error = H_EINVAL; // Invalid signal number
-            return -1;
-        }
-
-        // Check for unblockable signals
-        if (signo == H_SIGKILL || signo == H_SIGSTOP || signo == H_SIGCONT)
-        {
-            error = H_EPERM; // Cannot set handler for unblockable signals
-            return -1;
-        }
-
-        signal_handlers->obj.sig_handlers[signo] = handler;
-        return 0;
-    }
-
-    int Process::ignore_signal(int signo)
-    {
-        if (signo < 0 || signo >= 64)
-        {
-            error = H_EINVAL; // Invalid signal number
-            return -1;
-        }
-
-        // Set the handler to a no-op
-        signal_handlers->obj.sig_handlers[signo] = sighand_default_nop;
-        return 0;
-    }
-
-    int Process::default_signal(int signo)
-    {
-        if (signo < 0 || signo >= 64)
-        {
-            error = H_EINVAL; // Invalid signal number
-            return -1;
-        }
-
-        // Set the handler to the default handler
-        signal_handlers->obj.sig_handlers[signo] = default_signal_handlers[signo];
-        return 0;
-    }
-
-    int Process::reset_signal_handlers()
-    {
-        for (int signo = 1; signo < 64; ++signo)
-        {
-            if (signal_handlers->obj.sig_handlers[signo].action.handler != H_SIG_DFL &&
-                signal_handlers->obj.sig_handlers[signo].action.handler != H_SIG_IGN)
-            {
-                signal_handlers->obj.sig_handlers[signo] = default_signal_handlers[signo];
-            }
-        }
-        return 0;
-    }
-
-    int Process::join_process_group(TaskMember<ProcessGroup> *pg)
-    {
-        // Leave current process group if any
-        if (this->pg)
-        {
-            auto it = std::find(this->pg->obj.processes.begin(), this->pg->obj.processes.end(), this);
-            if (it != this->pg->obj.processes.end())
-            {
-                this->pg->obj.processes.erase(it);
-            }
-            destroy_task_member(this->pg);
-            this->pg = nullptr;
-        }
-
-        if (pg)
-        {
-            // Join new process group
-            this->pg = ref_task_member(pg);
-            pg->obj.processes.push_back(this);
-        }
-
-        return 0;
-    }
-
-    ProcessGroup::~ProcessGroup()
-    {
-        // Remove from session
-        if (session)
-        {
-            auto it = std::find(session->obj.pgroups.begin(), session->obj.pgroups.end(), this);
-            if (it != session->obj.pgroups.end())
-            {
-                session->obj.pgroups.erase(it);
-            }
-        }
-
-        destroy_task_member(session);
-    }
-
-    ProcessGroup::ProcessGroup(ProcessGroup &&other)
-        : ProcessGroup()
-    {
-        if (this == &other)
-            return;
-        std::swap(session, other.session);
-        std::swap(processes, other.processes);
-        std::swap(pgid, other.pgid);
-    }
-
-    ProcessGroup &ProcessGroup::operator=(ProcessGroup &&other)
-    {
-        if (this == &other)
-            return *this;
-
-        std::swap(session, other.session);
-        std::swap(processes, other.processes);
-        std::swap(pgid, other.pgid);
-
-        return *this;
-    }
-
-    uint32_t ProcessGroup::get_sid()
-    {
-        if (session)
-            return session->obj.sid;
-        return 0;
-    }
-
-    uint32_t Process::get_sid()
-    {
-        if (pg)
-            return pg->obj.get_sid();
-        return 0;
-    }
-
-    uint32_t Process::get_pgid()
-    {
-        if (pg)
-            return pg->obj.pgid;
-        return 0;
-    }
-
-    uint32_t Task::get_sid()
-    {
-        assert(process);
-        return process->obj.get_sid();
-    }
-
-    uint32_t Task::get_pgid()
-    {
-        assert(process);
-        return process->obj.get_pgid();
-    }
-
-    uint32_t Task::get_pid()
-    {
-        assert(process);
-        return process->obj.pid;
-    }
-
-    int Task::poll_block()
-    {
-        if (blocking_operation)
-            blocking_operation(*this);
-        return 0;
-    }
-
-    int Task::get_vfs_fd(int fd)
-    {
-        assert(fd_table);
-        if (fd < 0 || fd >= (int)fd_table->obj.fds.size())
-        {
-            error = H_EBADF; // Invalid file descriptor
-            return -1;
-        }
-
-        const UserFD &user_fd = fd_table->obj.fds[fd];
-
-        if (user_fd.type != UserFDType::VFS)
-        {
-            error = H_EBADF; // Not a VFS file descriptor
-            return -1;
-        }
-
-        if (user_fd.vfs_fd < 0)
-        {
-            error = H_EBADF; // Closed or invalid file descriptor
-            return -1;
-        }
-
-        return user_fd.vfs_fd;
-    }
-
-    size_t Task::get_unused_fd_index(int start)
-    {
-        assert(fd_table);
-        for (size_t i = start; i < fd_table->obj.fds.size(); ++i)
-        {
-            auto &entry = fd_table->obj.fds[i];
-            if (entry.type == UserFDType::VFS && entry.vfs_fd < 0)
-            {
-                return i; // Found an unused VFS file descriptor
-            }
-        }
-
-        // If no unused fd found, create a new one
-        fd_table->obj.fds.push_back(UserFD{.flags = 0, .type = UserFDType::VFS, .vfs_fd = -1});
-        return fd_table->obj.fds.size() - 1; // Return the index of the new fd
-    }
-
-    UserFD *Task::get_user_fd(int fd)
-    {
-        assert(fd_table);
-        if (fd < 0 || fd >= (int)fd_table->obj.fds.size())
-        {
-            error = H_EBADF; // Invalid file descriptor
+            task->exit(make_wait_terminated_coredump(H_SIGKILL));
+            dealloc(task);
             return nullptr;
         }
 
-        return &fd_table->obj.fds[fd];
+        return task;
     }
 
-    Task *Task::clone(uint32_t clone_flags)
+    Task *Task::get_task(uint32_t tid)
     {
+        auto it = tasks.find(tid);
+        if (it == tasks.end())
+        {
+            error = H_ESRCH;
+            return nullptr;
+        }
+
+        assert(it->second != nullptr);
+        assert(it->second->get_tid() == tid);
+
+        return it->second;
+    }
+
+    Task *Task::get_task_pid(uint32_t pid)
+    {
+        // first, check task with same TID
+        auto it = tasks.find(pid);
+        if (it != tasks.end() && it->second->get_pid() == pid)
+            return it->second;
+
+        // next, search all tasks
+        for (const auto &[tid, task] : tasks)
+            if (task->get_pid() == pid)
+                return task;
+
+        // not found
+        error = H_ESRCH;
+        return nullptr;
+    }
+
+    Task *Task::get_task_pgid(uint32_t pgid)
+    {
+        // first, check task with same TID
+        auto it = tasks.find(pgid);
+        if (it != tasks.end() && it->second->get_pgid() == pgid)
+            return it->second;
+
+        // next, search all tasks
+        for (const auto &[tid, task] : tasks)
+            if (task->get_pgid() == pgid)
+                return task;
+
+        // not found
+        error = H_ESRCH;
+        return nullptr;
+    }
+
+    Process *Task::get_init_process()
+    {
+        auto it = tasks.find(1);
+        if (it == tasks.end())
+            return nullptr;
+        return &it->second->process.get();
+    }
+    
+    int Task::exit(uint16_t code)
+    {
+        if (flags & (KSCHED_REMOVE_NOW | KSCHED_REMOVE_ALL))
+        {
+            // already exited
+            error = H_EINVAL;
+            return -1;
+        }
+
+        // If PID 1 (init) exits, bring down whole system
+        if (tid == 1)
+            flags |= KSCHED_REMOVE_ALL;
+        else
+            flags |= KSCHED_REMOVE_NOW;
+
+        assert(tasks.find(tid)->second == this);
+        tasks.erase(tid);
+
+        if (clear_child_tid != 0)
+        {
+            // See set_tid_address(2)
+            copy_to_memory(clear_child_tid, 0);
+            futex_wake(clear_child_tid, 1);
+            clear_child_tid = 0;
+        }
+
+        // TODO: traverse robust futex list
+        
+        if (is_vfork && parent)
+            parent->interrupt_block();
+
+        process->remove_task(this);
+
+        if (process->num_tasks() == 0)
+            process->exit(code);
+
+        return 0;
+    }
+
+    Task *Task::clone(uint32_t flags, uint32_t stack, uint32_t ptid_loc, uint32_t tls, uint32_t ctid_loc)
+    {
+        // validate arguments
+
+        if (((flags & H_CLONE_SIGHAND) && !(flags & H_CLONE_VM))
+         || ((flags & H_CLONE_THREAD) != (flags & H_CLONE_SIGHAND)) // Note: in Hamster, if you have one you must have both.
+         || ((flags & H_CLONE_FS) && (flags & H_CLONE_NEWNS))
+         || ((flags & H_CLONE_NEWUSER) && (flags & H_CLONE_FS))
+         || ((flags & H_CLONE_NEWIPC) && (flags & H_CLONE_SYSVSEM))
+         || ((flags & H_CLONE_NEWPID) && (flags & (H_CLONE_THREAD | H_CLONE_PARENT)))
+         || ((flags & H_CLONE_NEWUSER) && (flags & H_CLONE_THREAD))
+         || ((flags & H_CLONE_PARENT) && (getpid() == 1))
+         || ((stack % 16))
+         || ((flags & H_CLONE_PIDFD) && (flags & H_CLONE_DETACHED))
+         || ((flags & H_CLONE_PIDFD) && (flags & H_CLONE_THREAD))
+         || ((flags & H_CLONE_PIDFD) && (flags & H_CLONE_PARENT_SETTID)))
+        {
+            error = H_EINVAL;
+            return nullptr;
+        }
+
+        // check for unsupported flags
+
+        if (flags & ~(
+            H_SIGCHLD
+          | H_CLONE_CHILD_CLEARTID
+          | H_CLONE_CHILD_SETTID
+          | H_CLONE_FILES
+          | H_CLONE_FS
+          | H_CLONE_PARENT
+          | H_CLONE_PARENT_SETTID
+          | H_CLONE_SETTLS
+          | H_CLONE_SIGHAND
+          | H_CLONE_THREAD
+          | H_CLONE_VFORK
+          | H_CLONE_VM))
+        {
+            error = H_EINVAL;
+            return nullptr;
+        }
+
+        // allocate TID
+
+        uint32_t tid = next_tid++;
+
         Task *new_task = alloc<Task>();
 
-        new_task->ptid = tid; // Set the parent thread ID
-        new_task->tid = 0;
-        new_task->sig_mask = sig_mask; // Copy the signal mask
-        new_task->blocking_operation = nullptr;
-        new_task->exit_code = 0;
-        new_task->exit_signal = exit_signal;
-        new_task->is_paused = is_paused;
-        new_task->is_dead = is_dead;
-        new_task->last_tick = last_tick;
+        using enum SharedPtrCopyType;
 
+        new_task->memory.assign(memory, flags & H_CLONE_VM ? SHALLOW : DEEP);
+        new_task->fd_table.assign(fd_table, flags & H_CLONE_FILES ? SHALLOW : DEEP);
+        new_task->signal_mask = signal_mask;
         new_task->emulator = emulator;
-
-        new_task->memory = clone_flags & H_CLONE_VM ? ref_task_member(memory) : copy_task_member(memory);
-        new_task->program_brk = clone_flags & H_CLONE_VM ? ref_task_member(program_brk) : copy_task_member(program_brk);
-        new_task->emulator.memory = &new_task->memory->obj;
-        new_task->fd_table = clone_flags & H_CLONE_FILES ? ref_task_member(fd_table) : copy_task_member(fd_table);
-        if (!(clone_flags & H_CLONE_FILES))
+        new_task->emulator.memory = &new_task->memory->ms;
+        new_task->emulator.flush_caches();
+        new_task->tid = tid;
+        new_task->parent = this;
+        new_task->signal_saved_state = signal_saved_state;
+        if (flags & H_CLONE_CHILD_CLEARTID)
+            new_task->set_tid_address(ctid_loc);
+        if (flags & H_CLONE_VFORK)
         {
-            for (UserFD &file : new_task->fd_table->obj.fds)
-            {
-                switch (file.type)
-                {
-                case UserFDType::VFS:
-                    ++fd_refcount[file.vfs_fd];
-                    break;
-                case UserFDType::PIPE_READ:
-                    ++file.pipe->readers;
-                    break;
-                case UserFDType::PIPE_WRITE:
-                    ++file.pipe->writers;
-                    break;
-                default:
-                    break;
-                }
-            }
+            // Block "forever", until interrupted by child
+            block([](Task &, uint64_t){}, 0, [](Task &, uint64_t){});
+            new_task->is_vfork = true;
         }
+        new_task->is_handling_signal = is_handling_signal;
 
-        if (clone_flags & H_CLONE_THREAD)
-        {
-            new_task->process = ref_task_member(process);
-        }
+        if ((flags & H_CLONE_VM) && !(flags & H_CLONE_VFORK))
+            new_task->alt_signal_stack = {};
+        else
+            new_task->alt_signal_stack = alt_signal_stack;
+        
+        // initialize new task's process
+        // Note that this also initializes the signal handlers,
+        // since CLONE_THREAD requires CLONE_SIGHAND and vice versa.
+        if (flags & H_CLONE_THREAD)
+            new_task->process.assign(process, SHALLOW);
         else
         {
-            new_task->process = make_task_member<Process>();
-            Process &proc = new_task->process->obj;
-            proc.pg = ref_task_member(process->obj.pg);
-            proc.pg->obj.processes.push_back(&proc);
-            proc.signal_handlers = clone_flags & H_CLONE_SIGHAND ? ref_task_member(process->obj.signal_handlers) : copy_task_member(process->obj.signal_handlers);
-            proc.fs_info = clone_flags & H_CLONE_FS ? ref_task_member(process->obj.fs_info) : copy_task_member(process->obj.fs_info);
-            proc.ppid = clone_flags & H_CLONE_PARENT ? process->obj.ppid : process->obj.pid;
-            proc.pid = 0;
-            proc.tasks.push_back(new_task);
+            SharedPtr<TaskFSInfo, size_t> fs_info;
+            SharedPtr<TaskSignalHandlers, size_t> signal_handlers;
+            int uid, euid, suid;
+            int gid, egid, sgid;
 
-            proc.supplementary_gids = process->obj.supplementary_gids;
-            proc.uid = process->obj.uid;
-            proc.euid = process->obj.euid;
-            proc.suid = process->obj.suid;
-            proc.gid = process->obj.gid;
-            proc.egid = process->obj.egid;
-            proc.sgid = process->obj.sgid;
+            fs_info.assign(process->get_fs_info(), flags & H_CLONE_FS ? SHALLOW : DEEP);
+            signal_handlers.assign(process->get_signal_handlers(), DEEP);
+            process->get_uid(&uid, &euid, &suid);
+            process->get_gid(&gid, &egid, &sgid);
+
+            new_task->process.construct(tid, new_task, process->get_process_group(), signal_handlers,
+                                        fs_info, flags & H_CLONE_PARENT ? process->get_parent() : &this->process.get(),
+                                        uid, euid, suid, gid, egid, sgid, process->get_groups());
         }
+
+        // Store the TID if needed
+        if (((flags & H_CLONE_CHILD_SETTID) && new_task->copy_to_memory(ctid_loc, tid) != 0)
+         || ((flags & H_CLONE_PARENT_SETTID) && copy_to_memory(ptid_loc, tid) != 0))
+        {
+            dealloc(new_task);
+            error = H_EFAULT;
+            return nullptr;
+        }
+
+        // Set thread pointer (tp == x4)
+        if (flags & H_CLONE_SETTLS)
+            new_task->get_emulator().x[4] = tls;
+        
+        // Set stack if specified
+        if (stack != 0)
+            new_task->get_emulator().x[2] = stack;
+        
+        // Set return value to 0 in new task
+        new_task->get_emulator().x[10] = 0;
+
+        assert(tasks.find(tid) == tasks.end());
+        tasks[tid] = new_task;
+        new_task->add_to_scheduler();
 
         return new_task;
     }
 
-    int Task::init_tid(int new_id)
+    int Task::waitid(int idtype, uint32_t id, sys_siginfo *siginfo, int options)
     {
-        if (tid == 0)
+        auto &state_changes = process->get_state_changes();
+
+        for (auto it = state_changes.begin(); it != state_changes.end(); ++it)
         {
-            tid = new_id;
-            emulator.reserved_mem_id = tid;
-        }
-
-        Process &proc = process->obj;
-
-        // clone() sets these fields to 0
-
-        if (proc.pid == 0)
-            proc.pid = new_id;
-        
-        return 0;
-    }
-
-    int Task::exit(uint16_t exit_code)
-    {
-        is_dead = true;
-        this->exit_code = exit_code;
-
-        return 0;
-    }
-
-    int Task::send_signal(int signo, uint32_t uid, uint32_t pid)
-    {
-        sys_siginfo siginfo;
-        siginfo.signo = signo;
-        siginfo.errno_value = 0;
-        siginfo.code = H_SI_USER;
-        siginfo.fields.kill.pid = pid;
-        siginfo.fields.kill.uid = uid;
-
-        return send_signal(siginfo);
-    }
-
-    int Task::get_relative_fd(const char *path, int thread_at_fd)
-    {
-        if (!path || path[0] == '\0')
-        {
-            error = H_EINVAL; // Invalid path
-            return -1;
-        }
-
-        if (path[0] == '/')
-        {
-            // Absolute path
-            const char *root_path = process->obj.fs_info->obj.root_path.c_str();
-
-            return vfs.open(root_path, OPEN_RDWR | OPEN_DIRECTORY);
-        }
-        else if (thread_at_fd == -100)
-        {
-            const char *cwd_path = process->obj.fs_info->obj.cwd_path.c_str();
-            return vfs.open(cwd_path, OPEN_RDWR | OPEN_DIRECTORY);
-        }
-        else
-        {
-            if (thread_at_fd < 0 || thread_at_fd >= (int)fd_table->obj.fds.size())
+            bool match = false;
+            switch (idtype)
             {
-                error = H_EBADF; // Invalid file descriptor
+            case H_P_PID:
+                match = (it->pid == id);
+                break;
+            case H_P_PGID:
+                match = (it->pgid == id);
+                break;
+            case H_P_ALL:
+                match = true;
+                break;
+            default:
+                error = H_EINVAL;
                 return -1;
             }
 
-            const UserFD &user_fd = fd_table->obj.fds[thread_at_fd];
-
-            if (user_fd.type != UserFDType::VFS || user_fd.vfs_fd < 0)
+            if (match)
             {
-                error = H_EBADF; // Not a valid VFS file descriptor
+                // Found matching state change, check if it applies
+                switch (it->type)
+                {
+                case ProcessStateChange::EXIT:
+                    if ((options & H_WEXITED) == 0)
+                        continue;
+                    siginfo->fields.child.status = it->exit_code;
+                    if (is_wait_exited(it->exit_code))
+                        siginfo->code = H_CLD_EXITED;
+                    else if (is_wait_terminated(it->exit_code))
+                        siginfo->code = H_CLD_KILLED;
+                    else
+                        siginfo->code = H_CLD_DUMPED;
+                    break;
+                case ProcessStateChange::STOP:
+                    if ((options & H_WSTOPPED) == 0)
+                        continue;
+                    siginfo->code = H_CLD_STOPPED;
+                    siginfo->fields.child.status = it->signo;
+                    break;
+                case ProcessStateChange::CONT:
+                    if ((options & H_WCONTINUED) == 0)
+                        continue;
+                    siginfo->code = H_CLD_CONTINUED;
+                    siginfo->fields.child.status = it->signo;
+                    break;
+                }
+
+                // OK, full match, return
+                siginfo->fields.child.pid = it->pid;
+                siginfo->fields.child.uid = it->uid;
+                siginfo->signo = H_SIGCHLD;
+
+                if ((options & H_WNOWAIT) == 0)
+                {
+                    // delete this state change
+                    state_changes.erase(it);
+                }
+
+                return 0;
+            }
+        }
+
+        // Check if child process even exists
+
+        for (Process *process : process->get_children())
+        {
+            bool match = false;
+            switch (idtype)
+            {
+            case H_P_PID:
+                match = (process->get_pid() == id);
+                break;
+            case H_P_PGID:
+                match = (process->get_process_group()->get_pgid() == id);
+                break;
+            case H_P_ALL:
+                match = true;
+                break;
+            default:
+                error = H_EINVAL;
                 return -1;
             }
 
-            return vfs.dup(user_fd.vfs_fd);
+            if (match)
+            {
+                // there is a waitable process, block
+                error = H_EAGAIN;
+                return -1;
+            }
         }
 
-        // Should not reach here
+        // No matching child
+        error = H_ECHILD;
         return -1;
     }
 
-    char *Task::process_user_path(char *user_path)
+    int Task::exit_group(uint16_t code)
     {
-        if (!user_path || user_path[0] == '\0')
+        return process->exit(code);
+    }
+
+    int Task::block(BlockingCallback callback, uint64_t saved, BlockingCallback interrupt_callback)
+    {
+        if (!callback)
         {
-            dealloc(user_path);
-            error = H_EINVAL; // Invalid path
-            return nullptr;
+            error = H_EINVAL;
+            return -1;
         }
 
-        size_t len = strlen(user_path);
-        String *root;
-        if (user_path[0] == '/')
+        if (is_blocking())
         {
-            root = &process->obj.fs_info->obj.root_path;
+            error = H_EAGAIN;
+            return -1;
+        }
+
+        if (!interrupt_callback)
+            interrupt_callback = [](Task &task, uint64_t saved) {
+                task.get_emulator().x[10] = -H_EINTR;
+                task.end_block();
+                _trace("TID \033[34m%" PRIu32 "\033[0m\tFinished blocking operation, result: \033[36m%" PRIi32 "\033[0m\n", task.get_tid(), -H_EINTR);
+            };
+    
+        blocking_operation = callback;
+        blocking_operation_saved = saved;
+        interrupt_blocking = interrupt_callback;
+
+        return 0;
+    }
+
+    int Task::block(int (*callback)(Task &, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t))
+    {
+        if (!callback)
+        {
+            error = H_EINVAL;
+            return -1;
+        }
+
+        if (is_blocking())
+        {
+            error = H_EAGAIN;
+            return -1;
+        }
+
+        blocking_operation_alt = callback;
+        
+        return block([](Task &task, uint64_t saved){
+            uint32_t *x = task.emulator.x;
+            int res = task.blocking_operation_alt(task, saved, x[11], x[12], x[13], x[14], x[15]);
+            if (res == -1)
+            {
+                if (error == H_EAGAIN)
+                    return;
+                res = cvt_error();
+            }
+
+            x[10] = res;
+            task.end_block();
+            task.blocking_operation_alt = nullptr;
+
+            _trace("TID \033[34m%" PRIu32 "\033[0m\tFinished blocking operation, result: \033[36m%" PRIi32 "\033[0m\n", task.get_tid(), res);
+        }, emulator.x[10]); // save a0 because if this function is called from a 
+        //                     system call, a0 will be overwritten by the call's return value
+    }
+
+    int Task::interrupt_block()
+    {
+        if (!is_blocking())
+        {
+            error = H_EPERM;
+            return -1;
+        }
+
+        interrupt_blocking(*this, blocking_operation_saved);
+        end_block();
+        return 0;
+    }
+
+    void Task::end_block()
+    {
+        blocking_operation = nullptr;
+        interrupt_blocking = nullptr;
+    }
+
+    bool Task::is_leader() const
+    {
+        return process->get_leader() == this;
+    }
+
+    const Set<Task *> &Task::get_process_tasks() const
+    {
+        return process->get_tasks();
+    }
+
+    const Set<Process *> &Task::get_children_processes() const
+    {
+        return process->get_children();
+    }
+
+    void Task::run()
+    {
+        current_task = this;
+
+        if (pending_signals.size() > 0 || process->get_pending_signals().size() > 0)
+        {
+            TaskSignalQueue *sigqueue = &pending_signals;
+            const sys_siginfo *p_siginfo;
+
+            // First, check task's signal queue
+            p_siginfo = sigqueue->peek(signal_mask);
+
+            // Check shared signal queue if not found
+            if (!p_siginfo)
+            {
+                sigqueue = &process->get_pending_signals();
+                p_siginfo = sigqueue->peek(signal_mask);
+            }
+
+            if (p_siginfo)
+            {
+                assert(p_siginfo->signo >= 1 && p_siginfo->signo <= 64);
+
+                sys_siginfo siginfo = *p_siginfo;
+                sigqueue->pop(signal_mask);
+
+                // handle the signal
+                int res = process->get_signal_handlers()->handle_signal(siginfo.signo, *this, siginfo);
+                assert(res == 0);
+                return;
+            }
+
+            // Signals present, but masked, continue normally
+        }
+
+        if (blocking_operation)
+        {
+            blocking_operation(*this, blocking_operation_saved);
+
+            // Limit blocking checks to once a millisecond
+            this->BaseKTask::next_tick = _get_sys_time() + 1;
         }
         else
         {
-            root = &process->obj.fs_info->obj.cwd_path;
+            auto status = emulator.run();
+            last_instruction_tick = _get_sys_time();
+            sys_siginfo siginfo = {};
+
+            using Status = RiscVEmulator::ExecuteResult::Status;
+
+            switch (status.status)
+            {
+            case Status::Success:
+                break;
+            case Status::ECALL:
+                emulator.x[10] = syscall(*this, emulator.x[17]);
+                break;
+            case Status::EBREAK:
+                send_signal(make_kill_siginfo(H_SIGTRAP));
+                break;
+            case Status::IllegalInstruction:
+                _trace("TID %" PRIu32 ": illegal instruction at pc 0x%08" PRIx32 "\n", tid, emulator.pc);
+                siginfo.signo = H_SIGILL;
+                siginfo.code = H_ILL_ILLOPC;
+                siginfo.fields.fault.addr = emulator.pc;
+                send_signal(siginfo);
+                break;
+            case Status::IllegalLoad:
+            case Status::IllegalStore:
+                _trace("TID %" PRIu32 ": segfault at pc 0x%08" PRIx32 "\n", tid, emulator.pc);
+                siginfo.signo = H_SIGSEGV;
+                siginfo.code = H_SEGV_BNDERR;
+                siginfo.fields.fault.addr = emulator.pc;
+                send_signal(siginfo);
+                break;
+            case Status::Error:
+                // TODO: Handle generic error
+                this->exit(make_wait_terminated_coredump(H_SIGKILL));
+                break;
+            }
         }
 
-        len += 1 + root->length(); // +1 for the '/' separator
+        // Update next tick
+        this->BaseKTask::next_tick = _get_sys_time();
 
-        char *new_path = alloc<char>(len + 1); // +1 for null terminator
-
-        strcpy(new_path, root->c_str());
-        strcat(new_path, "/");
-        strcat(new_path, user_path);
-
-        dealloc(user_path); // Free the original path
-        return new_path; // Return the new absolute path
+        current_task = nullptr;
     }
 
-    int Task::send_signal(const sys_siginfo &siginfo)
+    Task *Task::get_current_task()
     {
-        if (siginfo.signo < 1 || siginfo.signo >= 64)
-        {
-            error = H_EINVAL; // Invalid signal number
-            return -1;
-        }
+        return current_task;
+    }
 
-        if (siginfo.signo >= H_SIGRTMIN && siginfo.signo < H_SIGRTMAX)
+    uint64_t Task::get_last_tick()
+    {
+        return last_instruction_tick;
+    }
+
+    void Task::add_to_scheduler()
+    {
+        // Unique ID
+        this->BaseKTask::id = (uint32_t)((uintptr_t)(this) >> 2);
+        this->BaseKTask::next_tick = _get_sys_time();
+        kscheduler.add_task(this);
+    }
+
+    void Task::pause(uint8_t signo)
+    {
+        uint32_t paused = 0;
+        for (Task *task : process->get_tasks())
         {
-            pending_signals.rt_sigqueue.push_back({siginfo});
+            paused += (task->is_paused == false);
+            task->is_paused = true;
+        }
+        if (paused > 0)
+            process->notify_pause(signo);
+    }
+
+    void Task::unpause()
+    {
+        uint32_t continued = 0;
+        for (Task *task : process->get_tasks())
+        {
+            continued += (task->is_paused == true);
+            task->is_paused = false;
+        }
+        if (continued > 0)
+            process->notify_continue();
+    }
+
+    sys_ucontext Task::save_state()
+    {
+        sys_ucontext ucontext = {};
+        ucontext.sigmask = signal_mask.to_sigset();
+        ucontext.context.regs.pc = emulator.pc;
+        ::memcpy(ucontext.context.regs.regs, emulator.x + 1, sizeof(uint32_t) * 31); // + 1 to skip zero register
+        ucontext.context.fpstate.d.fcsr = emulator.fcsr;
+        ::memcpy(ucontext.context.fpstate.d.f, emulator.f, sizeof(emulator.f));
+        return ucontext;
+    }
+
+    void Task::load_state(const sys_ucontext &ucontext)
+    {
+        signal_mask.from_sigset(ucontext.sigmask);
+        emulator.pc = ucontext.context.regs.pc;
+        ::memcpy(emulator.x + 1, ucontext.context.regs.regs, sizeof(uint32_t) * 31); // +1 again to skip zero
+        emulator.fcsr = ucontext.context.fpstate.d.fcsr;
+        ::memcpy(emulator.f, ucontext.context.fpstate.d.f, sizeof(emulator.f));
+    }
+    
+    Session::Session(uint32_t sid)
+        : sid(sid)
+    {
+    }
+
+    ProcessGroup::ProcessGroup(uint32_t pgid, const SharedPtr<Session> &session)
+        : session(session, SharedPtrCopyType::SHALLOW), pgid(pgid)
+    {
+        if (!session)
+            this->session.construct(pgid);
+        this->session->add_process_group(this);
+    }
+
+    const SharedPtr<ProcessGroup> &ProcessGroup::get_shared_ptr() const
+    {
+        return (*processes.begin())->get_process_group();
+    }
+
+    ProcessGroup::~ProcessGroup()
+    {
+        session->remove_process_group(this);
+    }
+
+    Process::Process(uint32_t pid, Task *leader, const SharedPtr<ProcessGroup> &pgroup,
+                const SharedPtr<TaskSignalHandlers> &signal_handlers,
+                const SharedPtr<TaskFSInfo> &fs_info, Process *parent, int uid, int euid, int suid,
+                int gid, int egid, int sgid, const Vector<int> &groups)
+        : pgroup(pgroup, SharedPtrCopyType::SHALLOW), signal_handlers(signal_handlers, SharedPtrCopyType::SHALLOW),
+          fs_info(fs_info, SharedPtrCopyType::SHALLOW), leader(leader), parent(parent), pid(pid), uid(uid), euid(euid), suid(suid),
+          gid(gid), egid(egid), sgid(sgid), groups(groups)
+    {
+        // Construct new members if ones weren't provided
+        if (!pgroup)
+            this->pgroup.construct(pid);
+        if (!signal_handlers)
+            this->signal_handlers.construct();
+        if (!fs_info)
+            this->fs_info.construct();
+        if (parent)
+            parent->children.insert(this);
+
+        // also have the leader task in `tasks`
+        tasks.emplace(leader);
+
+        this->pgroup->add_process(this);
+    }
+
+    void Process::add_task(Task *task)
+    {
+        tasks.emplace(task);
+    }
+
+    void Process::remove_task(Task *task)
+    {
+        if (leader == task)
+            leader = nullptr;
+        tasks.erase(task);
+    }
+
+    int Process::exit(uint16_t code)
+    {
+        if (num_tasks() > 0)
+        {
+            // Make all tasks exit
+            // Note that `Task::exit` will remove the task from `this->tasks`
+            for (auto it = tasks.begin(); it != tasks.end();)
+                (*it++)->exit(code);
+            return 0;
         }
         else
         {
-            auto it = pending_signals.normal_signals.find(siginfo.signo);
-            if (it != pending_signals.normal_signals.end())
+            // Notify parent of exit
+            if (parent && !parent->signal_handlers->is_ignored(H_SIGCHLD) && !(parent->signal_handlers->get_action(H_SIGCHLD).flags & H_SA_NOCLDWAIT))
             {
-                // Signal is already pending, do nothing
+                // Make "zombie" struct
+                parent->state_changes.emplace_back();
+                auto &state_change = parent->state_changes.back();
+                state_change.pid = pid;
+                state_change.uid = uid;
+                state_change.pgid = pgroup->get_pgid();
+                state_change.type = ProcessStateChange::EXIT;
+                state_change.exit_code = code;
+
+                // Send SIGCHLD
+
+                sys_siginfo siginfo = {};
+
+                if (is_wait_exited(code))
+                    siginfo.code = H_CLD_EXITED;
+                else if (is_wait_terminated(code))
+                    siginfo.code = H_CLD_KILLED;
+                else if (is_wait_terminated_coredump(code))
+                    siginfo.code = H_CLD_DUMPED;
+                
+                siginfo.signo = H_SIGCHLD;
+                siginfo.fields.child.pid = pid;
+                siginfo.fields.child.uid = uid;
+                siginfo.fields.child.status = code;
+                parent->pending_signals.push(siginfo);
             }
-            else
-            {
-                pending_signals.normal_signals[siginfo.signo] = {siginfo};
-            }
-        }
-
-        return 0;
-    }
-
-    int Task::close(int fd)
-    {
-        UserFD *p_user_fd = get_user_fd(fd);
-        if (!p_user_fd)
-            return -1;
-        UserFD &user_fd = *p_user_fd;
-
-        switch (user_fd.type)
-        {
-        case UserFDType::VFS:
-        {
-            // Close the VFS file descriptor
-            int vfs_fd = user_fd.vfs_fd;
-
-            user_fd.vfs_fd = -1; // Reset the VFS file descriptor
+            if (parent)
+                parent->children.erase(this);
+            pgroup->remove_process(this);
             
-            if (--fd_refcount[vfs_fd] == 0)
-            {
-                fd_refcount.erase(vfs_fd);
-
-                return vfs.close(vfs_fd);
-            }
-            break;
-        }
-        case UserFDType::PID:
-            // Mark as closed
-
-            user_fd.type = UserFDType::VFS;
-            user_fd.vfs_fd = -1; // Reset the VFS file descriptor
-            break;
-        case UserFDType::PIPE_READ:
-        case UserFDType::PIPE_WRITE:
-            if (user_fd.type == UserFDType::PIPE_READ)
-                --user_fd.pipe->readers;
-            else
-                --user_fd.pipe->writers;
-            
-            if (user_fd.pipe->is_destroyable())
-                dealloc(user_fd.pipe);
-            user_fd.type = UserFDType::VFS;
-            user_fd.vfs_fd = -1;
+            // make init adopt children
+            Process *init = Task::get_init_process();
+            if (init)
+                for (Process *child : children)
+                {
+                    child->parent = init;
+                    init->children.insert(child);
+                }
         }
 
         return 0;
     }
 
-    int Task::close_cloexec_fds()
+    void Process::notify_pause(uint8_t signo)
     {
-        for (size_t i = 0; i < fd_table->obj.fds.size(); i++)
+        if (parent)
         {
-            if (fd_table->obj.fds[i].flags & H_FD_CLOEXEC)
-            {
-                close(i);
-            }
+            parent->state_changes.emplace_back();
+            auto &state_change = parent->state_changes.back();
+            state_change.pid = pid;
+            state_change.uid = uid;
+            state_change.pgid = pgroup->get_pgid();
+            state_change.type = ProcessStateChange::STOP;
+            state_change.signo = signo;
         }
-        return 0;
     }
 
-    int Task::is_signal_blocked(int signo)
+    void Process::notify_continue()
     {
-        if (signo < 1 || signo >= 64)
+        if (parent)
         {
-            error = H_EINVAL; // Invalid signal number
-            return -1;
+            parent->state_changes.emplace_back();
+            auto &state_change = parent->state_changes.back();
+            state_change.pid = pid;
+            state_change.uid = uid;
+            state_change.pgid = pgroup->get_pgid();
+            state_change.type = ProcessStateChange::CONT;
+            state_change.signo = H_SIGCONT;
         }
-
-        // Check if the signal is blocked
-        if ((sig_mask & (1U << signo)) == 0)
-        {
-            return 1; // Signal is blocked
-        }
-
-        return 0; // Signal is not blocked
-    }
-
-    int Task::is_signal_ignored(int signo)
-    {
-        if (signo < 1 || signo >= 64)
-        {
-            error = H_EINVAL; // Invalid signal number
-            return -1;
-        }
-
-        // Check if the signal is ignored
-        if (process->obj.signal_handlers->obj.sig_handlers[signo].fn == sighand_nop)
-        {
-            return 1; // Signal is ignored
-        }
-
-        return 0; // Signal is not ignored
-    }
-
-    MemorySpace &Task::get_memory()
-    {
-        return memory->obj.memory;
     }
 } // namespace Hamster
+

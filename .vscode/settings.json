@@ -97,7 +97,8 @@
         "unistd.h": "c",
         "fcntl.h": "c",
         "shared_mutex": "cpp",
-        "out": "cpp"
+        "out": "cpp",
+        "cfenv": "cpp"
     },
     "C_Cpp.default.compilerPath": "/opt/homebrew/bin/g++-14"
 }

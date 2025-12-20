@@ -5,10 +5,10 @@
 #include <filesystem/ramfs.hpp>
 #include <filesystem/device_manager.hpp>
 #include <memory/allocator.hpp>
-#include <process/scheduler.hpp>
 #include <kscheduler/kscheduler.hpp>
 #include <riscv/riscv_emulator.hpp>
 #include <driver/base_char_device.hpp>
+#include <process/task.hpp>
 #include <errno/errno.h>
 #include <cstring>
 #include <cstdlib>
@@ -17,6 +17,8 @@
 void test_platform();
 void test_memory();
 void test_filesystem();
+void test_emulator();
+void test_process();
 
 namespace
 {
@@ -41,28 +43,6 @@ namespace
         Hamster::_log("]");
         Hamster::_log("\r\n");
     }
-
-    class UserSchedulerTickTask : public Hamster::BaseKTask
-    {
-    public:
-        UserSchedulerTickTask()
-        {
-            flags = Hamster::KSCHED_AUTO_INTERVAL;
-            interval = 0; // Tick as fast as possible
-            id = 1; // Fixed ID
-            next_tick = 0;
-        }
-
-        void run() override
-        {
-            Hamster::scheduler.tick();
-            if (Hamster::scheduler.num_tasks() == 0)
-            {
-                Hamster::_trace("No tasks left, exiting...\n");
-                flags |= Hamster::KSCHED_REMOVE_NOW | Hamster::KSCHED_REMOVE_ALL;
-            }
-        }
-    };
 
 #ifndef NTRACE
     class UserSchedulerPerfMonitorTask : public Hamster::BaseKTask
@@ -181,6 +161,14 @@ int main()
     test_filesystem();
     log_operation_status();
 
+    log_operation("Testing Emulator...");
+    test_emulator();
+    log_operation_status();
+
+    log_operation("Testing Process...");
+    test_process();
+    log_operation_status();
+
     Hamster::error = 0; // Reset error after tests
 #endif // NDEBUG
 
@@ -208,13 +196,10 @@ int main()
     Hamster::vfs.mkdir("/dev/shm", 0777);
     Hamster::vfs.mount("/dev/shm", Hamster::alloc<Hamster::RamFs>());
 
-    Hamster::scheduler.spawn("/usr/bin/init");
-
-    // Add the user scheduler tick task
-    Hamster::kscheduler.add_task(Hamster::alloc<UserSchedulerTickTask>());
 #ifndef NTRACE
     Hamster::kscheduler.add_task(Hamster::alloc<UserSchedulerPerfMonitorTask>());
 #endif
+    Hamster::spawn("/sbin/init");
 
     // Run the program
     while (true)

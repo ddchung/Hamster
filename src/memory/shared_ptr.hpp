@@ -39,22 +39,32 @@ namespace Hamster
             RefCountType refcount;
         };
     public:
-        struct Construct {};
-
         /**
-         * @brief Construct a new SharedPtr with a new object
+         * @brief Make a new SharedPtr with a new object
          * @param args The args to forward to the object
-         * @note Pass a Construct() to signify constructing the shared pointer's object
          */
         template <typename... Args>
-        SharedPtr(Construct, Args &&... args)
+        static SharedPtr make_shared(Args &&... args)
         {
-            obj = alloc<Object>(1, std::forward<Args>(args)...);
+            SharedPtr ptr;
+            ptr.construct(std::forward<Args>(args)...);
+            return ptr;
         }
 
-        SharedPtr()
+        SharedPtr(std::nullptr_t = nullptr)
         {
             obj = nullptr;
+        }
+
+        /**
+         * @brief Construct a new value
+         * @param args The args to pass to T's constructor
+         */
+        template <typename... Args>
+        void construct(Args &&... args)
+        {
+            clear();
+            obj = alloc<Object>(1, std::forward<Args>(args)...);
         }
 
         /**
@@ -96,7 +106,7 @@ namespace Hamster
             if ((void *)obj == (void *)other.obj)
                 return *this;
 
-            destroy();
+            clear();
 
             if (!other.obj)
             {
@@ -107,7 +117,13 @@ namespace Hamster
             switch (copy_type)
             {
             case SharedPtrCopyType::DEEP:
-                obj = alloc<Object>(1, other.obj->obj);
+                if constexpr(std::is_constructible_v<T, OtherT &>)
+                    obj = alloc<Object>(1, other.obj->obj);
+                else
+                {
+                    assert(false && "SharedPtr: Cannot deep-copy object with no copy constructor");
+                    __builtin_unreachable();
+                }
                 break;
             case SharedPtrCopyType::SHALLOW:
                 // note: cannot put into assert because of comma
@@ -133,12 +149,18 @@ namespace Hamster
             return assign(other);
         }
 
+        // Copy assign
+        SharedPtr &operator=(const SharedPtr &other)
+        {
+            return assign(other);
+        }
+
         SharedPtr &operator=(SharedPtr &&other)
         {
             if ((void *)obj == (void *)other.obj)
                 return *this;
 
-            destroy();
+            clear();
             obj = other.obj;
             other.obj = nullptr;
             return *this;
@@ -146,7 +168,7 @@ namespace Hamster
 
         ~SharedPtr()
         {
-            destroy();
+            clear();
         }
 
         explicit operator bool() const
@@ -179,10 +201,10 @@ namespace Hamster
             return &obj->obj;
         }
 
-    private:
-        Object *obj;
-
-        void destroy()
+        /**
+         * @brief Clear the shared pointer
+         */
+        void clear()
         {
             if (obj)
             {
@@ -191,5 +213,8 @@ namespace Hamster
                 obj = nullptr;
             }
         }
+
+    private:
+        Object *obj;
     };
 } // namespace Hamster

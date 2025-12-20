@@ -7,6 +7,7 @@
 #include <memory/stl_map.hpp>
 #include <memory/tree.hpp>
 #include <memory/circular_buffer.hpp>
+#include <memory/static_pool.hpp>
 #include <memory/allocator.hpp>
 #include <platform/platform.hpp>
 #include <memory/shared_ptr.hpp>
@@ -91,17 +92,12 @@ void test_memory()
 
     // Write some data to the page
     const char *data = "Hello, World!";
-    ssize_t bytes_written = pm.try_write(id, 0, data, strlen(data));
-    if (bytes_written == -1)
-    {
-        pm.swap_in(id);
-        bytes_written = pm.try_write(id, 0, data, strlen(data));
-    }
-    assert(bytes_written != -1);
+    ssize_t bytes_written = pm.write(id, 0, data, strlen(data));
+    assert(bytes_written == (ssize_t)strlen(data));
 
     // Read the data back from the page
     char buffer[256];
-    ssize_t bytes_read = pm.try_read(id, 0, buffer, strlen(data));
+    ssize_t bytes_read = pm.read(id, 0, buffer, strlen(data));
     assert(bytes_read != -1);
     assert(bytes_read == (ssize_t)strlen(data));
     assert(strncmp(buffer, data, strlen(data)) == 0);
@@ -114,16 +110,11 @@ void test_memory()
         uint32_t id = pm.allocate_page();
 
         // Write some data to the page
-        ssize_t bytes_written = pm.try_write(id, 0, data, strlen(data));
-        if (bytes_written == -1)
-        {
-            pm.swap_in(id);
-            bytes_written = pm.try_write(id, 0, data, strlen(data));
-        }
+        ssize_t bytes_written = pm.write(id, 0, data, strlen(data));
         assert(bytes_written != -1);
 
         // Read the data back from the page
-        ssize_t bytes_read = pm.try_read(id, 0, buffer, strlen(data));
+        ssize_t bytes_read = pm.read(id, 0, buffer, strlen(data));
         assert(bytes_read != -1);
         assert(bytes_read == (ssize_t)strlen(data));
         assert(strncmp(buffer, data, strlen(data)) == 0);
@@ -342,7 +333,7 @@ void test_memory()
         // read_until_zero
         char str[] = "abc\0def";
         assert(ms.memcpy_alloc(page_size * 20, str, sizeof(str)) == 0);
-        char *out = ms.read_until_zero(page_size * 20);
+        char *out = ms.read_until_zero<char>(page_size * 20);
         assert(out != nullptr && strcmp(out, "abc") == 0);
         Hamster::dealloc(out);
 
@@ -451,10 +442,26 @@ void test_memory()
         assert(memcmp(readback, readback2, test_size) == 0);
     }
 
+    // Test MemorySpace with big data
+    {
+// Warning: takes a while
+#if 0
+        constexpr uint32_t size = 16 * 1024 * 1024;
+        Hamster::MemorySpace ms;
+
+        ms.map_anonymous(0, size, Hamster::PERM_READ | Hamster::PERM_WRITE);
+        ms.memset(0, 0, size);
+        ms.memset(0, 0xFF, size);
+
+        for (uint16_t i = 0; i < 8192; ++i)
+            ms.memset(0, i % 256, size);
+#endif
+    }
+
     // Test Hamster::SharedPtr
     {
         // Basic construction
-        Hamster::SharedPtr<int> sp1({}, 123);
+        Hamster::SharedPtr<int> sp1 = sp1.make_shared(123);
         assert(*sp1 == 123);
         // Copy (deep by default)
         Hamster::SharedPtr<int> sp2 = sp1;
@@ -465,7 +472,7 @@ void test_memory()
         assert(*sp2 == 456);
 
         // Shallow copy
-        Hamster::SharedPtr<int, size_t, Hamster::SharedPtrCopyType::SHALLOW> sp3({}, 789);
+        Hamster::SharedPtr<int, size_t, Hamster::SharedPtrCopyType::SHALLOW> sp3 = sp3.make_shared(789);
         Hamster::SharedPtr<int, size_t, Hamster::SharedPtrCopyType::SHALLOW> sp4 = sp3;
         assert(*sp3 == 789);
         assert(*sp4 == 789);
@@ -481,14 +488,14 @@ void test_memory()
 
         // Test with a struct
         struct Point { int x, y; };
-        Hamster::SharedPtr<Point> p1({}, 1, 2);
+        Hamster::SharedPtr<Point> p1 = p1.make_shared(1, 2);
         assert(p1->x == 1 && p1->y == 2);
         Hamster::SharedPtr<Point> p2 = p1;
         p2->x = 10;
         assert(p1->x == 1); // deep copy
         assert(p2->x == 10);
 
-        Hamster::SharedPtr<float> f1{{}};
+        Hamster::SharedPtr<float> f1 = f1.make_shared();
 
         *f1 = 123.456f;
         assert(*f1 == 123.456f);
@@ -502,6 +509,137 @@ void test_memory()
         }
 
         assert(*f1 == 234.567f);
+    }
+
+    // Test futexes
+    {
+        Hamster::MemorySpace ms;
+
+        // static to be accessible within lambda
+        static int i = 0;
+        static Hamster::MemorySpace *p_ms;
+
+        p_ms = &ms;
+
+        assert(ms.map_anonymous(0, HAMSTER_PAGE_SIZE, Hamster::PERM_READ | Hamster::PERM_WRITE) == 0);
+
+        ms.futex_wait(0, []{
+            uint32_t word;
+            assert(p_ms && p_ms->memcpy(&word, 0, 4) == 0);
+            assert(word == 0x1234);
+            i = 0x4321;
+        });
+
+        assert(i == 0);
+
+        uint32_t word = 0x1234;
+        assert(ms.memcpy(0, &word, 4) == 0);
+
+        assert(ms.futex_wake(0, 1) == 1);
+
+        assert(i == 0x4321);
+    }
+
+    // Futexes with bitsets
+    {
+        Hamster::MemorySpace ms;
+
+        int i = 0;
+
+        assert(ms.map_anonymous(0, HAMSTER_PAGE_SIZE, Hamster::PERM_READ | Hamster::PERM_WRITE) == 0);
+
+        ms.futex_wait(0, [](void *data){
+            *(int *)data = 0x1234;
+        }, &i, 1 << 0);
+
+        ms.futex_wait(0, [](void *data){
+            *(int *)data = 0x2345;
+        }, &i, 1 << 1);
+
+        assert(ms.futex_wake(0, UINT32_MAX, 1 << 3) == 0);
+        assert(i == 0);
+        assert(ms.futex_wake(0, 1, 1 << 1) == 1);
+        assert(ms.futex_wake(0, 1, 1 << 1) == 0);
+        assert(i == 0x2345);
+        assert(ms.futex_wake(0, 1) == 1);
+        assert(i == 0x1234);
+    }
+
+    // Test static pool
+    {
+        Hamster::StaticPool<int, 10> pool;
+        for (int i = 0; i < 10; ++i)
+            assert(pool.allocate() != nullptr);
+        assert(pool.allocate() == nullptr); // pool exhausted
+        
+        // Re-initialize (don't seperate these two lines)
+        pool.~StaticPool();new (&pool) Hamster::StaticPool<int, 10>();
+
+        int *ptrs[10];
+        for (int i = 0; i < 10; ++i)
+        {
+            ptrs[i] = pool.allocate();
+            assert(ptrs[i] != nullptr);
+            *ptrs[i] = i;
+        }
+
+        assert(pool.allocate() == nullptr); // pool exhausted
+
+        for (int i = 0; i < 10; ++i)
+        {
+            assert(*ptrs[i] == i);
+            pool.deallocate(ptrs[i]);
+        }
+
+        assert(pool.allocate() != nullptr); // should succeed now
+
+        struct NonTrivial
+        {
+            int *data, val;
+            NonTrivial(int *data, int val) : data(data), val(val) {}
+            ~NonTrivial() { *data = val; }
+        };
+
+        Hamster::StaticPool<NonTrivial, 5> nt_pool;
+        NonTrivial *nt_ptrs[5];
+
+        for (int i = 0; i < 5; ++i)
+        {
+            ptrs[i] = pool.allocate(0);
+            assert(ptrs[i] != nullptr);
+            nt_ptrs[i] = nt_pool.allocate(ptrs[i], i * 10);
+            assert(nt_ptrs[i] != nullptr);
+        }
+
+        assert(nt_pool.allocate(nullptr, 0) == nullptr);
+
+        for (int i = 4; i >= 0; --i)
+        {
+            assert(*ptrs[i] == 0);
+            nt_pool.deallocate(nt_ptrs[i]);
+            assert(*ptrs[i] == i * 10);
+            pool.deallocate(ptrs[i]);
+        }
+
+        // Re-initialize
+        for (int i = 0; i < 5; ++i)
+        {
+            ptrs[i] = pool.allocate(0);
+            assert(ptrs[i] != nullptr);
+            nt_ptrs[i] = nt_pool.allocate(ptrs[i], i * 10);
+            assert(nt_ptrs[i] != nullptr);
+        }
+
+        assert(nt_pool.allocate(nullptr, 0) == nullptr);
+
+        // Destroy pool (should call destructors)
+        nt_pool.~StaticPool();new (&nt_pool) Hamster::StaticPool<NonTrivial, 5>();
+
+        for (int i = 0; i < 5; ++i)
+        {
+            assert(*ptrs[i] == i * 10);
+            pool.deallocate(ptrs[i]);
+        }
     }
 }
 

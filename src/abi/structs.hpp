@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <abi/values.hpp>
 #include <cstdint>
 
 namespace Hamster
@@ -278,10 +279,23 @@ namespace Hamster
         char domainname[65];
     };
 
-    struct pselect6_time64_sigset
+    struct sys_pselect6_time64_sigset
     {
         uint32_t sigset_loc;
         uint32_t sigset_size;
+    };
+
+    struct sys_sigaltstack
+    {
+        uint32_t stack_loc;
+        int32_t flags;
+        uint32_t size;
+    };
+
+    struct sys_iovec
+    {
+        uint32_t data;
+        uint32_t size;
     };
 
     inline uint64_t timespec_to_systick(const sys_timespec &ts)
@@ -300,5 +314,14 @@ namespace Hamster
     {
         ts.sec = static_cast<int64_t>(systick / 1000);
         ts.nsec = static_cast<int64_t>((systick % 1000) * 1000000);
+    }
+    inline sys_siginfo make_kill_siginfo(uint8_t signo, uint32_t uid = 0, uint32_t pid = 0)
+    {
+        sys_siginfo siginfo = {};
+        siginfo.signo = signo;
+        siginfo.code = H_SI_USER;
+        siginfo.fields.kill.pid = pid;
+        siginfo.fields.kill.uid = uid;
+        return siginfo;
     }
 } // namespace Hamster

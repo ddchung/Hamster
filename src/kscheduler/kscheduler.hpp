@@ -47,7 +47,6 @@ namespace Hamster
          * 
          * A task will be automatically removed if:
          * - It has been ticked, and the `KSCHED_REMOVE_NEXT_TICK` was set both before and after the tick
-         * - `next_tick` is at least `HAMSTER_KSCHED_OVERDUE_TIME` milliseconds in the past, and `KSCHED_AUTO_INTERVAL` is not set
          * - `KSCHED_REMOVE_NOW` is set
          */
     };

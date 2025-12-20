@@ -69,19 +69,33 @@ namespace Hamster
         }
 
         /**
-         * @brief Get an instruction iterator
-         * @param addr The initial address that it points to. Must be aligned to 4 bytes, and exist.
-         * @return The instruction iterator. This iterator traverses within a single page only.
-         * @note Page must be executable
+         * @brief Make a read-only iterator
+         * @param addr The initial address that it points to
+         * @return The iterator. This iterator traverses within a single page only.
+         * @note Page must be readable
          */
-        PageManager::InstructionIterator make_iterator(uint32_t addr)
-        {
-            assert(addr % 4 == 0);
+        const void *make_iterator_read(uint32_t addr);
+        
+        /**
+         * @brief Make a read-write iterator
+         * @param addr The initial address that it points to
+         * @return The iterator. This iterator traverses within a single page only.
+         * @note Page must be readable and writable
+         */
+        void *make_iterator(uint32_t addr);
 
+        /**
+         * @brief Make an executable iterator
+         * @param addr The initial address that it points to
+         * @return The iterator. This iterator traverses within a single page only.
+         * @note Page must be executable
+         * @note Address must be 4-byte aligned
+         */
+        const uint32_t *make_iterator_exec(uint32_t addr)
+        {
             uint32_t id = page_table.get_page(addr);
             assert(id != PageTable::PAGE_ID_UNUSED);
-
-            return page_manager.make_iterator(id, addr % HAMSTER_PAGE_SIZE);
+            return page_manager.make_iterator_exec(id, addr % HAMSTER_PAGE_SIZE);
         }
 
         /**
@@ -96,16 +110,35 @@ namespace Hamster
         }
 
         /**
-         * @brief Read from a memory region, up until, and including, a zero byte
+         * @brief Read from a memory region, up until, and including, a zero T
          * @param addr The address of the memory region to read from
          * @return A newly allocated buffer containing the data on success, or nullptr on failure and set `error`
          * @note May be used to get a C-string
          */
-        char *read_until_zero(uint32_t addr);
+        template <typename T>
+        T *read_until_zero(uint32_t addr)
+        {
+            T t;
+            size_t num_t = 0;
 
-        // backwards compatibility
+            for (uint32_t it = addr;; ++it)
+            {
+                if (do_read(it, &t, sizeof(T)) != (ssize_t)sizeof(T))
+                    return nullptr;
+
+                num_t++;
+
+                if (t == 0)
+                    break;
+            }
+
+            T *result = alloc<T>(num_t);
+            memcpy(result, addr, num_t * sizeof(T));
+            return result;
+        }
+
         char *get_string(uint32_t addr)
-        { return read_until_zero(addr); }
+        { return read_until_zero<char>(addr); }
 
         /**
          * @brief Check if a memory region is mapped
@@ -220,6 +253,51 @@ namespace Hamster
          *     * so that on unmap, the resources can be properly freed.
          */
         uint32_t allocate(uint32_t size);
+
+        /**
+         * @brief Perform a futex wait operation
+         * @param addr The address of the futex word
+         * @param callback The callback to call when woken
+         * @param arg The argument to pass to the callback
+         * @param bitset Used for selecting which waiters to wake. See futex(2) for more information
+         * @return 0 on success, -1 on error
+         * @warning Futexes do not support shared file mappings
+         * @warning `addr` must be aligned
+         */
+        int futex_wait(uint32_t addr, void (*callback)(void *), void *arg, uint32_t bitset = UINT32_MAX);
+
+        /**
+         * @brief Perform a futex wait operation
+         * @param addr The address of the futex word
+         * @param callback The callback to call when woken
+         * @param bitset Used for selecting which waiters to wake. See futex(2) for more information
+         * @return 0 on success, -1 on error
+         * @warning Futexes do not support shared file mappings
+         * @warning `addr` must be aligned
+         */
+        int futex_wait(uint32_t addr, void (*callback)(), uint32_t bitset = UINT32_MAX);
+
+        /**
+         * @brief Wake up at most `count` waiters on a futex word
+         * @param addr The address of the futex word
+         * @param count The maximum number of waiters to wake up
+         * @param bitset Used for selecting which waiters to wake. See futex(2) for more information
+         * @return The number of waiters woken, or -1 and set `error` on error
+         * @warning `addr` must be aligned, and not on a shared file mapping
+         */
+        int futex_wake(uint32_t addr, uint32_t count, uint32_t bitset = UINT32_MAX);
+
+        /**
+         * @brief Wake up at most `wake_count` waiters, then if there are extra,
+         *        requeue at most `requeue_count` waiters to the new futex word
+         * @param wait_addr The address of the original futex word
+         * @param wake_count The max number of waiters to wake
+         * @param requeue_addr The address to queue remaining waiters
+         * @param requeue_count The max number of waiters to re-queue, if there are remaining after waking
+         * @return The number of waiters woken or requeued, or -1 on error and set `error`
+         * @warning `addr` must be aligned, and not on a shared file mapping
+         */
+        int futex_requeue(uint32_t wake_addr, uint32_t wake_count, uint32_t requeue_addr, uint32_t requeue_count);
 
     private:
         PageTable page_table;

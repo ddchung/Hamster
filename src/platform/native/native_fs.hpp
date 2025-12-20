@@ -4,6 +4,7 @@
 
 #include <errno/errno.h>
 
+// Change this to 1 to enable native filesystem support on Linux
 #if defined(__linux__) && 1
 
 #include <filesystem/base_file.hpp>
@@ -15,7 +16,7 @@
 #include <cstring>
 #include <errno.h>
 
-#define HAMSTER_NATIVE_FS_ROOT "/home/tin/hamster_rootfs"
+#define HAMSTER_NATIVE_FS_ROOT "rootfs"
 
 namespace Hamster
 {
@@ -795,7 +796,7 @@ namespace Hamster
 #include <filesystem/base_romfs.hpp>
 #include <fcntl.h>
 
-#define HAMSTER_ROOT_IMG_LOC "/home/tin/hroot.romfs"
+#define HAMSTER_ROOT_IMG_LOC "rootfs.img"
 
 namespace Hamster
 {

@@ -1379,10 +1379,7 @@ namespace Hamster
             return -1;
         
         if (file->type() != FileType::Special)
-        {
-            error = H_ENOTTY;
-            return -1;
-        }
+            return 1; // Always allow reading from non-special files
 
         auto handle = get_special_handle((BaseSpecialFile *)file);
         if (!handle)
@@ -1411,5 +1408,34 @@ namespace Hamster
             return -1;
 
         return file->datasync();
+    }
+
+    int VFS::accessat(int dfd, const char *path, int uid, int *groups, size_t numgroups, int mode, int flags)
+    {
+        BaseFile *file = data->fd_manager.get_fd(dfd);
+        if (!file)
+            return -1;
+        if (file->type() != FileType::Directory)
+        {
+            error = H_ENOTDIR;
+            return -1;
+        }
+
+        BaseFile *cloned_file = file->clone();
+        if (!cloned_file)
+            return -1;
+        assert(cloned_file->type() == FileType::Directory);
+
+        return data->mounts.access(path, uid, groups, numgroups, mode, (BaseDirectory *)cloned_file, flags);
+    }
+
+    int VFS::access(const char *path, int uid, int *groups, size_t numgroups, int mode, int flags)
+    {
+        int rootfd = open("/", OPEN_RDONLY | OPEN_DIRECTORY);
+        if (rootfd < 0)
+            return -1;
+        int res = accessat(rootfd, path, uid, groups, numgroups, mode, flags);
+        close(rootfd);
+        return res;
     }
 } // namespace Hamster

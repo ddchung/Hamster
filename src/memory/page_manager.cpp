@@ -51,7 +51,6 @@ namespace Hamster
         entry = alloc<PageEntry>();
         entry->data = nullptr;
         entry->fd = nullptr;
-        entry->eviction_queue_count = 0;
         entry->swapped = 1;
         entry->dirty = 0;
         entry->perms = perms;
@@ -107,6 +106,12 @@ namespace Hamster
                 vfs.close(entry->fd->fd);
                 dealloc(entry->fd);
             }
+
+            // Remove any futex waiters still on the page
+            futex_waiters.remove_if([=](const FutexWaiter &waiter){
+                return waiter.page == entry;
+            });
+
             dealloc(entry);
         }
         entry = nullptr;
@@ -159,11 +164,7 @@ namespace Hamster
         entry->data = (uint8_t *)_malloc(HAMSTER_PAGE_SIZE);
         entry->swapped = 0;
 
-        if (entry->eviction_queue_count <= 3)
-        {
-            eviction_queue.push_back(id);
-            ++entry->eviction_queue_count;
-        }
+        eviction_queue.push_back(id);
 
         if (entry->zero)
         {
@@ -254,6 +255,144 @@ namespace Hamster
         return id < page_table.size() && page_table[id] != nullptr;
     }
 
+    const void *PageManager::make_iterator_read(uint32_t id, size_t addr)
+    {
+        PageEntry *entry = page_table[id];
+        if (entry->swapped)
+            swap_in(id);
+        assert(addr < HAMSTER_PAGE_SIZE);
+
+        if ((entry->perms & PERM_READ) == 0)
+        {
+            error = H_EACCES;
+            return nullptr;
+        }
+
+        assert(!entry->fd); // no iterators on shared file mappings
+
+        return entry->data + addr;
+    }
+
+    void *PageManager::make_iterator(uint32_t id, size_t addr)
+    {
+        PageEntry *entry = page_table[id];
+        if (entry->swapped)
+            swap_in(id);
+        assert(addr < HAMSTER_PAGE_SIZE);
+
+        if ((entry->perms & (PERM_READ | PERM_WRITE)) != (PERM_READ | PERM_WRITE))
+        {
+            error = H_EACCES;
+            return nullptr;
+        }
+
+        assert(!entry->fd);
+
+        return entry->data + addr;
+    }
+
+    int PageManager::futex_wait(uint32_t id, size_t addr, void (*callback)(void *), void *data, uint32_t bitset)
+    {
+        PageEntry *entry = page_table[id];
+        assert(entry);
+        assert(bitset != 0);
+        assert(addr < HAMSTER_PAGE_SIZE);
+
+        // Shared file mappings are not supported by futexes
+        if (entry->fd && entry->shared)
+        {
+            error = H_EPERM;
+            return -1;
+        }
+
+        if (futex_waiters.size() >= HAMSTER_MAX_FUTEXES)
+        {
+            error = H_ENOMEM;
+            return -1;
+        }
+
+        futex_waiters.emplace_back(callback, data, bitset, entry, addr);
+
+        return 0;
+    }
+
+    int PageManager::futex_wake(uint32_t id, size_t addr, uint32_t count, uint32_t bitset)
+    {
+        PageEntry *entry = page_table[id];
+        assert(entry);
+        assert(addr < HAMSTER_PAGE_SIZE);
+        assert(bitset != 0);
+
+        if (entry->fd && entry->shared)
+        {
+            error = H_EPERM;
+            return -1;
+        }
+
+        size_t woken = 0;
+        futex_waiters.remove_if([entry, addr, count, &woken, bitset](const FutexWaiter &waiter){
+            if (waiter.page == entry && waiter.offset == addr && (waiter.bitset & bitset) && woken++ < count)
+            {
+                waiter.callback(waiter.callback_arg);
+                return true;
+            }
+            return false;
+        });
+
+        return woken;
+    }
+
+    int PageManager::futex_requeue(uint32_t wake_id, size_t wake_addr, uint32_t wake_count, uint32_t requeue_id, uint32_t requeue_addr, uint32_t requeue_count)
+    {
+        PageEntry *entry = page_table[wake_id];
+        assert(entry);
+        assert(wake_addr < HAMSTER_PAGE_SIZE);
+
+        PageEntry *requeue_entry = page_table[requeue_id];
+        assert(requeue_entry);
+        assert(requeue_addr < HAMSTER_PAGE_SIZE);
+
+        if ((entry->fd && entry->shared) || (requeue_entry->fd && requeue_entry->shared))
+        {
+            error = H_EPERM;
+            return -1;
+        }
+
+        int processed = 0;
+
+        for (auto it = futex_waiters.begin(); it != futex_waiters.end();)
+        {
+            FutexWaiter &waiter = *it;
+
+            if (waiter.page != entry || waiter.offset != wake_addr)
+                continue;
+            
+            if ((uint32_t)processed < wake_count)
+            {
+                // Wake up
+                waiter.callback(waiter.callback_arg);
+
+                futex_waiters.erase(it++);
+            }
+            else if (processed - wake_count < requeue_count)
+            {
+                // Requeue
+                waiter.page = requeue_entry;
+                waiter.offset = requeue_addr;
+                
+                // move to end
+                futex_waiters.splice(futex_waiters.end(), futex_waiters, it++);
+            }
+            else
+            {
+                // done
+                break;
+            }
+        }
+
+        return processed;
+    }
+
     int PageManager::should_evict()
     {
         return _get_free_memory() < HAMSTER_TARGET_FREE_RAM ? 1 : 0;
@@ -272,7 +411,7 @@ namespace Hamster
             assert(victim < page_table.size());
 
             PageEntry *entry = page_table[victim];
-            if (!entry || --entry->eviction_queue_count > 0)
+            if (!entry)
                 continue;
 
             // Evict the page

@@ -106,33 +106,6 @@ namespace Hamster
         return 1;
     }
 
-    char *MemorySpace::read_until_zero(uint32_t addr)
-    {
-        size_t len = 0;
-
-        for (uint32_t it = addr;; ++it)
-        {
-            char c;
-            if (do_read(it, &c, 1) != 1)
-                return nullptr;
-            ++len;
-            if (c == '\0')
-                break;
-        }
-
-        char *result = alloc<char>(len);
-
-        result[len - 1] = '\0';
-
-        if (memcpy(result, addr, len) < 0)
-        {
-            dealloc(result);
-            return nullptr;
-        }
-
-        return result;
-    }
-
     ssize_t MemorySpace::how_many_mapped(uint32_t loc, uint32_t size) const
     {
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
@@ -340,7 +313,86 @@ namespace Hamster
         }
         return perms;
     }
-    
+
+    void *MemorySpace::make_iterator(uint32_t addr)
+    {
+        uint32_t id = page_table.get_page(addr);
+        if (id == PageTable::PAGE_ID_UNUSED)
+        {
+            error = H_EFAULT;
+            return nullptr;
+        }
+        return page_manager.make_iterator(id, addr % HAMSTER_PAGE_SIZE);
+    }
+
+    const void *MemorySpace::make_iterator_read(uint32_t addr)
+    {
+        uint32_t id = page_table.get_page(addr);
+        if (id == PageTable::PAGE_ID_UNUSED)
+        {
+            error = H_EFAULT;
+            return nullptr;
+        }
+        return page_manager.make_iterator_read(id, addr % HAMSTER_PAGE_SIZE);
+    }
+
+    int MemorySpace::futex_wait(uint32_t addr, void (*callback)(void *), void *arg, uint32_t bitset)
+    {
+        assert(addr % 4 == 0);
+
+        uint32_t page_id = page_table.get_page(addr);
+        uint16_t offset = addr % HAMSTER_PAGE_SIZE;
+
+        if (page_id == PageTable::PAGE_ID_UNUSED)
+        {
+            error = H_EFAULT;
+            return -1;
+        }
+
+        return page_manager.futex_wait(page_id, offset, callback, arg, bitset);
+    }
+
+    int MemorySpace::futex_wait(uint32_t addr, void (*callback)(), uint32_t bitset)
+    {
+        return futex_wait(addr, [](void *arg){ ((void (*)())arg)(); }, (void *)callback, bitset);
+    }
+
+    int MemorySpace::futex_wake(uint32_t addr, uint32_t count, uint32_t bitset)
+    {
+        assert(addr % 4 == 0);
+
+        uint32_t page_id = page_table.get_page(addr);
+        uint16_t offset = addr % HAMSTER_PAGE_SIZE;
+
+        if (page_id == PageTable::PAGE_ID_UNUSED)
+        {
+            error = H_EFAULT;
+            return -1;
+        }
+
+        return page_manager.futex_wake(page_id, offset, count, bitset);
+    }
+
+    int MemorySpace::futex_requeue(uint32_t wake_addr, uint32_t wake_count, uint32_t requeue_addr, uint32_t requeue_count)
+    {
+        assert(wake_addr % 4 == 0);
+        assert(requeue_addr % 4 == 0);
+
+        uint32_t wake_page_id = page_table.get_page(wake_addr);
+        uint16_t wake_offset = wake_addr % HAMSTER_PAGE_SIZE;
+
+        uint32_t requeue_page_id = page_table.get_page(requeue_addr);
+        uint16_t requeue_offset = requeue_addr % HAMSTER_PAGE_SIZE;
+
+        if (wake_page_id == PageTable::PAGE_ID_UNUSED ||
+            requeue_page_id == PageTable::PAGE_ID_UNUSED)
+        {
+            error = H_EFAULT;
+            return -1;
+        }
+
+        return page_manager.futex_requeue(wake_page_id, wake_offset, wake_count, requeue_page_id, requeue_offset, requeue_count);
+    }
 
     void MemorySpace::deallocate(uint32_t addr, uint32_t size)
     {

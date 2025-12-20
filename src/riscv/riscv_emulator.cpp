@@ -245,68 +245,74 @@ namespace Hamster
     {
         if HAMSTER_UNLIKELY (addr & 0b11)
             // unaligned, use slower routine
-            return memory->memory.memcpy(&out, addr, sizeof(out));
-        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
+            return memory->memcpy(&out, addr, sizeof(out));
+        return memory->fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::read16(uint32_t addr, uint16_t &out)
     {
         if HAMSTER_UNLIKELY (addr & 0b1)
-            return memory->memory.memcpy(&out, addr, sizeof(out));
-        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
+            return memory->memcpy(&out, addr, sizeof(out));
+        return memory->fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::read8(uint32_t addr, uint8_t &out)
     {
-        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
+        return memory->fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::write32(uint32_t addr, uint32_t value)
     {
         if HAMSTER_UNLIKELY (addr & 0b11)
-            return memory->memory.memcpy(addr, &value, sizeof(value));
-        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
+            return memory->memcpy(addr, &value, sizeof(value));
+        return memory->fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::write16(uint32_t addr, uint16_t value)
     {
         if HAMSTER_UNLIKELY (addr & 0b1)
-            return memory->memory.memcpy(addr, &value, sizeof(value));
+            return memory->memcpy(addr, &value, sizeof(value));
 
-        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
+        return memory->fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::write8(uint32_t addr, uint8_t value)
     {
-        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
+        return memory->fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::readf32(uint32_t addr, float &out)
     {
         if HAMSTER_UNLIKELY (addr & 0b11)
-            return memory->memory.memcpy(&out, addr, sizeof(out));
-        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
+            return memory->memcpy(&out, addr, sizeof(out));
+        return memory->fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::readf64(uint32_t addr, double &out)
     {
         if HAMSTER_UNLIKELY (addr & 0b111)
-            return memory->memory.memcpy(&out, addr, sizeof(out));
-        return memory->memory.fast_read_aligned(addr, &out, sizeof(out));
+            return memory->memcpy(&out, addr, sizeof(out));
+        return memory->fast_read_aligned(addr, &out, sizeof(out));
     }
 
     int RiscVEmulator::writef32(uint32_t addr, float value)
     {
         if HAMSTER_UNLIKELY (addr & 0b11)
-            return memory->memory.memcpy(addr, &value, sizeof(value));
-        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
+            return memory->memcpy(addr, &value, sizeof(value));
+        return memory->fast_write_aligned(addr, &value, sizeof(value));
     }
 
     int RiscVEmulator::writef64(uint32_t addr, double value)
     {
         if HAMSTER_UNLIKELY (addr & 0b111)
-            return memory->memory.memcpy(addr, &value, sizeof(value));
-        return memory->memory.fast_write_aligned(addr, &value, sizeof(value));
+            return memory->memcpy(addr, &value, sizeof(value));
+        return memory->fast_write_aligned(addr, &value, sizeof(value));
+    }
+
+    void RiscVEmulator::flush_caches()
+    {
+        traces[0].pc = 0xFFFF'FFFF;
+        traces[1].pc = 0xFFFF'FFFF;
     }
 
     RiscVEmulator::ExecuteResult
@@ -905,14 +911,16 @@ namespace Hamster
                 result.illegal_load.address = pc;
                 return 0;
             }
-            if (memory->memory.check_executable(pc))
+            if (memory->check_executable(pc))
             {
                 result.status = ExecuteResult::Status::IllegalLoad;
                 result.illegal_load.address = pc;
                 return 0;
             }
 
-            for (auto it = memory->memory.make_iterator(pc); !it.is_end(); ++it)
+            // Number of 4-byte words left until end of page
+            size_t to_process = (HAMSTER_PAGE_SIZE / 4) - ((pc / 4) % (HAMSTER_PAGE_SIZE / 4));
+            for (auto it = memory->make_iterator_exec(pc); decoded_count < to_process; ++it)
             {
                 uint32_t inst = *it;
 
@@ -936,7 +944,6 @@ namespace Hamster
 
         DecodedInst *current_inst = predecoded_insts;
         uint32_t new_pc;
-        uint32_t dummy;
 
         if (decoded_count == 0)
             return 0;
@@ -1117,6 +1124,7 @@ namespace Hamster
             result.illegal_store.value = value;
             OPCODE_RETURN_FAIL();
         }
+        reserved_addr = 0;
         DISPATCH();
     }
     case_sh:
@@ -1130,6 +1138,7 @@ namespace Hamster
             result.illegal_store.value = value;
             OPCODE_RETURN_FAIL();
         }
+        reserved_addr = 0;
         DISPATCH();
     }
     case_sw:
@@ -1143,6 +1152,7 @@ namespace Hamster
             result.illegal_store.value = value;
             OPCODE_RETURN_FAIL();
         }
+        reserved_addr = 0;
         DISPATCH();
     }
     case_op_branch:
@@ -1154,8 +1164,7 @@ namespace Hamster
             if (x[extract_rs1(current_inst->inst)] == x[extract_rs2(current_inst->inst)])
             {
                 auto new_pc = pc + extract_imm_b(current_inst->inst);
-                // Ensure that it is readable
-                if (read32(new_pc, dummy) != 0)
+                if (memory->check_executable(new_pc) != 0)
                 {
                     _trace("RiscVEmulator: BEQ: Branch to unreadable address 0x%08x\n", new_pc);
                     result.status = ExecuteResult::Status::IllegalLoad;
@@ -1173,8 +1182,7 @@ namespace Hamster
             if (x[extract_rs1(current_inst->inst)] != x[extract_rs2(current_inst->inst)])
             {
                 auto new_pc = pc + extract_imm_b(current_inst->inst);
-                // Ensure that it is readable
-                if (read32(new_pc, dummy) != 0)
+                if (memory->check_executable(new_pc) != 0)
                 {
                     _trace("RiscVEmulator: BNE: Branch to unreadable address 0x%08x\n", new_pc);
                     result.status = ExecuteResult::Status::IllegalLoad;
@@ -1192,8 +1200,7 @@ namespace Hamster
             if ((int32_t)x[extract_rs1(current_inst->inst)] < (int32_t)x[extract_rs2(current_inst->inst)])
             {
                 auto new_pc = pc + extract_imm_b(current_inst->inst);
-                // Ensure that it is readable
-                if (read32(new_pc, dummy) != 0)
+                if (memory->check_executable(new_pc) != 0)
                 {
                     _trace("RiscVEmulator: BLT: Branch to unreadable address 0x%08x\n", new_pc);
                     result.status = ExecuteResult::Status::IllegalLoad;
@@ -1211,8 +1218,7 @@ namespace Hamster
             if ((int32_t)x[extract_rs1(current_inst->inst)] >= (int32_t)x[extract_rs2(current_inst->inst)])
             {
                 auto new_pc = pc + extract_imm_b(current_inst->inst);
-                // Ensure that it is readable
-                if (read32(new_pc, dummy) != 0)
+                if (memory->check_executable(new_pc) != 0)
                 {
                     _trace("RiscVEmulator: BGE: Branch to unreadable address 0x%08x\n", new_pc);
                     result.status = ExecuteResult::Status::IllegalLoad;
@@ -1230,8 +1236,7 @@ namespace Hamster
             if (x[extract_rs1(current_inst->inst)] < x[extract_rs2(current_inst->inst)])
             {
                 auto new_pc = pc + extract_imm_b(current_inst->inst);
-                // Ensure that it is readable
-                if (read32(new_pc, dummy) != 0)
+                if (memory->check_executable(new_pc) != 0)
                 {
                     _trace("RiscVEmulator: BLTU: Branch to unreadable address 0x%08x\n", new_pc);
                     result.status = ExecuteResult::Status::IllegalLoad;
@@ -1250,7 +1255,7 @@ namespace Hamster
             {
                 auto new_pc = pc + extract_imm_b(current_inst->inst);
                 // Ensure that it is readable
-                if (read32(new_pc, dummy) != 0)
+                if (memory->check_executable(new_pc) != 0)
                 {
                     _trace("RiscVEmulator: BGEU: Branch to unreadable address 0x%08x\n", new_pc);
                     result.status = ExecuteResult::Status::IllegalLoad;
@@ -1280,8 +1285,7 @@ namespace Hamster
         // JAL
         pc += decoded_count * 4 - 4;
         new_pc = pc + extract_imm_j(current_inst->inst);
-        // Ensure that it is readable
-        if (read32(new_pc, dummy) != 0)
+        if (memory->check_executable(new_pc) != 0)
         {
             _trace("RiscVEmulator: JAL: Jump to unreadable address 0x%08x\n", new_pc);
             result.status = ExecuteResult::Status::IllegalLoad;
@@ -1299,8 +1303,7 @@ namespace Hamster
         // JALR
         pc += decoded_count * 4 - 4;
         new_pc = (x[extract_rs1(current_inst->inst)] + extract_imm_i(current_inst->inst)) & ~0x1;
-        // Ensure that it is readable
-        if (read32(new_pc, dummy) != 0)
+        if (memory->check_executable(new_pc) != 0)
         {
             _trace("RiscVEmulator: JALR: Jump to unreadable address 0x%08x\n", new_pc);
             result.status = ExecuteResult::Status::IllegalLoad;
@@ -1522,9 +1525,7 @@ namespace Hamster
         else if (extract_funct3(current_inst->inst) == FUNCT3_FENCE_I)
         {
             // FENCE.I
-            // Clear trace cache
-            traces[0].pc = 0;
-            traces[1].pc = 0;
+            flush_caches();
             // End the current trace early, to re-fetch instructions next time
             result.status = ExecuteResult::Status::Success;
             OPCODE_RETURN_OK();
@@ -1559,15 +1560,14 @@ namespace Hamster
                 result.illegal_load.address = x[extract_rs1(current_inst->inst)];
                 OPCODE_RETURN_FAIL();
             }
-            memory->reserved_mem[x[extract_rs1(current_inst->inst)]] = reserved_mem_id;
+            reserved_addr = x[extract_rs1(current_inst->inst)];
             x[extract_rd(current_inst->inst)] = val;
             break;
         }
         case FUNCT5_SC:
         {
             // Store Conditional
-            auto it = memory->reserved_mem.find(x[extract_rs1(current_inst->inst)]);
-            if (it == memory->reserved_mem.end() || it->second != reserved_mem_id)
+            if (x[extract_rs1(current_inst->inst)] != reserved_addr)
             {
                 // Not reserved
                 x[extract_rd(current_inst->inst)] = 1;
@@ -1582,7 +1582,7 @@ namespace Hamster
                 result.illegal_store.value = val;
                 OPCODE_RETURN_FAIL();
             }
-            memory->reserved_mem.erase(it);
+            reserved_addr = 0;
             x[extract_rd(current_inst->inst)] = 0;
             break;
         }

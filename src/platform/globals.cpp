@@ -5,7 +5,6 @@
 #include <filesystem/vfs.hpp>
 #include <filesystem/device_manager.hpp>
 #include <kscheduler/kscheduler.hpp>
-#include <process/scheduler.hpp>
 
 #ifndef NDEBUG
 #include <unordered_set>
@@ -101,12 +100,5 @@ namespace Hamster
      * requires: page_manager, vfs, allocator, error, fd_refcount
      * provides: process
      */
-
-    /**
-     * Scheduler
-     * requires: process
-     * provides: scheduler
-     */
-    Scheduler scheduler;
 } // namespace Hamster
 

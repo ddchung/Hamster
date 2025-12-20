@@ -33,6 +33,7 @@ public:
     // Open a file or directory, resolving symlinks if necessary
     // If flags contains OPEN_NOFOLLOW, and the last component is a symlink, it will return the symlink itself
     BaseFile *lopen(const char *path, int flags, int mode, BaseDirectory *dir = nullptr);
+    int access(const char *path, int uid, int *groups, size_t numgroups, int mode, BaseDirectory *dir = nullptr, int flags = 0);
     int mount(const char *path, BaseFilesystem *fs);
     int mount_root(BaseFilesystem *fs);
     int unmount(const char *path);

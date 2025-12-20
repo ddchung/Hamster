@@ -33,53 +33,22 @@ namespace Hamster
             uint8_t *data;
             FileMappingFD *fd;
             uint32_t refcount : 4;
-            uint32_t eviction_queue_count : 4;
             uint32_t swapped : 1; // Note: a lazy-loaded file mapping is considered swapped
             uint32_t dirty : 1;
             uint32_t perms : 3;
             uint32_t zero : 1;
             uint32_t shared : 1; // Whether this page is a shared mapping
         };
-    public:
 
-        // An optimized instruction fetch iterator that can traverse within a page
-        // Has less functionality than your average iterator though
-        class InstructionIterator
+        struct FutexWaiter
         {
-            friend class PageManager;
-
-            InstructionIterator(uint32_t *it, uint32_t *end)
-                : it(it), end(end)
-            {
-            }
-
-        public:
-            
-            uint32_t operator *()
-            {
-                return *it;
-            }
-
-            void operator++(int)
-            {
-                ++it;
-            }
-
-            void operator++()
-            {
-                ++it;
-            }
-
-            bool is_end()
-            {
-                return it == end;
-            }
-            
-        private:
-            uint32_t *it;
-            uint32_t *end;
+            void (*callback)(void *);
+            void *callback_arg;
+            uint32_t bitset;
+            PageEntry *page;
+            uint16_t offset;
         };
-
+    public:
         PageManager()
         { page_table.reserve(0xFFFF); }
         ~PageManager();
@@ -137,20 +106,18 @@ namespace Hamster
         void free_page(uint32_t id);
 
         /**
-         * @brief Try reading from a page
-         * @param id The ID of the page
-         * @param addr The address to read from, starting from the beginning of the page
-         * @param buf The buffer to read data into
+         * @brief Read from the page
+         * @param id The id of the page to read
+         * @param addr The offset in the page
+         * @param buf The buffer to read into
          * @param size How many bytes to read
-         * @return The number of bytes read, or -1 on error
-         * @note It may read less bytes than requested, such as when it is at the end of a page
-         * @note This will fail if the page is swapped out
+         * @return The number of bytes read. might be less than size
          */
-        ssize_t try_read(uint32_t id, size_t addr, void *buf, size_t size)
+        ssize_t read(uint32_t id, size_t addr, void *buf, size_t size)
         {
             PageEntry *entry = page_table[id];
             if (entry->swapped)
-                return -1;
+                swap_in(id);
             assert(addr < HAMSTER_PAGE_SIZE);
             
             // Check readability
@@ -181,20 +148,18 @@ namespace Hamster
         }
 
         /**
-         * @brief Try writing to a page
-         * @param id The ID of the page
-         * @param addr The address to write to, starting from the beginning of the page
-         * @param buf The buffer containing the data to write
+         * @brief Write to the page
+         * @param id The id of the page
+         * @param addr The offset in the page
+         * @param buf The data to write
          * @param size How many bytes to write
-         * @return The number of bytes written, or -1 on error
-         * @note It may write less bytes than requested, such as when it is at the end of a page
-         * @note This will fail if the page is swapped out
+         * @return Number of bytes read. Might be less than size
          */
-        ssize_t try_write(uint32_t id, size_t addr, const void *buf, size_t size)
+        ssize_t write(uint32_t id, size_t addr, const void *buf, size_t size)
         {
             PageEntry *entry = page_table[id];
             if (entry->swapped)
-                return -1;
+                swap_in(id);
             assert(addr < HAMSTER_PAGE_SIZE);
 
             if ((entry->perms & PERM_WRITE) == 0)
@@ -231,55 +196,48 @@ namespace Hamster
             return size;
         }
 
-        // Same thing as try_{read,write} but automatically swaps in
-
-        ssize_t read(uint32_t id, size_t addr, void *buf, size_t size)
-        {
-            ssize_t ret = try_read(id, addr, buf, size);
-            if (__builtin_expect(ret < 0, 0))
-            {
-                swap_in(id);
-                return try_read(id, addr, buf, size);
-            }
-            return ret;
-        }
-
-        ssize_t write(uint32_t id, size_t addr, const void *buf, size_t size)
-        {
-            ssize_t ret = try_write(id, addr, buf, size);
-            if (__builtin_expect(ret < 0, 0))
-            {
-                swap_in(id);
-                return try_write(id, addr, buf, size);
-            }
-            return ret;
-        }
-
         /**
-         * @brief Get an instruction iterator
+         * @brief Make an executable iterator
          * @param id The id of the page
          * @param addr The relative offset within the page. Must be aligned to 4 bytes
          * @return The iterator
          * @note Swaps in the page if necessary
          * @note Page must be executable
          */
-        InstructionIterator make_iterator(uint32_t id, size_t addr)
+        const uint32_t *make_iterator_exec(uint32_t id, size_t addr)
         {
             PageEntry *entry = page_table[id];
             if (entry->swapped)
                 swap_in(id);
-            assert(entry->data != nullptr);
             assert(addr < HAMSTER_PAGE_SIZE);
             assert(addr % 4 == 0);
             assert(entry->perms & PERM_EXEC);
+            assert(!entry->fd); // no iterators on shared file mappings
 
-            uint32_t *it, *end;
-
-            end = (uint32_t *)(entry->data + HAMSTER_PAGE_SIZE);
-            it = (uint32_t *)(entry->data + addr);
-            
-            return InstructionIterator(it, end);
+            return (const uint32_t *)(entry->data + addr);
         }
+
+        /**
+         * @brief Make a read-only iterator
+         * @param id The id of the page
+         * @param addr The relative offset within the page
+         * @return The iterator
+         * @note Swaps in the page if necessary
+         * @note Page must be readable
+         * @note Page must not be a shared file mapping
+         */
+        const void *make_iterator_read(uint32_t id, size_t addr);
+
+        /**
+         * @brief Make a read-write iterator
+         * @param id The id of the page
+         * @param addr The relative offset within the page
+         * @return The iterator
+         * @note Swaps in the page if necessary
+         * @note Page must be readable and writable
+         * @note Page must not be a shared file mapping
+         */
+        void *make_iterator(uint32_t id, size_t addr);
 
         /**
          * @brief Set the permissions of a page
@@ -319,10 +277,51 @@ namespace Hamster
             return page_table[id]->perms;
         }
 
+        /**
+         * @brief Perform a futex wait operation
+         * @param id The id of the page
+         * @param addr The offset in the page
+         * @param callback The callback to call when woken up. The callback takes a single void* argument
+         * @param callback_arg The argument to pass to the callback
+         * @param bitset Used for selecting which waiters to wake. See futex(2) for more information
+         * @return 0 on success, -1 on error and set `error`
+         * @warning Shared file mappings do not support futexes
+         */
+        int futex_wait(uint32_t id, size_t addr, void (*callback)(void *), void *callback_arg, uint32_t bitset = UINT32_MAX);
+
+        /**
+         * @brief Perform a futex wake operation
+         * @param id The id of the page
+         * @param addr The offset in the page
+         * @param count How many waiters to wake up
+         * @param bitset Used for selecting which waiters to wake. See futex(2) for more information
+         * @note This will wake up (call the callback) of at most `count`
+         *       waiters waiting on the specified futex word
+         * @return The number of waiters woken up, -1 on error and set `error`
+         * @warning Shared file mappings do not support futexes
+         */
+        int futex_wake(uint32_t id, size_t addr, uint32_t count, uint32_t bitset = UINT32_MAX);
+
+        /**
+         * @brief Do a futex requeue
+         * @param wake_id The id of the initial futex
+         * @param wake_addr The offset in that page
+         * @param wake_count How many waiters to wake
+         * @param requeue_id The id of the futex to requeue to
+         * @param requeue_addr The offset in that page
+         * @param requeue_count The amount of waiters to requeue
+         * @note This will wake up at most `wake_count` waiters on the wake futex.
+         *       If there are still more waiters, a maximum of `requeue_count` remaining
+         *       waiters will be requeued to the new futex
+         * @return The number of waiters waked up or requeued, or -1 on error and set `error`
+         */
+        int futex_requeue(uint32_t wake_id, size_t wake_addr, uint32_t wake_count, uint32_t requeue_id, uint32_t requeue_addr, uint32_t requeue_count);
+
     private:
         Vector<PageEntry *> page_table;
         Deque<uint32_t> free_pages; // Free page IDs
         Deque<uint32_t> eviction_queue;
+        List<FutexWaiter> futex_waiters;
 
         int should_evict();
         void evict_pages();

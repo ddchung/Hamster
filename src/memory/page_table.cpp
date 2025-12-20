@@ -66,7 +66,7 @@ namespace Hamster
 
     void PageTable::clear()
     {
-        for (uint16_t &id : page_ids)
+        for (HAMSTER_PAGE_ID_TYPE &id : page_ids)
         {
             if (id != PAGE_ID_UNUSED)
             {

@@ -8,6 +8,9 @@ namespace Hamster
 {
     class VFSData;
 
+    inline constexpr int POLL_READ = 1;
+    inline constexpr int POLL_WRITE = 2;
+
     class VFS
     {
     public:
@@ -532,7 +535,7 @@ namespace Hamster
         /**
          * @brief Check if a file is ready for reading or writing
          * @param fd The file descriptor of the file to check
-         * @param op The operation to check for, a bitmask of `0x1` for read and `0x2` for write
+         * @param op The operation to check for, a bitmask of `POLL_READ` and `POLL_WRITE`
          * @return 1 if ready, 0 if not ready, -1 on error and set `error`
          */
         int poll(int fd, int op);
@@ -558,6 +561,37 @@ namespace Hamster
          * @note This is equivalent to POSIX `fdatasync`
          */
         int datasync(int fd);
+
+        /**
+         * @brief Do permission checking on a path relative to a directroy
+         * @param dfd The directory
+         * @param path The path to check, relative to the directory
+         * @param uid The user ID to check with
+         * @param groups The groups to check with
+         * @param numgroups Number of groups in the `groups` array
+         * @param mode Access mode. bitmap of 0b rwx
+         * @param flags Flags for access checking
+         * @return 0 if accessible, -1 on error and set `error`
+         * @note If the path is not accessible with the credentials,
+         *       error with `EACCES`
+         * @note The only defined flag is `AT_SYMLINK_NOFOLLOW`, which checks
+         *       the symlink itself, not the target
+         */
+        int accessat(int dfd, const char *path, int uid, int *groups, size_t numgroups, int mode, int flags = 0);
+
+        /**
+         * @brief Do permission checking on a path
+         * @param path The path to check
+         * @param uid The user ID to check with
+         * @param groups The groups to check with
+         * @param numgroups Number of groups in the `groups` array
+         * @param mode Access mode. bitmap of 0b rwx
+         * @param flags Flags for access checking
+         * @return 0 if accessible, -1 on error and set `error`
+         * @note If the path is not accessible with the credentials,
+         *       error with `EACCES`
+         */
+        int access(const char *path, int uid, int *groups, size_t numgroups, int mode, int flags = 0);
 
     private:
         VFSData *data;

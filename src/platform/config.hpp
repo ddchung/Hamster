@@ -3,17 +3,19 @@
 #pragma once
 
 // The stack top, leave some space above for reserved data
-#define HAMSTER_STACK_TOP (96 * 1024 * 1024)
+#define HAMSTER_STACK_TOP (120 * 1024 * 1024)
+
+// Stack size
+#define HAMSTER_STACK_SIZE (8 * 1024 * 1024)
+
+// ioctl pointer max structure size. Must be less than HAMSTER_PAGE_SIZE
+#define HAMSTER_MAX_IOCTL_SIZE 512
 
 // The length of each thread's time slice, in # of instructions
 #define HAMSTER_THREAD_TIME_SLICE 65536
 
 // The maximum number of cached instructions in the trace cache
 #define HAMSTER_TRACE_SIZE 128
-
-// The maximum overrun time in the kernel scheduler, before the task is considered
-// overdue and is removed from the scheduler, in milliseconds
-#define HAMSTER_KSCHED_OVERDUE_TIME 1000
 
 // The target amount of free RAM for the page manager, in bytes
 // This controls the "swappiness" of the system
@@ -37,6 +39,17 @@
 // 0x00000000...0x08000000 (128MiB)
 #define HAMSTER_PAGES_PER_PROC 32768
 
+// Page table page ID type
+// uint16_t or uint32_t. This defines the maximmum pages in the whole system
+#define HAMSTER_PAGE_ID_TYPE uint16_t
+
+// Maximum global total number of futexes
+#define HAMSTER_MAX_FUTEXES 1024
+
+// Maximum number of file descriptors per process
+// (actually the max per TaskFDTable, but there is usually one per process)
+#define HAMSTER_MAX_FD_TABLE_SIZE 128
+
 // warning: Changing this won't adversely affect the kernel, but RISC-V linux
 //          userspace programs expect a 4096-byte page size, and so changing this
 //          will probably break all the programs
@@ -50,3 +63,13 @@ static_assert((HAMSTER_PAGE_SIZE & (HAMSTER_PAGE_SIZE - 1)) == 0, "Page size mus
 
 #define HAMSTER_LIKELY(x) (__builtin_expect(!!(x), 1))
 #define HAMSTER_UNLIKELY(x) (__builtin_expect(!!(x), 0))
+
+// uname
+
+#define HAMSTER_SYSNAME "Hamster"
+#define HAMSTER_NODENAME "localhost"
+#define HAMSTER_RELEASE "dev"
+#define HAMSTER_VERSION "0.0"
+#define HAMSTER_MACHINE "riscv32"
+#define HAMSTER_DOMAINNAME "localdomain"
+

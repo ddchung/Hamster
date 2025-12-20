@@ -15,7 +15,7 @@ namespace Hamster
     class PageTable
     {
     public:
-        static constexpr uint16_t PAGE_ID_UNUSED = 0xFFFF;
+        static constexpr HAMSTER_PAGE_ID_TYPE PAGE_ID_UNUSED = (HAMSTER_PAGE_ID_TYPE)-1;
 
         PageTable();
         ~PageTable();
@@ -32,7 +32,8 @@ namespace Hamster
         uint32_t get_page(uint32_t address) const
         {
             uint32_t index = PAGE_TABLE_INDEX(address);
-            assert(index < HAMSTER_PAGES_PER_PROC);
+            if (index >= HAMSTER_PAGES_PER_PROC)
+                return PAGE_ID_UNUSED;
             return page_ids[index];
         }
 
@@ -58,6 +59,8 @@ namespace Hamster
         void set_page(uint32_t address, uint32_t page_id)
         {
             uint32_t index = PAGE_TABLE_INDEX(address);
+            if (index >= HAMSTER_PAGES_PER_PROC)
+                return;
             set_page_direct(index, page_id);
         }
 
@@ -69,9 +72,9 @@ namespace Hamster
         void set_page_direct(uint32_t index, uint32_t page_id)
         {
             assert(index < HAMSTER_PAGES_PER_PROC);
-            assert(page_id == PAGE_ID_UNUSED || page_id < 0xFFFF); // uint16_t max, but page_manager still uses old ID type (uint32_t)
+            assert(page_id <= PAGE_ID_UNUSED);
 
-            uint16_t &id = page_ids[index];
+            HAMSTER_PAGE_ID_TYPE &id = page_ids[index];
 
             if (id != PAGE_ID_UNUSED)
                 page_manager.free_page(id);
@@ -84,7 +87,7 @@ namespace Hamster
         void clear();
 
     private:
-        uint16_t page_ids[HAMSTER_PAGES_PER_PROC];
+        HAMSTER_PAGE_ID_TYPE page_ids[HAMSTER_PAGES_PER_PROC];
     };
 } // namespace Hamster
 

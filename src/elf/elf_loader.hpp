@@ -15,9 +15,11 @@ namespace Hamster
      * @param entry_point Entry point of the loaded ELF file.
      * @param ph_num Number of program headers in the ELF file. The program headers are stored starting from `HAMSTER_STACK_TOP + 1`
      * @param brk The starting program break: the highest address of the program, rounded up to the page boundary
+     * @param phdr The virtual address of the program headers
+     * @param dyn True if the ELF is dynamically linked, false otherwise.
      * @return 0 on success, -1 on failure.
      * @note The machine type must be RISC-V 
      */
-    int load_elf(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk);
+    int load_elf(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk, uint64_t &phdr, bool &dyn);
 } // namespace Hamster
 
