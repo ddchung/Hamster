@@ -162,11 +162,6 @@ namespace Hamster
             }
         }
 
-        uint8_t internal_perms = 0
-            | (prot & H_PROT_READ ? PERM_READ : 0)
-            | (prot & H_PROT_WRITE ? PERM_WRITE : 0)
-            | (prot & H_PROT_EXEC ? PERM_EXEC : 0);
-
         // Round down to the nearest page boundary
         uint32_t internal_addr = addr & ~(HAMSTER_PAGE_SIZE - 1);
 
@@ -203,16 +198,16 @@ namespace Hamster
         if (flags & H_MAP_SHARED)
         {
             if (flags & H_MAP_ANONYMOUS)
-                memory->ms.map_shared_anonymous(internal_addr, length, internal_perms);
+                memory->ms.map_shared_anonymous(internal_addr, length, prot);
             else
-                memory->ms.map_shared_file(internal_addr, vfs_fd, offset64, length, internal_perms);
+                memory->ms.map_shared_file(internal_addr, vfs_fd, offset64, length, prot);
         }
         else
         {
             if (flags & H_MAP_ANONYMOUS)
-                memory->ms.map_anonymous(internal_addr, length, internal_perms);
+                memory->ms.map_anonymous(internal_addr, length, prot);
             else
-                memory->ms.map_private_file(internal_addr, vfs_fd, offset64, length, internal_perms);
+                memory->ms.map_private_file(internal_addr, vfs_fd, offset64, length, prot);
         }
 
         return internal_addr;

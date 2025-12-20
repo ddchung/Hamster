@@ -50,7 +50,10 @@ namespace Hamster
 
     int32_t sys_mmap2(Task &task, uint32_t addr, uint32_t length, uint32_t prot, uint32_t flags, int32_t fd, uint32_t offset)
     {
-        uint32_t res = task.mmap(addr, length, prot, flags, fd, offset);
+        uint8_t perms = (prot & H_PROT_READ ? PERM_READ : 0) |
+                        (prot & H_PROT_WRITE ? PERM_WRITE : 0) |
+                        (prot & H_PROT_EXEC ? PERM_EXEC : 0);
+        uint32_t res = task.mmap(addr, length, perms, flags, fd, offset);
         if (res == UINT32_MAX)
             return cvt_error();
         return res;
@@ -184,9 +187,9 @@ namespace Hamster
             return -H_ENOTSUP;
         }
 
-        uint8_t perms = (prot & 0x1 ? PERM_READ : 0) |
-                        (prot & 0x2 ? PERM_WRITE : 0) |
-                        (prot & 0x4 ? PERM_EXEC : 0);
+        uint8_t perms = (prot & H_PROT_READ ? PERM_READ : 0) |
+                        (prot & H_PROT_WRITE ? PERM_WRITE : 0) |
+                        (prot & H_PROT_EXEC ? PERM_EXEC : 0);
 
         if (task.mprotect(addr, size, perms) < 0)
             return cvt_error();
