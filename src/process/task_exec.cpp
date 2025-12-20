@@ -132,7 +132,8 @@ namespace Hamster
         emulator.flush_caches();
 
         uint64_t entry_point = 0, ph_num = 0, brk = 0, ph_loc = 0;
-        if (load_elf(fd, memory, entry_point, ph_num, brk, ph_loc) < 0)
+        bool dyn = false;
+        if (load_elf(fd, memory, entry_point, ph_num, brk, ph_loc, dyn) < 0)
             return -1;
         
         this->memory->brk = brk;
@@ -162,6 +163,16 @@ namespace Hamster
 
         push_strings(memory, sp, envp, &envp_locs);
         push_strings(memory, sp, argv, &argv_locs);
+
+        // Push dummy argv[0] for interpreter if dynamic
+        if (dyn)
+        {
+            const char interp_argv0[] = "ld.so";
+            sp -= sizeof(interp_argv0);
+            if (memory.memcpy_alloc(sp, interp_argv0, sizeof(interp_argv0)) < 0)
+                return -1;
+            argv_locs.push_back(sp);
+        }
 
         // Pad
         sp &= ~0xFUL;
@@ -221,9 +232,7 @@ namespace Hamster
             push_stack(memory, sp, val);
 
         // Get the number of argv
-        size_t argc = 0;
-        for (const char *const *it = argv; *it; ++it)
-            ++argc;
+        size_t argc = argv_locs.size();
 
         push_stack(memory, sp, argc);
 

@@ -10,7 +10,7 @@ namespace Hamster
 {
     namespace
     {
-        int load_elf32(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk, uint64_t &phdr_loc)
+        int load_elf32(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk, uint64_t &phdr_loc, bool &dyn)
         {
             mem_space.unmap_all();
 
@@ -48,9 +48,8 @@ namespace Hamster
                 return -1;
             }
 
-            if (ehdr.e_type != ET_EXEC)
+            if (ehdr.e_type != ET_EXEC && ehdr.e_type != ET_DYN)
             {
-                // TODO: Dynamic linking is not supported yet
                 error = H_ENOEXEC;
                 return -1;
             }
@@ -81,6 +80,39 @@ namespace Hamster
                 {
                     error = H_EIO;
                     return -1;
+                }
+
+                if (phdr.p_type == PT_INTERP && ehdr.e_type == ET_DYN)
+                {
+                    if (dyn)
+                    {
+                        // interpreter cannot have another interpreter
+                        error = H_ENOEXEC;
+                        return -1;
+                    }
+
+                    // Load interpreter
+                    if (file.seek(phdr.p_offset, H_SEEK_SET) < 0)
+                    {
+                        error = H_EIO;
+                        return -1;
+                    }
+                    char *interp = alloc<char>(phdr.p_filesz); // p_filesz includes null terminator
+                    if (file.read(interp, phdr.p_filesz) != (ssize_t)phdr.p_filesz)
+                    {
+                        dealloc(interp);
+                        error = H_EIO;
+                        return -1;
+                    }
+                    File interp_file = vfs.open(interp, OPEN_RDONLY);
+                    dealloc(interp);
+                    if (!interp_file)
+                    {
+                        error = H_ENOEXEC;
+                        return -1;
+                    }
+                    dyn = true;
+                    return load_elf32(interp_file, mem_space, entry_point, ph_num, brk, phdr_loc, dyn);
                 }
 
                 if (phdr.p_type == PT_LOAD)
@@ -125,7 +157,7 @@ namespace Hamster
     } // namespace
     
 
-    int load_elf(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk, uint64_t &phdr_loc)
+    int load_elf(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk, uint64_t &phdr_loc, bool &dyn)
     {
         // Prepare file
         if (file.seek(0, H_SEEK_SET) < 0)
@@ -152,7 +184,7 @@ namespace Hamster
 
         if (e_ident[EI_CLASS] == ELFCLASS32)
         {
-            return load_elf32(file, mem_space, entry_point, ph_num, brk, phdr_loc);
+            return load_elf32(file, mem_space, entry_point, ph_num, brk, phdr_loc, dyn);
         }
         else
         {
