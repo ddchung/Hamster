@@ -9,3 +9,4 @@ riscv_prog.elf
 *.o
 
 hamster
+rootfs

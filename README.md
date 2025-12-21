@@ -13,7 +13,7 @@ This is a toy operating system project called Hamster, designed to be compatible
     - Ram filesystem
     - romfs
 
-## How to use (on Linux)
+## How to use (tested on Linux, might work on other POSIX-compliant OSes)
 - Clone the repository
 - Run `./build.sh build` to compile
 - Run `./build.sh run`

@@ -492,6 +492,7 @@ namespace Hamster
                 // handle the signal
                 int res = process->get_signal_handlers()->handle_signal(siginfo.signo, *this, siginfo);
                 assert(res == 0);
+                (void)res; // suppress unused variable warning with -DNDEBUG
                 return;
             }
 

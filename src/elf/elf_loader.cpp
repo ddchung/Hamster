@@ -82,7 +82,7 @@ namespace Hamster
                     return -1;
                 }
 
-                if (phdr.p_type == PT_INTERP && ehdr.e_type == ET_DYN)
+                if (phdr.p_type == PT_INTERP)
                 {
                     if (dyn)
                     {

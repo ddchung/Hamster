@@ -53,7 +53,7 @@ if [[ "$command" == "build" ]]; then
         mkdir -p "$(dirname "$output_file")"
 
         g++ -std=c++20 -Wall -Wextra -Wno-maybe-musttail-local-addr -Wno-unused-parameter -Wno-unused-function -Ofast -march=native -mtune=native -funroll-loops \
-            -Isrc -Iinclude -c "$file" -o "$output_file" &
+            -DNDEBUG -Isrc -Iinclude -c "$file" -o "$output_file" &
     done
 
     wait
