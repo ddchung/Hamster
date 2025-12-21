@@ -298,6 +298,18 @@ namespace Hamster
         uint32_t size;
     };
 
+    struct sys_robust_list
+    {
+        uint32_t next;
+    };
+
+    struct sys_robust_list_head
+    {
+        sys_robust_list list;
+        int32_t futex_offset;
+        uint32_t list_op_pending_loc;
+    };
+
     inline uint64_t timespec_to_systick(const sys_timespec &ts)
     {
         // right now, 1 systick = 1 ms

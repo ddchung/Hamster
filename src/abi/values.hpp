@@ -1,9 +1,9 @@
 /**
  * This file contains constants from the RISC-V linux headers
- * 
+ *
  * The values here were transformed from marcos from linux's include/asm and include/asm-generic into
  * `inline constexpr int`s
- * 
+ *
  * The names were also altered, as to not conflict with any host C library
  */
 
@@ -571,17 +571,43 @@ namespace Hamster
     inline constexpr int H_ERFKILL = 132;         /* Operation not possible due to RF-kill */
     inline constexpr int H_EHWPOISON = 133;       /* Memory page has hardware error */
 
+    inline constexpr int H_FUTEX_WAIT = 0;
+    inline constexpr int H_FUTEX_WAKE = 1;
+    inline constexpr int H_FUTEX_FD = 2;
+    inline constexpr int H_FUTEX_REQUEUE = 3;
+    inline constexpr int H_FUTEX_CMP_REQUEUE = 4;
+    inline constexpr int H_FUTEX_WAKE_OP = 5;
+    inline constexpr int H_FUTEX_LOCK_PI = 6;
+    inline constexpr int H_FUTEX_UNLOCK_PI = 7;
+    inline constexpr int H_FUTEX_TRYLOCK_PI = 8;
+    inline constexpr int H_FUTEX_WAIT_BITSET = 9;
+    inline constexpr int H_FUTEX_WAKE_BITSET = 10;
+    inline constexpr int H_FUTEX_WAIT_REQUEUE_PI = 11;
+    inline constexpr int H_FUTEX_CMP_REQUEUE_PI = 12;
+    inline constexpr int H_FUTEX_LOCK_PI2 = 13;
+    inline constexpr int H_FUTEX_WAITERS = 0x80000000;
+    inline constexpr int H_FUTEX_OWNER_DIED = 0x40000000;
+    inline constexpr int H_FUTEX_TID_MASK = 0x3fffffff;
+    inline constexpr int H_FUTEX_OP_SET = 0;         /* *(int *)UADDR2 = OPARG; */
+    inline constexpr int H_FUTEX_OP_ADD = 1;         /* *(int *)UADDR2 += OPARG; */
+    inline constexpr int H_FUTEX_OP_OR = 2;          /* *(int *)UADDR2 |= OPARG; */
+    inline constexpr int H_FUTEX_OP_ANDN = 3;        /* *(int *)UADDR2 &= ~OPARG; */
+    inline constexpr int H_FUTEX_OP_XOR = 4;         /* *(int *)UADDR2 ^= OPARG; */
+    inline constexpr int H_FUTEX_OP_OPARG_SHIFT = 8; /* Use (1 << OPARG) instead of OPARG.  */
+    inline constexpr int H_FUTEX_OP_CMP_EQ = 0;      /* if (oldval == CMPARG) wake */
+    inline constexpr int H_FUTEX_OP_CMP_NE = 1;      /* if (oldval != CMPARG) wake */
+    inline constexpr int H_FUTEX_OP_CMP_LT = 2;      /* if (oldval < CMPARG) wake */
+    inline constexpr int H_FUTEX_OP_CMP_LE = 3;      /* if (oldval <= CMPARG) wake */
+    inline constexpr int H_FUTEX_OP_CMP_GT = 4;      /* if (oldval > CMPARG) wake */
+    inline constexpr int H_FUTEX_OP_CMP_GE = 5;      /* if (oldval >= CMPARG) wake */
 
+    // clang-format off
     inline constexpr uint8_t H_SIGHAND_TRAMPOLINE[] = {
-        // li a7,139 # SyscallID::RT_SIGRETURN
-        0x93, 0x08, 0xb0, 0x08,
-
-        // ecall
-        0x73, 0x00, 0x00, 0x00,
-
-        // unimp # Unreachable, causes a trap
-        0x00, 0x00, 0x00, 0x00,
+        0x93, 0x08, 0xb0, 0x08, // li a7,139 # SyscallID::RT_SIGRETURN
+        0x73, 0x00, 0x00, 0x00, // ecall
+        0x00, 0x00, 0x00, 0x00, // unreachable
     };
+    // clang-format on
 
     inline bool is_directory(int mode) { return (mode & STAT_IFMT) == STAT_IFDIR; }
     inline bool is_character_device(int mode) { return (mode & STAT_IFMT) == STAT_IFCHR; }
