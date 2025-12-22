@@ -442,5 +442,120 @@ namespace Hamster
                 return cvt_error();
         return size;
     }
+
+    int32_t sys_futex_time64(Task &task, uint32_t uaddr_loc, int32_t futex_op, uint32_t val, uint32_t val2_timeoutloc, uint32_t uaddr2_loc, uint32_t val3)
+    {
+        if (uaddr_loc % 4 != 0)
+            return -H_EINVAL;
+        
+        futex_op &= H_FUTEX_CMD_MASK;
+
+        uint32_t value;
+        if (task.copy_from_memory(value, uaddr_loc) < 0)
+            return cvt_error();
+
+        switch (futex_op)
+        {
+        case H_FUTEX_WAIT:
+            val3 = UINT32_MAX;
+            [[fallthrough]];
+        case H_FUTEX_WAIT_BITSET:
+            if (val3 == 0) // no bits set
+                return -H_EINVAL;
+            if (val2_timeoutloc)
+                return -H_ENOTSUP; // TODO: futex wait timeout
+            if (value != val)
+                return -H_EAGAIN;
+
+            // TODO: better way
+            static_assert(sizeof(void *) >= sizeof(uint32_t));
+
+            // Block until woken up
+            if (task.futex_wait(uaddr_loc, [](void *arg){
+                uint32_t tid = (uint32_t)(uintptr_t)arg;
+                Task *task = Task::get_task(tid);
+                if (task)
+                    task->end_block();
+            }, (void *)(uintptr_t)task.get_tid(), val3) < 0) // pass TID instead of task to avoid dangling pointer when task dies
+                return cvt_error();
+            task.block([](Task &, uint64_t){}, 0);
+            return 0;
+        case H_FUTEX_WAKE:
+            val3 = UINT32_MAX;
+            [[fallthrough]];
+        case H_FUTEX_WAKE_BITSET:
+            if (val3 == 0) // no bits set
+                return -H_EINVAL;
+            return cvt_error(task.futex_wake(uaddr_loc, val, val3));
+        case H_FUTEX_CMP_REQUEUE:
+            if (value != val3)
+                return -H_EAGAIN;
+            [[fallthrough]];
+        case H_FUTEX_REQUEUE:
+            return cvt_error(task.futex_requeue(uaddr_loc, val, uaddr2_loc, val2_timeoutloc));
+        case H_FUTEX_WAKE_OP:
+        {
+            uint32_t oldval;
+            if (task.copy_from_memory(oldval, uaddr2_loc) < 0)
+                return cvt_error();
+            
+            uint32_t op, oparg, cmp, cmparg;
+            op = (val3 >> 28) & 0xF;
+            cmp = (val3 >> 24) & 0xF;
+            oparg = (val3 >> 12) & 0xFFF;
+            cmparg = val3 & 0xFFF;
+
+            if (op & H_FUTEX_OP_OPARG_SHIFT)
+            {
+                if (oparg >= 32)
+                    return -H_EINVAL;
+                op &= ~H_FUTEX_OP_OPARG_SHIFT;
+                oparg = 1 << oparg;
+            }
+
+            uint32_t newval = oldval;
+            switch (op)
+            {
+            case H_FUTEX_OP_SET: newval = oparg; break;
+            case H_FUTEX_OP_ADD: newval += oparg; break;
+            case H_FUTEX_OP_OR: newval |= oparg; break;
+            case H_FUTEX_OP_ANDN: newval &= ~oparg; break;
+            case H_FUTEX_OP_XOR: newval ^= oparg; break;
+            default: return -H_EINVAL;
+            }
+            if (task.copy_to_memory(uaddr2_loc, newval) < 0)
+                return cvt_error();
+            
+            int woken1 = 0, woken2 = 0;
+            woken1 = task.futex_wake(uaddr_loc, val);
+            if (woken1 < 0)
+                return cvt_error();
+
+            bool cmp_ok = false;
+
+            switch (cmp)
+            {
+            case H_FUTEX_OP_CMP_EQ: cmp_ok = (oldval == cmparg); break;
+            case H_FUTEX_OP_CMP_NE: cmp_ok = (oldval != cmparg); break;
+            case H_FUTEX_OP_CMP_LT: cmp_ok = (oldval < cmparg); break;
+            case H_FUTEX_OP_CMP_LE: cmp_ok = (oldval <= cmparg); break;
+            case H_FUTEX_OP_CMP_GT: cmp_ok = (oldval > cmparg); break;
+            case H_FUTEX_OP_CMP_GE: cmp_ok = (oldval >= cmparg); break;
+            default: return -H_EINVAL;
+            }
+
+            if (cmp_ok)
+            {
+                woken2 = task.futex_wake(uaddr2_loc, val2_timeoutloc);
+                if (woken2 < 0)
+                    return cvt_error();
+            }
+
+            return woken1 + woken2;
+        }
+        default:
+            return -H_EINVAL;
+        }
+    }
 } // namespace Hamster
 
