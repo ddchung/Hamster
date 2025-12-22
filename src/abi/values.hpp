@@ -600,6 +600,9 @@ namespace Hamster
     inline constexpr int H_FUTEX_OP_CMP_LE = 3;      /* if (oldval <= CMPARG) wake */
     inline constexpr int H_FUTEX_OP_CMP_GT = 4;      /* if (oldval > CMPARG) wake */
     inline constexpr int H_FUTEX_OP_CMP_GE = 5;      /* if (oldval >= CMPARG) wake */
+    inline constexpr int H_FUTEX_PRIVATE_FLAG = 128;
+    inline constexpr int H_FUTEX_CLOCK_REALTIME = 256;
+    inline constexpr int H_FUTEX_CMD_MASK = ~(H_FUTEX_PRIVATE_FLAG | H_FUTEX_CLOCK_REALTIME);
 
     // clang-format off
     inline constexpr uint8_t H_SIGHAND_TRAMPOLINE[] = {
