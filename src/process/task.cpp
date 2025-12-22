@@ -142,7 +142,7 @@ namespace Hamster
         // validate arguments
 
         if (((flags & H_CLONE_SIGHAND) && !(flags & H_CLONE_VM))
-         || ((flags & H_CLONE_THREAD) != (flags & H_CLONE_SIGHAND)) // Note: in Hamster, if you have one you must have both.
+         || ((bool)(flags & H_CLONE_THREAD) != (bool)(flags & H_CLONE_SIGHAND)) // Note: in Hamster, if you have one you must have both.
          || ((flags & H_CLONE_FS) && (flags & H_CLONE_NEWNS))
          || ((flags & H_CLONE_NEWUSER) && (flags & H_CLONE_FS))
          || ((flags & H_CLONE_NEWIPC) && (flags & H_CLONE_SYSVSEM))
@@ -214,7 +214,10 @@ namespace Hamster
         // Note that this also initializes the signal handlers,
         // since CLONE_THREAD requires CLONE_SIGHAND and vice versa.
         if (flags & H_CLONE_THREAD)
+        {
             new_task->process.assign(process, SHALLOW);
+            process->add_task(new_task);
+        }
         else
         {
             SharedPtr<TaskFSInfo, size_t> fs_info;
