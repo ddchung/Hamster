@@ -98,6 +98,9 @@ namespace Hamster
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
 
+        if (loc >= HAMSTER_PAGES_PER_PROC || end >= HAMSTER_PAGES_PER_PROC)
+            return 0;
+
         for (; loc < end; ++loc)
         {
             if (page_table.get_page_direct(loc) == PageTable::PAGE_ID_UNUSED)
@@ -110,6 +113,15 @@ namespace Hamster
     {
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        if (loc >= HAMSTER_PAGES_PER_PROC)
+        {
+            error = H_EFAULT;
+            return -1;
+        }
+
+        if (end > HAMSTER_PAGES_PER_PROC)
+            end = HAMSTER_PAGES_PER_PROC;
 
         ssize_t count = 0;
         for (uint32_t i = loc; i < end; i++)
@@ -124,6 +136,16 @@ namespace Hamster
     {
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        if (loc >= HAMSTER_PAGES_PER_PROC)
+        {
+            error = H_EFAULT;
+            return -1;
+        }
+
+        if (end > HAMSTER_PAGES_PER_PROC)
+            end = HAMSTER_PAGES_PER_PROC;
+
         next_mmap = std::max<uint32_t>(next_mmap, end << HAMSTER_PAGE_SIZE_BITS);
 
         for (; loc < end; ++loc)
@@ -138,6 +160,16 @@ namespace Hamster
     {
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        if (loc >= HAMSTER_PAGES_PER_PROC)
+        {
+            error = H_EFAULT;
+            return -1;
+        }
+
+        if (end > HAMSTER_PAGES_PER_PROC)
+            end = HAMSTER_PAGES_PER_PROC;
+        
         next_mmap = std::max<uint32_t>(next_mmap, end << HAMSTER_PAGE_SIZE_BITS);
 
         for (; loc < end; ++loc)
@@ -156,6 +188,15 @@ namespace Hamster
     {
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        if (loc >= HAMSTER_PAGES_PER_PROC)
+        {
+            error = H_EFAULT;
+            return -1;
+        }
+
+        if (end > HAMSTER_PAGES_PER_PROC)
+            end = HAMSTER_PAGES_PER_PROC;
 
         // Correctly account for attempts to map in the middle of a page
         offset = ROUND_DOWN_PAGE(offset);
@@ -185,6 +226,15 @@ namespace Hamster
     {
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        if (loc >= HAMSTER_PAGES_PER_PROC)
+        {
+            error = H_EFAULT;
+            return -1;
+        }
+
+        if (end > HAMSTER_PAGES_PER_PROC)
+            end = HAMSTER_PAGES_PER_PROC;
 
         // Correctly account for attempts to map in the middle of a page
         offset = ROUND_DOWN_PAGE(offset);
@@ -216,6 +266,15 @@ namespace Hamster
     {
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        if (loc >= HAMSTER_PAGES_PER_PROC)
+        {
+            error = H_EFAULT;
+            return -1;
+        }
+
+        if (end > HAMSTER_PAGES_PER_PROC)
+            end = HAMSTER_PAGES_PER_PROC;
 
         uint32_t free_range_start = loc << HAMSTER_PAGE_SIZE_BITS;
         uint32_t free_range_size = 0;
@@ -251,6 +310,15 @@ namespace Hamster
     {
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
+
+        if (loc >= HAMSTER_PAGES_PER_PROC)
+        {
+            error = H_EFAULT;
+            return -1;
+        }
+
+        if (end > HAMSTER_PAGES_PER_PROC)
+            end = HAMSTER_PAGES_PER_PROC;
 
         for (; loc < end; ++loc)
         {
