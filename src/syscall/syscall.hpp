@@ -195,9 +195,10 @@ namespace Hamster
 
     /**
      * @brief Convert and clear the global `error` variable in the kernel
-     * @return `-error`, and then set `error` back to 0
+     * @param val
+     * @return `val < 0 ? -error : val`. Also clears `error`
      */
-    int32_t cvt_error();
+    int32_t cvt_error(int32_t val = -1);
 
     /**
      * @brief Call a system call directly, but still automatically getting arguments

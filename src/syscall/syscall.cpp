@@ -297,11 +297,11 @@ namespace Hamster
     }
 #endif
 
-    int32_t cvt_error()
+    int32_t cvt_error(int32_t val)
     {
-        int32_t err = error;
+        int32_t res = val < 0 ? -error : val;
         error = 0;
-        return -err;
+        return res;
     }
 
     int32_t syscall(Task &task, int32_t sys_id)
@@ -1169,7 +1169,17 @@ namespace Hamster
         case SyscallID::FUTEX_TIME64:
             trace_syscall<
                 SysTraceParam("uaddr", PT_PTR),
-                SysTraceParam("op", PT_INT),
+                SysTraceParam("op", PT_FLAGS<
+                    {"FUTEX_PRIVATE_FLAG", H_FUTEX_PRIVATE_FLAG},
+                    {"FUTEX_CLOCK_REALTIME", H_FUTEX_CLOCK_REALTIME},
+                    {"FUTEX_WAIT", (uint32_t)H_FUTEX_CMD_MASK, H_FUTEX_WAIT},
+                    {"FUTEX_WAKE", (uint32_t)H_FUTEX_CMD_MASK, H_FUTEX_WAKE},
+                    {"FUTEX_REQUEUE", (uint32_t)H_FUTEX_CMD_MASK, H_FUTEX_REQUEUE},
+                    {"FUTEX_CMP_REQUEUE", (uint32_t)H_FUTEX_CMD_MASK, H_FUTEX_CMP_REQUEUE},
+                    {"FUTEX_WAKE_OP", (uint32_t)H_FUTEX_CMD_MASK, H_FUTEX_WAKE_OP},
+                    {"FUTEX_WAIT_BITSET", (uint32_t)H_FUTEX_CMD_MASK, H_FUTEX_WAIT_BITSET},
+                    {"FUTEX_WAKE_BITSET", (uint32_t)H_FUTEX_CMD_MASK, H_FUTEX_WAKE_BITSET}
+                >),
                 SysTraceParam("val", PT_UINT),
                 SysTraceParam("timeout", PT_PTR),
                 SysTraceParam("uaddr2", PT_PTR),
