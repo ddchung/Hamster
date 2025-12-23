@@ -137,21 +137,28 @@ namespace Hamster
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
 
-        if (loc >= HAMSTER_PAGES_PER_PROC)
+        if (loc >= HAMSTER_PAGES_PER_PROC || end >= HAMSTER_PAGES_PER_PROC)
         {
             error = H_EFAULT;
             return -1;
         }
 
-        if (end > HAMSTER_PAGES_PER_PROC)
-            end = HAMSTER_PAGES_PER_PROC;
-
         next_mmap = std::max<uint32_t>(next_mmap, end << HAMSTER_PAGE_SIZE_BITS);
+        
+        for (size_t i = 0; i < free_ranges.size(); ++i)
+        {
+            auto &range = free_ranges.front();
+            if (range.addr <= (end << HAMSTER_PAGE_SIZE_BITS) && (loc << HAMSTER_PAGE_SIZE_BITS) < range.addr + range.size)
+                free_ranges.pop();
+        }
 
         for (; loc < end; ++loc)
         {
-            if (page_table.get_page_direct(loc) == PageTable::PAGE_ID_UNUSED)
+            uint32_t page = page_table.get_page_direct(loc);
+            if (page == PageTable::PAGE_ID_UNUSED)
                 page_table.set_page_direct(loc, page_manager.allocate_page(perms));
+            else
+                page_manager.set_permissions(page, page_manager.get_permissions(page) | perms);
         }
         return 0;
     }
@@ -161,16 +168,20 @@ namespace Hamster
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
 
-        if (loc >= HAMSTER_PAGES_PER_PROC)
+        if (loc >= HAMSTER_PAGES_PER_PROC || end >= HAMSTER_PAGES_PER_PROC)
         {
             error = H_EFAULT;
             return -1;
         }
-
-        if (end > HAMSTER_PAGES_PER_PROC)
-            end = HAMSTER_PAGES_PER_PROC;
         
         next_mmap = std::max<uint32_t>(next_mmap, end << HAMSTER_PAGE_SIZE_BITS);
+
+        for (size_t i = 0; i < free_ranges.size(); ++i)
+        {
+            auto &range = free_ranges.front();
+            if (range.addr <= (end << HAMSTER_PAGE_SIZE_BITS) && (loc << HAMSTER_PAGE_SIZE_BITS) < range.addr + range.size)
+                free_ranges.pop();
+        }
 
         for (; loc < end; ++loc)
         {
@@ -189,14 +200,11 @@ namespace Hamster
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
 
-        if (loc >= HAMSTER_PAGES_PER_PROC)
+        if (loc >= HAMSTER_PAGES_PER_PROC || end >= HAMSTER_PAGES_PER_PROC)
         {
             error = H_EFAULT;
             return -1;
         }
-
-        if (end > HAMSTER_PAGES_PER_PROC)
-            end = HAMSTER_PAGES_PER_PROC;
 
         // Correctly account for attempts to map in the middle of a page
         offset = ROUND_DOWN_PAGE(offset);
@@ -211,6 +219,13 @@ namespace Hamster
         {
             dealloc(fmfd);
             return -1;
+        }
+
+        for (size_t i = 0; i < free_ranges.size(); ++i)
+        {
+            auto &range = free_ranges.front();
+            if (range.addr <= (end << HAMSTER_PAGE_SIZE_BITS) && (loc << HAMSTER_PAGE_SIZE_BITS) < range.addr + range.size)
+                free_ranges.pop();
         }
 
         for (; loc < end; ++loc)
@@ -227,14 +242,11 @@ namespace Hamster
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
 
-        if (loc >= HAMSTER_PAGES_PER_PROC)
+        if (loc >= HAMSTER_PAGES_PER_PROC || end >= HAMSTER_PAGES_PER_PROC)
         {
             error = H_EFAULT;
             return -1;
         }
-
-        if (end > HAMSTER_PAGES_PER_PROC)
-            end = HAMSTER_PAGES_PER_PROC;
 
         // Correctly account for attempts to map in the middle of a page
         offset = ROUND_DOWN_PAGE(offset);
@@ -249,6 +261,13 @@ namespace Hamster
         {
             dealloc(fmfd);
             return -1;
+        }
+
+        for (size_t i = 0; i < free_ranges.size(); ++i)
+        {
+            auto &range = free_ranges.front();
+            if (range.addr <= (end << HAMSTER_PAGE_SIZE_BITS) && (loc << HAMSTER_PAGE_SIZE_BITS) < range.addr + range.size)
+                free_ranges.pop();
         }
 
         for (; loc < end; ++loc)
