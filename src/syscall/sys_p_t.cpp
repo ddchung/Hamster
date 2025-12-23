@@ -726,5 +726,22 @@ namespace Hamster
             return -1;
         }));
     }
+
+    int32_t sys_riscv_flush_icache(Task &task, uint32_t start_loc, uint32_t end_loc, uint32_t flags)
+    {
+        // Not used yet.
+        (void)start_loc; (void)end_loc;
+
+        if (flags & H_SYS_RISCV_FLUSH_ICACHE_LOCAL)
+        {
+            task.get_emulator().flush_caches();
+        }
+        else
+        {
+            for (Task *t : task.get_process_tasks())
+                t->get_emulator().flush_caches();
+        }
+        return 0;
+    }
 } // namespace Hamster
 

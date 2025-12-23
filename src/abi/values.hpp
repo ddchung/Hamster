@@ -611,6 +611,8 @@ namespace Hamster
     inline constexpr int H_POLLHUP = 0x0010;
     inline constexpr int H_POLLNVAL = 0x0020;
 
+    inline constexpr int H_SYS_RISCV_FLUSH_ICACHE_LOCAL = 1;
+
     // clang-format off
     inline constexpr uint8_t H_SIGHAND_TRAMPOLINE[] = {
         0x93, 0x08, 0xb0, 0x08, // li a7,139 # SyscallID::RT_SIGRETURN

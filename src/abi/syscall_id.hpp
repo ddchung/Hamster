@@ -354,7 +354,7 @@ namespace Hamster
              * This system call creates a hard link to a file at the specified path relative to a directory file descriptor.
              * @note Userspace sig: `int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags);`
              */
-            LINKAT = 37,//
+            LINKAT = 37,////
 
             /**
              * @brief Rename a file or directory from a path relative to a directory file descriptor
@@ -447,7 +447,7 @@ namespace Hamster
              * This system call changes the memory protection of a specified memory region, allowing or disallowing access to it.
              * @note Userspace sig: `int mprotect(void *addr, size_t len, int prot);`
              */
-            MPROTECT = 226,//
+            MPROTECT = 226,////
 
             /**
              * @brief Extended stat
@@ -693,12 +693,12 @@ namespace Hamster
             /**
              * @brief Read from a file descriptor into multiple buffers
              */
-            READV = 65,
+            READV = 65,////
 
             /**
              * @brief Write to a file descriptor from multiple buffers
              */
-            WRITEV = 66,
+            WRITEV = 66,////
 
             /**
              * @brief Flush the instruction cache
@@ -713,7 +713,7 @@ namespace Hamster
             /**
              * @brief Set the clear TID address
              */
-            SET_TID_ADDRESS = 96,
+            SET_TID_ADDRESS = 96,////
 
             /**
              * @brief Set the alternate signal stack
@@ -723,17 +723,17 @@ namespace Hamster
             /**
              * @brief Operate with futexes
              */
-            FUTEX_TIME64 = 422,
+            FUTEX_TIME64 = 422,////
 
             /**
              * @brief Kill a thread
              */
-            TKILL = 130,
+            TKILL = 130,////
 
             /**
              * @brief Wait for file descriptor(s) to become ready
              */
-            PPOLL_TIME64 = 414,
+            PPOLL_TIME64 = 414,////
         };
     } // namespace SyscallID
 } // namespace Hamster
