@@ -729,6 +729,11 @@ namespace Hamster
              * @brief Kill a thread
              */
             TKILL = 130,
+
+            /**
+             * @brief Wait for file descriptor(s) to become ready
+             */
+            PPOLL_TIME64 = 414,
         };
     } // namespace SyscallID
 } // namespace Hamster

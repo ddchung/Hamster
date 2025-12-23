@@ -184,6 +184,8 @@ namespace Hamster
     int32_t sys_readv(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen);
     int32_t sys_writev(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen);
     int32_t sys_tkill(Task &task, int32_t tid, int32_t sig);
+    int32_t sys_ppoll_time64(Task &task, uint32_t fds_loc, uint32_t nfds, uint32_t timeout_loc,
+                             uint32_t sigmask_loc, uint32_t sigset_size);
 
     /**
      * @brief Call a system call

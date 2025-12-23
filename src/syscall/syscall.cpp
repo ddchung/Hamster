@@ -1210,6 +1210,16 @@ namespace Hamster
             result = syscall(task, sys_tkill);
             trace_syscall_result(task, result);
             break;
+        case SyscallID::PPOLL_TIME64:
+            trace_syscall<
+                SysTraceParam("fds", PT_PTR),
+                SysTraceParam("nfds", PT_UINT),
+                SysTraceParam("timeout", PT_PTR),
+                SysTraceParam("sigmask", PT_PTR),
+                SysTraceParam("sigset_size", PT_UINT)>("ppoll_time64", task, args);
+            result = syscall(task, sys_ppoll_time64);
+            trace_syscall_result(task, result);
+            break;
         default:
             _trace("TID %" PRIu32 "\tUnknown system call %" PRIu32 " at pc 0x%08" PRIx32 " -> ENOSYS - Invalid system call number\n", task.get_tid(), sys_id, task.get_emulator().pc);
             // Unsupported syscall ID
@@ -1388,4 +1398,6 @@ namespace Hamster
     __attribute__((weak)) int32_t sys_readv(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_writev(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_tkill(Task &task, int32_t tid, int32_t sig) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_ppoll_time64(Task &task, uint32_t fds_loc, uint32_t nfds, uint32_t timeout_loc,
+                                                   uint32_t sigmask_loc, uint32_t sigset_size) { return -H_ENOSYS; }
 } // namespace Hamster
