@@ -310,6 +310,13 @@ namespace Hamster
         uint32_t list_op_pending_loc;
     };
 
+    struct sys_pollfd
+    {
+        int32_t fd;
+        int16_t events;
+        int16_t revents;
+    };
+
     inline uint64_t timespec_to_systick(const sys_timespec &ts)
     {
         // right now, 1 systick = 1 ms

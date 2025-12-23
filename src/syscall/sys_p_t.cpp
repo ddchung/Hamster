@@ -659,5 +659,72 @@ namespace Hamster
         task.set_tid_address(tid_loc);
         return task.get_tid();
     }
+
+    int32_t sys_ppoll_time64(Task &task, uint32_t fds_loc, uint32_t nfds, uint32_t timeout_loc, uint32_t sigmask_loc, uint32_t sigset_size)
+    {
+        if (sigset_size != sizeof(sys_sigset))
+            return -H_EINVAL;
+        
+        if (sigmask_loc != 0)
+            return -H_ENOTSUP; // TODO: sigmask
+        
+        return cvt_error(task.block([](Task &task, uint32_t fds_loc, uint32_t nfds, uint32_t timeout_loc, uint32_t sigmask_loc, uint32_t sigset_size, uint32_t){
+            if (task.mem_is_mapped(fds_loc, nfds * sizeof(sys_pollfd)) != 1)
+            {
+                error = H_EFAULT;
+                return -1;
+            }
+
+            if (timeout_loc != 0)
+            {
+                sys_timespec ts;
+                if (task.copy_from_memory(ts, timeout_loc) < 0)
+                    return -1;
+                if (ts.sec < 0 || ts.nsec < 0 || ts.nsec >= 1000000000)
+                {
+                    error = H_EINVAL;
+                    return -1;
+                }
+                uint64_t now = _get_sys_time();
+                if (now > task.get_last_tick() + ts.sec * 1000 + ts.nsec / 1000000)
+                    return 0;
+            }
+
+            for (uint32_t i = 0; i < nfds; ++i)
+            {
+                sys_pollfd fd;
+                uint32_t pollfd_loc = fds_loc + i * sizeof(sys_pollfd);
+
+                if (task.copy_from_memory(fd, pollfd_loc) < 0)
+                    return -1;
+                fd.revents = 0;
+                
+                if (fd.fd >= 0)
+                {
+                    BaseTaskFD *task_fd = task.get_fd(fd.fd);
+                    if (task_fd)
+                    {
+                        if ((fd.events & H_POLLIN) && task_fd->poll(POLL_READ) == 1)
+                            fd.revents |= H_POLLIN;
+                        if ((fd.events & H_POLLOUT) && task_fd->poll(POLL_WRITE) == 1)
+                            fd.revents |= H_POLLOUT;
+                    }
+                    else
+                    {
+                        fd.revents |= H_POLLNVAL;
+                    }
+                }
+
+                if (task.copy_to_memory(pollfd_loc, fd) < 0)
+                    return -1;
+                
+                if (fd.revents != 0)
+                    return 1;
+            }
+
+            error = H_EAGAIN;
+            return -1;
+        }));
+    }
 } // namespace Hamster
 

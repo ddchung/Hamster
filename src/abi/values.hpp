@@ -604,6 +604,13 @@ namespace Hamster
     inline constexpr int H_FUTEX_CLOCK_REALTIME = 256;
     inline constexpr int H_FUTEX_CMD_MASK = ~(H_FUTEX_PRIVATE_FLAG | H_FUTEX_CLOCK_REALTIME);
 
+    inline constexpr int H_POLLIN = 0x0001;
+    inline constexpr int H_POLLPRI = 0x0002;
+    inline constexpr int H_POLLOUT = 0x0004;
+    inline constexpr int H_POLLERR = 0x0008;
+    inline constexpr int H_POLLHUP = 0x0010;
+    inline constexpr int H_POLLNVAL = 0x0020;
+
     // clang-format off
     inline constexpr uint8_t H_SIGHAND_TRAMPOLINE[] = {
         0x93, 0x08, 0xb0, 0x08, // li a7,139 # SyscallID::RT_SIGRETURN
