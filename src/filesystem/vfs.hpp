@@ -593,6 +593,15 @@ namespace Hamster
          */
         int access(const char *path, int uid, int *groups, size_t numgroups, int mode, int flags = 0);
 
+        /**
+         * @brief Get a file directly
+         * @param fd The file descriptor to get
+         * @return The file.
+         * @warning Use the functions above when possible.
+         * @note Returns a duplicate
+         */
+        BaseFile *get_file(int fd);
+
     private:
         VFSData *data;
     };

@@ -1438,4 +1438,12 @@ namespace Hamster
         close(rootfd);
         return res;
     }
+
+    BaseFile *VFS::get_file(int fd)
+    {
+        BaseFile *file = data->fd_manager.get_fd(fd);
+        if (!file)
+            return nullptr;
+        return file->clone();
+    }
 } // namespace Hamster

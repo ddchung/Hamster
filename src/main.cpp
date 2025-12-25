@@ -4,6 +4,7 @@
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
 #include <filesystem/device_manager.hpp>
+#include <filesystem/vfs_fd_fs.hpp>
 #include <memory/allocator.hpp>
 #include <kscheduler/kscheduler.hpp>
 #include <riscv/riscv_emulator.hpp>
@@ -194,7 +195,9 @@ int main()
     Hamster::vfs.mknod("/dev/random", {1, 8}, 0666);
     Hamster::vfs.mknod("/dev/urandom", {1, 9}, 0666);
     Hamster::vfs.mkdir("/dev/shm", 0777);
+    Hamster::vfs.mkdir("/dev/fd", 0777);
     Hamster::vfs.mount("/dev/shm", Hamster::alloc<Hamster::RamFs>());
+    Hamster::vfs.mount("/dev/fd", Hamster::alloc<Hamster::VfsFdFs>());
 
 #ifndef NTRACE
     Hamster::kscheduler.add_task(Hamster::alloc<UserSchedulerPerfMonitorTask>());
