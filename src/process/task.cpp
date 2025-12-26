@@ -124,9 +124,8 @@ namespace Hamster
         }
 
         // TODO: traverse robust futex list
-        
-        if (is_vfork && parent)
-            parent->interrupt_block();
+
+        release_mem();
 
         process->remove_task(this);
 

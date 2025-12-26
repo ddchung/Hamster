@@ -74,7 +74,6 @@ namespace Hamster
     int Task::exec(int fd, const char *execfn, const char *const *argv, const char *const *envp)
     {
         close_cloexec_fds();
-        munmap_all();
         return process->exec(fd, this, execfn, argv, envp);
     }
 
@@ -127,8 +126,8 @@ namespace Hamster
 
         auto &memory = this->memory->ms;
 
-        // Clear all instruction caches
-        emulator.flush_caches();
+        // Release the memory space
+        release_mem();
 
         uint64_t entry_point = 0, ph_num = 0, brk = 0, ph_loc = 0;
         bool dyn = false;

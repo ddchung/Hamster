@@ -559,6 +559,12 @@ namespace Hamster
          */
         static Task *get_current_task();
 
+        /**
+         * @brief Release the memory space
+         * @note This will clear it
+         */
+        void release_mem();
+
         // MemorySpace functions
 
         int memcpy(void *dest, uint32_t src, uint32_t len);

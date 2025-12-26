@@ -104,12 +104,20 @@ namespace Hamster
     int Task::munmap_all()
     {
         emulator.flush_caches();
-        if (is_vfork && parent)
-        {
-            parent->interrupt_block();
-            memory.construct();
-        }
         return memory->ms.unmap_all();
+    }
+
+    void Task::release_mem()
+    {
+        emulator.flush_caches();
+
+        if (is_vfork && parent)
+            parent->interrupt_block();
+
+        if (memory.refcount() > 1)
+            memory.construct();
+        else
+            munmap_all();
     }
 
     int Task::mprotect(uint32_t addr, uint32_t size, uint8_t permissions)
