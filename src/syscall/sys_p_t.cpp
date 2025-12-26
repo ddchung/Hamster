@@ -743,5 +743,30 @@ namespace Hamster
         }
         return 0;
     }
+
+    int32_t sys_readlinkat(Task &task, int32_t dirfd, uint32_t pathname_loc, uint32_t buf_loc, uint32_t bufsiz)
+    {
+        const char *path = task.mem_get_string(pathname_loc);
+        if (!path)
+            return cvt_error();
+        
+        int vfs_rel_fd = task.open_rel_fd(dirfd, path);
+
+        char *target = vfs.get_targetat(vfs_rel_fd, path);
+        dealloc(path);
+
+        if (!target)
+            return cvt_error();
+        
+        size_t len = strlen(target);
+        len = std::min<size_t>(len, bufsiz);
+        
+        int res = task.memcpy(buf_loc, target, len);
+        dealloc(target);
+        
+        if (res < 0)
+            return cvt_error();
+        return len;
+    }
 } // namespace Hamster
 
