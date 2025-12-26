@@ -214,6 +214,17 @@ namespace Hamster
             }
         }
 
+        /**
+         * @brief Get the reference count
+         * @return The reference count, or 0 if `!*this`
+         */
+        RefCountType refcount() const
+        {
+            if (obj)
+                return obj->refcount;
+            return 0;
+        }
+
     private:
         Object *obj;
     };
