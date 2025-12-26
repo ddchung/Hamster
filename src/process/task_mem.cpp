@@ -105,7 +105,10 @@ namespace Hamster
     {
         emulator.flush_caches();
         if (is_vfork && parent)
+        {
             parent->interrupt_block();
+            memory.construct();
+        }
         return memory->ms.unmap_all();
     }
 

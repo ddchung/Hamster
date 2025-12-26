@@ -61,25 +61,24 @@ namespace Hamster
         }
     } // namespace
 
-    Task *spawn(const char *path, const char *const *argv, const char *const *envp)
+    Task *spawn(const char *path, const char *const *argv, const char *const *envp, const char *execfn)
     {
         int fd = vfs.open(path, OPEN_RDONLY);
         if (fd < 0)
             return nullptr;
-        Task *res = Task::create_task(fd, argv, envp);
+        Task *res = Task::create_task(fd, argv, envp, execfn);
         vfs.close(fd);
         return res;
     }
 
-    int Task::exec(int fd, const char *const *argv, const char *const *envp)
+    int Task::exec(int fd, const char *execfn, const char *const *argv, const char *const *envp)
     {
         close_cloexec_fds();
-        if (is_vfork && parent)
-            parent->interrupt_block();
-        return process->exec(fd, this, argv, envp);
+        munmap_all();
+        return process->exec(fd, this, execfn, argv, envp);
     }
 
-    int Process::exec(int fd, Task *new_leader, const char *const *argv, const char *const *envp)
+    int Process::exec(int fd, Task *new_leader, const char *execfn, const char *const *argv, const char *const *envp)
     {
         static const char *empty[] = {nullptr};
 
@@ -118,10 +117,10 @@ namespace Hamster
         assert(tasks.size() == 1);
         assert(*tasks.begin() == leader);
 
-        return leader->load_executable(fd, argv, envp);
+        return leader->load_executable(fd, execfn, argv, envp);
     }
 
-    int Task::load_executable(int fd, const char *const *argv, const char *const *envp)
+    int Task::load_executable(int fd, const char *execfn, const char *const *argv, const char *const *envp)
     {
         // TODO: Execute scripts (#!)
         // TODO: Handle setuid/setgid
@@ -152,21 +151,29 @@ namespace Hamster
         push_stack(memory, sp, 0);
         push_stack(memory, sp, 0);
 
-        // TODO: exec_fn
-        const char *exec_fn[] {"program", nullptr};
+        const char *execfn_arr[] {execfn, nullptr};
 
-        push_strings(memory, sp, exec_fn);
+        push_strings(memory, sp, execfn_arr);
 
         uint64_t exec_fn_loc = sp;
 
         Deque<uint64_t> envp_locs, argv_locs;
 
+        if (dyn)
+            argv++;
+
         push_strings(memory, sp, envp, &envp_locs);
         push_strings(memory, sp, argv, &argv_locs);
 
-        // Push dummy argv[0] for interpreter if dynamic
+        // Push dummy argv[0] and argv[1] for interpreter if dynamic
         if (dyn)
         {
+            size_t len = strlen(execfn) + 1;
+            sp -= len;
+            if (memory.memcpy_alloc(sp, execfn, len) < 0)
+                return -1;
+            argv_locs.push_back(sp);
+
             const char interp_argv0[] = "ld.so";
             sp -= sizeof(interp_argv0);
             if (memory.memcpy_alloc(sp, interp_argv0, sizeof(interp_argv0)) < 0)

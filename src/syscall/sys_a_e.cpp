@@ -101,10 +101,11 @@ namespace Hamster
         // also note that path is intended to possibly be null, and open_rel_file
         // accounts for this
         int fd = task.open_rel_file(thread_dfd, path, (flags & H_AT_EMPTY_PATH) | OPEN_RDONLY | 0x03);
-        dealloc(path);
-
         if (fd < 0)
+        {
+            dealloc(path);
             return cvt_error();
+        }
 
         char **argv, **envp;
         argv = read_strings(task, argv_loc);
@@ -115,10 +116,12 @@ namespace Hamster
             destroy_strings(argv);
             destroy_strings(envp);
             vfs.close(fd);
+            dealloc(path);
             return cvt_error();
         }
 
-        int res = task.exec(fd, argv, envp);
+        int res = task.exec(fd, path, argv, envp);
+        dealloc(path);
         vfs.close(fd);
         destroy_strings(argv);
         destroy_strings(envp);

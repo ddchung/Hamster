@@ -148,13 +148,14 @@ namespace Hamster
          * @brief Load an executable file
          * @param fd The VFS file descriptor of the file
          * @param leader The new leader task
+         * @param execfn See Task::exec
          * @param argv The arguments. nullptr for empty arguments
          * @param envp The environment variables. nullptr for empty environment
          * @return 0 on success, -1 on error
          * @note This will clear all tasks except one, and wipe the memory space
          * @note `leader` must be one of the tasks in this process
          */
-        int exec(int fd, Task *leader, const char *const *argv = nullptr, const char *const *envp = nullptr);
+        int exec(int fd, Task *leader, const char *execfn, const char *const *argv = nullptr, const char *const *envp = nullptr);
 
         /**
          * @brief Make the process exit
@@ -258,10 +259,11 @@ namespace Hamster
          * @param fd The file descriptor of the executable file to load
          * @param argv The arguments for the task
          * @param envp The environment variables for the task
+         * @param execfn The program path. Must be set for dynamically linked programs, but optional for statically linked ones.
          * @return The new task, or nullptr on error and set `error`
          * @note This creates a completely new task, in its own process, process group, and session
          */
-        static Task *create_task(int fd, const char *const *argv = nullptr, const char *const *envp = nullptr);
+        static Task *create_task(int fd, const char *const *argv = nullptr, const char *const *envp = nullptr, const char *execfn = "");
 
         /**
          * @brief Get a task by TID
@@ -391,6 +393,7 @@ namespace Hamster
         /**
          * @brief Load an executable into the task's memory space
          * @param fd The VFS file descriptor of the executable file
+         * @param execfn Used for AT_EXECFN and dynamic linking
          * @param argv The arguments
          * @param envp The environment variables
          * @return 0 on success, -1 on error
@@ -398,17 +401,18 @@ namespace Hamster
          *          to be used internally by `Process::exec`
          * @note Don't pass nullptr for argv/envp, pass empty arrays instead
          */
-        int load_executable(int fd, const char *const *argv, const char *const *envp);
+        int load_executable(int fd, const char *execfn, const char *const *argv, const char *const *envp);
 
         /**
          * @brief Replace the process image with a new executable
          * @param fd The VFS file descriptor of the executable file
+         * @param execfn Used for AT_EXECFN and dynamic linking
          * @param argv The arguments. nullptr for empty arguments
          * @param envp The environment variables. nullptr for empty environment
          * @return 0 on success, -1 on error
          * @warning This will kill all other tasks in the current process
          */
-        int exec(int fd, const char *const *argv = nullptr, const char *const *envp = nullptr);
+        int exec(int fd, const char *execfn, const char *const *argv = nullptr, const char *const *envp = nullptr);
 
         /**
          * @brief Copy a POD structure into the task's memory space
@@ -685,6 +689,7 @@ namespace Hamster
      * @param path The path to the executable
      * @param argv The argument for the task
      * @param envp The environment variables
+     * @param execfn See Task::spawn
      */
-    Task *spawn(const char *path, const char *const *argv = nullptr, const char *const *envp = nullptr);
+    Task *spawn(const char *path, const char *const *argv = nullptr, const char *const *envp = nullptr, const char *execfn = "");
 } // namespace Hamster

@@ -10,7 +10,7 @@
 
 namespace Hamster
 {
-    Task *Task::create_task(int fd, const char *const *argv, const char *const *envp)
+    Task *Task::create_task(int fd, const char *const *argv, const char *const *envp, const char *execfn)
     {
         Task *task = alloc<Task>();
 
@@ -30,7 +30,7 @@ namespace Hamster
         tasks[tid] = task;
         task->add_to_scheduler();
 
-        int res = task->exec(fd, argv, envp);
+        int res = task->exec(fd, execfn, argv, envp);
         if (res < 0)
         {
             task->exit(make_wait_terminated_coredump(H_SIGKILL));
@@ -148,7 +148,7 @@ namespace Hamster
          || ((flags & H_CLONE_NEWPID) && (flags & (H_CLONE_THREAD | H_CLONE_PARENT)))
          || ((flags & H_CLONE_NEWUSER) && (flags & H_CLONE_THREAD))
          || ((flags & H_CLONE_PARENT) && (getpid() == 1))
-         || ((stack % 16))
+        //  || ((stack % 16))
          || ((flags & H_CLONE_PIDFD) && (flags & H_CLONE_DETACHED))
          || ((flags & H_CLONE_PIDFD) && (flags & H_CLONE_THREAD))
          || ((flags & H_CLONE_PIDFD) && (flags & H_CLONE_PARENT_SETTID)))
