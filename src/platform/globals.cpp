@@ -43,7 +43,7 @@ namespace Hamster
      * requires: none
      * provides: clock_rt_offset
      */
-    int32_t clock_rt_offset{0};
+    int64_t clock_rt_offset{0};
 
     /**
      * Emulator monitor

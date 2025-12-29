@@ -188,10 +188,6 @@ namespace Hamster
     int32_t sys_clock_gettime64(Task &task, int32_t clock_id, uint32_t tp_loc)
     {
         sys_timespec ts = {};
-
-        if (!tp_loc)
-            return -H_EFAULT;
-
         uint64_t now = _get_sys_time();
 
         switch (clock_id)
@@ -217,9 +213,6 @@ namespace Hamster
     {
         sys_timespec ts;
 
-        if (!ts_loc)
-            return -H_EFAULT;
-
         if (task.copy_from_memory(ts, ts_loc) < 0)
             return cvt_error();
 
@@ -229,7 +222,7 @@ namespace Hamster
         switch (clock_id)
         {
         case H_CLOCK_REALTIME:
-            clock_rt_offset = now - ts_ms;
+            clock_rt_offset = ts_ms - now;
             break;
         case H_CLOCK_MONOTONIC:
             return -H_EPERM;

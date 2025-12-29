@@ -16,7 +16,10 @@ namespace Hamster
         
         int rel_fd = task.open_rel_fd(thread_dfd, path);
         if (rel_fd < 0)
+        {
+            dealloc(path);
             return cvt_error();
+        }
         
         // Process mode with umask
         mode = task.mask_mode(mode);

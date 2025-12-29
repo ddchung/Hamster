@@ -202,7 +202,7 @@ int main()
 #ifndef NTRACE
     Hamster::kscheduler.add_task(Hamster::alloc<UserSchedulerPerfMonitorTask>());
 #endif
-    Hamster::spawn("/sbin/init");
+    Hamster::spawn("/init", nullptr, nullptr, "/init");
 
     // Run the program
     while (true)

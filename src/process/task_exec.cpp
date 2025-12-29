@@ -26,6 +26,17 @@ namespace Hamster
             return 0;
         }
 
+        int push_string(MemorySpace &mem_sp, uint64_t &sp, const char *string, Deque<uint64_t> *locs = nullptr)
+        {
+            size_t size = strlen(string) + 1;
+            sp -= size;
+            if (mem_sp.memcpy_alloc(sp, string, size) < 0)
+                return -1;
+            if (locs)
+                locs->push_back(sp);
+            return 0;
+        }
+
         void push_strings(MemorySpace &mem_sp, uint64_t &sp, const char *const *strings, Deque<uint64_t> *locs = nullptr)
         {
 
@@ -36,14 +47,7 @@ namespace Hamster
             while (it-- > 0)
             {
                 const char *str = strings[it];
-                size_t len = strlen(str) + 1;
-                if (sp < len)
-                    return; // OOM
-                sp -= len;
-                if (mem_sp.memcpy_alloc(sp, str, len) < 0)
-                    return; // fail
-                if (locs)
-                    locs->push_back(sp);
+                push_string(mem_sp, sp, str, locs);
             }
         }
 
@@ -158,34 +162,34 @@ namespace Hamster
 
         Deque<uint64_t> envp_locs, argv_locs;
 
-        if (dyn)
+        // Inject a custom argv[0] and argv[1]
+        // - If `original_argv0 != nullptr`: argv is `ld.so --argv0 <original_argv0> <execfn> <args...>`
+        // - Else argv is `ld.so --argv0 <empty string> <execfn> <args...>`
+        // TODO: Better way to do this
+
+        const char *original_argv0 = *argv ? *argv : "";
+
+        // Preserves end of list
+        if (dyn && *argv)
             argv++;
 
         push_strings(memory, sp, envp, &envp_locs);
         push_strings(memory, sp, argv, &argv_locs);
 
-        // Push dummy argv[0] and argv[1] for interpreter if dynamic
+        // Push argv for interpreter if dynamic
         if (dyn)
         {
-            size_t len = strlen(execfn) + 1;
-            sp -= len;
-            if (memory.memcpy_alloc(sp, execfn, len) < 0)
-                return -1;
-            argv_locs.push_back(sp);
+            const char *interp_args[] = {
+                "ld.so", "--argv0", original_argv0, execfn, nullptr
+            };
 
-            const char interp_argv0[] = "ld.so";
-            sp -= sizeof(interp_argv0);
-            if (memory.memcpy_alloc(sp, interp_argv0, sizeof(interp_argv0)) < 0)
-                return -1;
-            argv_locs.push_back(sp);
+            push_strings(memory, sp, interp_args, &argv_locs);
         }
 
         // Pad
         sp &= ~0xFUL;
 
-        const char *arch[]{"riscv32", nullptr};
-
-        push_strings(memory, sp, arch);
+        push_string(memory, sp, "riscv32");
 
         uint64_t arch_loc = sp;
 
