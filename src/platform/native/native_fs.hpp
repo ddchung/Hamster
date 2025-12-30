@@ -15,6 +15,7 @@
 #include <queue>
 #include <cstring>
 #include <errno.h>
+#include <limits.h>
 
 #define HAMSTER_NATIVE_FS_ROOT "rootfs"
 

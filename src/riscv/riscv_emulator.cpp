@@ -983,16 +983,16 @@ namespace Hamster
         x[extract_rd(current_inst->inst)] = x[extract_rs1(current_inst->inst)] < x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_mul:
-        x[extract_rd(current_inst->inst)] = (int64_t)x[extract_rs1(current_inst->inst)] * (int64_t)x[extract_rs2(current_inst->inst)];
+        x[extract_rd(current_inst->inst)] = (int64_t)(int32_t)x[extract_rs1(current_inst->inst)] * (int64_t)(int32_t)x[extract_rs2(current_inst->inst)];
         DISPATCH();
     case_mulh:
-        x[extract_rd(current_inst->inst)] = ((int64_t)x[extract_rs1(current_inst->inst)] * (int64_t)x[extract_rs2(current_inst->inst)]) >> 32;
+        x[extract_rd(current_inst->inst)] = ((int64_t)(int32_t)x[extract_rs1(current_inst->inst)] * (int64_t)(int32_t)x[extract_rs2(current_inst->inst)]) >> 32ULL;
         DISPATCH();
     case_mulhsu:
-        x[extract_rd(current_inst->inst)] = ((int64_t)x[extract_rs1(current_inst->inst)] * (uint64_t)x[extract_rs2(current_inst->inst)]) >> 32;
+        x[extract_rd(current_inst->inst)] = ((int64_t)(int32_t)x[extract_rs1(current_inst->inst)] * (uint64_t)x[extract_rs2(current_inst->inst)]) >> 32ULL;
         DISPATCH();
     case_mulhu:
-        x[extract_rd(current_inst->inst)] = ((uint64_t)x[extract_rs1(current_inst->inst)] * (uint64_t)x[extract_rs2(current_inst->inst)]) >> 32;
+        x[extract_rd(current_inst->inst)] = ((uint64_t)x[extract_rs1(current_inst->inst)] * (uint64_t)x[extract_rs2(current_inst->inst)]) >> 32ULL;
         DISPATCH();
     case_div:
         if (x[extract_rs2(current_inst->inst)] == 0)
