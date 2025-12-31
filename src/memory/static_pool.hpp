@@ -7,6 +7,7 @@
 #include <type_traits>
 #include <cassert>
 #include <bitset>
+#include <bit>
 
 namespace Hamster
 {

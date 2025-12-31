@@ -5,6 +5,23 @@
 #include <math.h>
 #include <cstring>
 
+#ifdef __ARM_ARCH_7EM__
+asm (
+"extract_imm_s:\n"
+"lsr r1, r0, #7\n"
+"asr r0, r0, #20\n"
+"bfi r0, r1, #0, #5\n"
+"bx lr\n"
+"nop\n"
+);
+extern "C" uint32_t extract_imm_s(uint32_t);
+#else
+uint32_t extract_imm_s(uint32_t inst)
+{
+    return (((int32_t)inst >> 20) & ~0x1F) | ((inst >> 7) & 0x1F);
+}
+#endif
+
 namespace Hamster
 {
     namespace
@@ -130,22 +147,16 @@ namespace Hamster
 
         uint32_t extract_imm_i(uint32_t inst)
         {
-            return sign_extend((inst >> 20) & 0xFFF, 12);
+            return (int32_t)inst >> 20;
         }
 
-        uint32_t extract_imm_s(uint32_t inst)
+        int32_t extract_imm_b(uint32_t inst)
         {
-            return sign_extend(((inst >> 25) & 0x7F) << 5 | ((inst >> 7) & 0x1F), 12);
-        }
-
-        uint32_t extract_imm_b(uint32_t inst)
-        {
-            return sign_extend(
-                ((inst >> 31) & 0x1) << 12 |     // imm[12]
-                    ((inst >> 7) & 0x1) << 11 |  // imm[11]
-                    ((inst >> 25) & 0x3F) << 5 | // imm[10:5]
-                    ((inst >> 8) & 0xF) << 1,    // imm[4:1]
-                13);
+            int32_t imm = ((int32_t)(inst & 0x80000000)) >> 19;  // imm[12]
+            imm |= ((inst >> 7) & 0x1) << 11;                    // imm[11]
+            imm |= ((inst >> 25) & 0x3F) << 5;                   // imm[10:5]
+            imm |= ((inst >> 8) & 0xF) << 1;                     // imm[4:1]
+            return imm;                                          // imm[0] = 0
         }
 
         uint32_t extract_imm_u(uint32_t inst)

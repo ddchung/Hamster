@@ -146,7 +146,7 @@ namespace Hamster
          || ((flags & H_CLONE_NEWIPC) && (flags & H_CLONE_SYSVSEM))
          || ((flags & H_CLONE_NEWPID) && (flags & (H_CLONE_THREAD | H_CLONE_PARENT)))
          || ((flags & H_CLONE_NEWUSER) && (flags & H_CLONE_THREAD))
-         || ((flags & H_CLONE_PARENT) && (getpid() == 1))
+         || ((flags & H_CLONE_PARENT) && !process->get_parent())
         //  || ((stack % 16))
          || ((flags & H_CLONE_PIDFD) && (flags & H_CLONE_DETACHED))
          || ((flags & H_CLONE_PIDFD) && (flags & H_CLONE_THREAD))
