@@ -10,11 +10,11 @@ namespace Hamster
 {
     namespace
     {
-        int load_elf32(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk, uint64_t &phdr_loc, bool &dyn)
+        int load_elf32(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk, uint64_t &phdr_loc, bool &dyn)
         {
             mem_space.unmap_all();
 
-            if (file.seek(0, H_SEEK_SET) < 0)
+            if (vfs.seek(fd, 0, H_SEEK_SET) < 0)
             {
                 error = H_EIO;
                 return -1;
@@ -23,7 +23,7 @@ namespace Hamster
             // Read ELF header
             Elf32_Ehdr ehdr;
 
-            if (file.read(&ehdr, sizeof(ehdr)) != sizeof(ehdr))
+            if (vfs.read(fd, &ehdr, sizeof(ehdr)) != sizeof(ehdr))
             {
                 error = H_EIO;
                 return -1;
@@ -70,13 +70,13 @@ namespace Hamster
             {
                 Elf32_Phdr phdr;
 
-                if (file.seek(ehdr.e_phoff + i * ehdr.e_phentsize, H_SEEK_SET) < 0)
+                if (vfs.seek(fd, ehdr.e_phoff + i * ehdr.e_phentsize, H_SEEK_SET) < 0)
                 {
                     error = H_EIO;
                     return -1;
                 }
 
-                if (file.read(&phdr, sizeof(phdr)) != sizeof(phdr))
+                if (vfs.read(fd, &phdr, sizeof(phdr)) != sizeof(phdr))
                 {
                     error = H_EIO;
                     return -1;
@@ -92,27 +92,30 @@ namespace Hamster
                     }
 
                     // Load interpreter
-                    if (file.seek(phdr.p_offset, H_SEEK_SET) < 0)
+                    if (vfs.seek(fd, phdr.p_offset, H_SEEK_SET) < 0)
                     {
                         error = H_EIO;
                         return -1;
                     }
                     char *interp = alloc<char>(phdr.p_filesz); // p_filesz includes null terminator
-                    if (file.read(interp, phdr.p_filesz) != (ssize_t)phdr.p_filesz)
+                    if (vfs.read(fd, interp, phdr.p_filesz) != (ssize_t)phdr.p_filesz)
                     {
                         dealloc(interp);
                         error = H_EIO;
                         return -1;
                     }
-                    File interp_file = vfs.open(interp, OPEN_RDONLY);
+                    int interp_file = vfs.open(interp, OPEN_RDONLY);
                     dealloc(interp);
-                    if (!interp_file)
+                    if (interp_file < 0)
                     {
                         error = H_ENOEXEC;
                         return -1;
                     }
                     dyn = true;
-                    return load_elf32(interp_file, mem_space, entry_point, ph_num, brk, phdr_loc, dyn);
+
+                    int res = load_elf32(interp_file, mem_space, entry_point, ph_num, brk, phdr_loc, dyn);
+                    vfs.close(interp_file);
+                    return res;
                 }
 
                 if (phdr.p_type == PT_LOAD)
@@ -121,7 +124,7 @@ namespace Hamster
                         phdr_loc = phdr.p_vaddr + ehdr.e_phoff;
 
                     // Load segment
-                    if (file.seek(phdr.p_offset, H_SEEK_SET) < 0)
+                    if (vfs.seek(fd, phdr.p_offset, H_SEEK_SET) < 0)
                     {
                         error = H_EIO;
                         return -1;
@@ -134,7 +137,7 @@ namespace Hamster
                     // Map segment
 
                     // TODO: handle error
-                    if (mem_space.map_private_file(phdr.p_vaddr, file.get_fd(), phdr.p_offset, phdr.p_filesz, phdr.p_flags & 07) < 0)
+                    if (mem_space.map_private_file(phdr.p_vaddr, fd, phdr.p_offset, phdr.p_filesz, phdr.p_flags & 07) < 0)
                         return -1;
                     
                     if (phdr.p_memsz > phdr.p_filesz)
@@ -157,10 +160,10 @@ namespace Hamster
     } // namespace
     
 
-    int load_elf(File file, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk, uint64_t &phdr_loc, bool &dyn)
+    int load_elf(int fd, MemorySpace& mem_space, uint64_t& entry_point, uint64_t &ph_num, uint64_t &brk, uint64_t &phdr_loc, bool &dyn)
     {
         // Prepare file
-        if (file.seek(0, H_SEEK_SET) < 0)
+        if (vfs.seek(fd, 0, H_SEEK_SET) < 0)
         {
             error = H_EIO;
             return -1;
@@ -169,7 +172,7 @@ namespace Hamster
         // Read ELF e_ident
         uint8_t e_ident[EI_NIDENT];
 
-        if (file.read(e_ident, EI_NIDENT) != EI_NIDENT)
+        if (vfs.read(fd, e_ident, EI_NIDENT) != EI_NIDENT)
         {
             error = H_EIO;
             return -1;
@@ -184,7 +187,7 @@ namespace Hamster
 
         if (e_ident[EI_CLASS] == ELFCLASS32)
         {
-            return load_elf32(file, mem_space, entry_point, ph_num, brk, phdr_loc, dyn);
+            return load_elf32(fd, mem_space, entry_point, ph_num, brk, phdr_loc, dyn);
         }
         else
         {
