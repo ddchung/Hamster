@@ -911,7 +911,8 @@ namespace Hamster
                 0, 0, 0, 0, 0, 0, 0, 0,
                 1, // branch
                 1, // jalr
-                0, 1 // jal
+                0, 1, // jal
+                1, // ecall/ebreak
             };
 
             // Fetch instructions
