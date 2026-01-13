@@ -15,23 +15,12 @@ namespace Hamster
         {
             return (fds[fd / 32] & (1u << (fd % 32))) != 0;
         }
-    } // namespace
 
-    int32_t sys_read(Task &task, int32_t fd, uint32_t buf_loc, uint32_t count)
-    {
-        // Ensure registers are correct for block()
-        task.get_emulator().x[10] = fd; // a0
-        task.get_emulator().x[11] = buf_loc; // a1
-        task.get_emulator().x[12] = count; // a2
-
-        task.block([](Task &task, uint32_t task_fd, uint32_t buf_loc, uint32_t count, uint32_t, uint32_t, uint32_t) -> int {
-            BaseTaskFD *fd = task.get_fd(task_fd);
-            if (!fd)
-                return -1;
-
+        int do_read(Task &task, BaseTaskFD *fd, uint32_t buf_loc, uint32_t count)
+        {
             bool is_nonblock = fd->get_flags() & OPEN_NONBLOCK;
 
-            // Check if it is readable
+            // Check if file is readable
             switch (fd->poll(POLL_READ))
             {
             case 0:
@@ -45,21 +34,79 @@ namespace Hamster
                 return -1;
             }
 
-            // Read up to end of VM page
+            uint32_t read = 0;
 
-            uint32_t to_read = std::min(count, HAMSTER_PAGE_SIZE - (buf_loc % HAMSTER_PAGE_SIZE));
+            while (count > 0)
+            {
+                // Read up to end of VM page
 
-            void *it = task.mem_make_iterator(buf_loc);
-            if (!it)
+                uint32_t to_read = std::min(count, HAMSTER_PAGE_SIZE - (buf_loc % HAMSTER_PAGE_SIZE));
+
+                void *it = task.mem_make_iterator(buf_loc);
+                if (!it)
+                    return -1;
+                
+                ssize_t res = fd->read(it, to_read);
+                if (res == 0) // propagate EOF
+                    return read;
+                if (res < 0)
+                {
+                    if (read > 0)
+                        return read;
+                    if (error == H_EAGAIN && is_nonblock)
+                        return -H_EAGAIN;
+                    return res;
+                }
+
+                buf_loc += res;
+                count -= res;
+                read += res;
+            }
+            return read;
+        }
+
+        int do_readv(Task &task, BaseTaskFD *fd, uint32_t vec_loc, uint32_t vlen)
+        {
+            uint32_t read = 0;
+            while (vlen > 0)
+            {
+                sys_iovec vec;
+                if (task.copy_from_memory(vec, vec_loc) < 0)
+                    return cvt_error();
+                
+                if (vec.size > 0)
+                {
+                    int res = do_read(task, fd, vec.data, vec.size);
+                    if (res == 0) // EOF
+                        return read;
+                    if (res < 0)
+                    {
+                        if (read > 0)
+                            return read;
+                        return res;
+                    }
+                    read += res;
+                }
+                vec_loc += sizeof(sys_iovec);
+                vlen -= 1;
+            }
+            return read;
+        }
+    } // namespace
+
+    int32_t sys_read(Task &task, int32_t fd, uint32_t buf_loc, uint32_t count)
+    {
+        // Ensure registers are correct for block()
+        task.get_emulator().x[10] = fd; // a0
+        task.get_emulator().x[11] = buf_loc; // a1
+        task.get_emulator().x[12] = count; // a2
+
+        return cvt_error(task.block([](Task &task, uint32_t task_fd, uint32_t buf_loc, uint32_t count, uint32_t, uint32_t, uint32_t) -> int {
+            BaseTaskFD *fd = task.get_fd(task_fd);
+            if (!fd)
                 return -1;
-            
-            int res = fd->read(it, to_read);
-            if (res == -1 && error == H_EAGAIN && is_nonblock)
-                return -H_EAGAIN;
-            return res;
-        });
-
-        return 0;
+            return do_read(task, fd, buf_loc, count);
+        }));
     }
 
     int32_t sys_setpgid(Task &task, int32_t pid, int32_t pgid)
@@ -352,7 +399,11 @@ namespace Hamster
         int32_t pipefds[2] = {fd1, fd2};
 
         if (task.copy_to_memory(pipefd_loc, pipefds) < 0)
+        {
+            task.close_fd(fd1);
+            task.close_fd(fd2);
             return cvt_error();
+        }
         
         return 0;
     }
@@ -627,14 +678,16 @@ namespace Hamster
         if (vlen == 0)
             return 0;
         
-        sys_iovec vec;
-        if (task.copy_from_memory(vec, vec_loc) < 0)
-            return cvt_error();
-        
-        if (vec.size == 0)
-            return sys_readv(task, fd, vec_loc + sizeof(sys_iovec), vlen - 1);
-        
-        return sys_read(task, fd, vec.data, vec.size);
+        task.get_emulator().x[10] = fd; // a0
+        task.get_emulator().x[11] = vec_loc; // a1
+        task.get_emulator().x[12] = vlen; // a2
+
+        return cvt_error(task.block([](Task &task, uint32_t task_fd, uint32_t vec_loc, uint32_t vlen, uint32_t, uint32_t, uint32_t) -> int {
+            BaseTaskFD *fd = task.get_fd(task_fd);
+            if (!fd)
+                return -1;
+            return do_readv(task, fd, vec_loc, vlen);
+        }));
     }
     
     int32_t sys_tkill(Task &task, int32_t tid, int32_t signal)
