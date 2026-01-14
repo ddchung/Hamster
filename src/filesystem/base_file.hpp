@@ -432,6 +432,56 @@ namespace Hamster
         virtual ssize_t read(uint8_t *buf, size_t size) = 0;
 
         /**
+         * @brief Initiate reading
+         * @param size The total bytes to read
+         * @param task The calling task, or nullptr if kernel
+         * @return The number of bytes available to read, or -1 on error and set `error`
+         * @note May return more bytes than available
+         * @note The entire read may be split across multiple `read()` calls
+         * @note Guaranteed to be called before `read()`, and that `!is_writing()`
+         * @note `BaseRegularFile` provides a default that does nothing
+         */
+        virtual ssize_t start_read(size_t size, class Task *task = nullptr) { return size; };
+
+        /**
+         * @brief Check if a read is in progress
+         * @return `1` if it is, `0` if it's not, `-1` on error and set `error`
+         */
+        virtual int is_reading() { return 0; }
+
+        /**
+         * @brief End the read
+         * @return 0 on success, -1 on error and set `error`
+         * @note Guaranteed to be called after a `start_read()` and zero or more `read()`s
+         */
+        virtual int end_read() { return 0; }
+
+        /**
+         * @brief Initiate writing
+         * @param size The total bytes to write
+         * @param task The calling task, or nullptr if none
+         * @return The number of bytes available for writing, or -1 on error and set `error`
+         * @note May return more bytes than requested
+         * @note The write may be split across multiple calls to `write()`
+         * @note Guaranteed to be called before `write()` and that `!is_reading()`
+         * @note BaseRegularFile provides a default that does nothing
+         */
+        virtual ssize_t start_write(size_t size, class Task *task = nullptr) { return size; }
+
+        /**
+         * @brief Check if a write is in progress
+         * @return 1 if it is, 0 if it's not, -1 on error and set `error`
+         */
+        virtual int is_writing() { return 0; }
+
+        /**
+         * @brief End the write
+         * @return 0 on success, -1 on error and set `error`
+         * @note Guaranteed to be called after `start_write()` and zero or more `write()`s
+         */
+        virtual int end_write() { return 0; }
+
+        /**
          * @brief Get the flags that were used to create this handle.
          * @return The flags that were used to create this handle, or on error return -1 and set `error`
          */

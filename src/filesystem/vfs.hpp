@@ -602,6 +602,58 @@ namespace Hamster
          */
         BaseFile *get_file(int fd);
 
+        /**
+         * @brief Initialize a multi-`read()` call read
+         * @param fd The file descriptor
+         * @param size The size to read
+         * @param task The calling task, or nullptr
+         * @return The number of bytes available for reading, or -1 on error and set `error`
+         * @note Does nothing on non-special files, and returns `size` then.
+         */
+        ssize_t start_read(int fd, size_t size, class Task *task = nullptr);
+
+        /**
+         * @brief Check if a multi `read()` read is in progress
+         * @param fd The file
+         * @return 1 if it is, 0 if it's not, -1 on error and set `error`
+         * @note On non-special files, always returns 0
+         */
+        int is_reading(int fd);
+
+        /**
+         * @brief End a multi `read()` read
+         * @param fd The file
+         * @return 0 on success, -1 on error and set `error`
+         * @note Does nothing on non-special files
+         */
+        int end_read(int fd);
+
+        /**
+         * @brief Initialize a multi-`write()` call write
+         * @param fd The file descriptor
+         * @param size The size to write
+         * @param task The calling task, or nullptr
+         * @return The number of bytes available for writing, or -1 on error and set `error`
+         * @note Does nothing on non-special files, and returns `size` then.
+         */
+        ssize_t start_write(int fd, size_t size, class Task *task = nullptr);
+
+        /**
+         * @brief Check if a multi `write()` write is in progress
+         * @param fd The file
+         * @return 1 if it is, 0 if it's not, -1 on error and set `error`
+         * @note On non-special files, always returns 0
+         */
+        int is_writing(int fd);
+
+        /**
+         * @brief End a multi `write()` write
+         * @param fd The file
+         * @return 0 on success, -1 on error and set `error`
+         * @note Does nothing on non-special files
+         */
+        int end_write(int fd);
+
     private:
         VFSData *data;
     };
