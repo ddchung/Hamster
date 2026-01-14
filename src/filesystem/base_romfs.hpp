@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <driver/romfs_structs.hpp>
+#include <filesystem/romfs_structs.hpp>
 #include <filesystem/base_file.hpp>
 #include <memory/allocator.hpp>
 #include <memory/stl_sequential.hpp>
