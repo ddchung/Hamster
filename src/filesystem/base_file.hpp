@@ -146,23 +146,42 @@ namespace Hamster
         virtual FileType type() const override { return FileType::Regular; }
 
         /**
-         * @brief Read from the file.
+         * @brief Read from a specified position in the file
+         * @param buf The buffer to read into
+         * @param size The size of the buffer
+         * @param offset The offset to read from
+         * @return The number of bytes read, or on error return -1 and set `error`
+         * @note Equivelant to POSIX `pread`
+         */
+        virtual ssize_t pread(uint8_t *buf, size_t size, int64_t offset) = 0;
+
+        /**
+         * @brief Write to a specified position in the file
+         * @param buf The buffer to write from
+         * @param size The size of the buffer
+         * @param offset The offset to write to
+         * @return The number of bytes written, or on error return -1 and set `error`
+         * @note Equivelant to POSIX `pwrite`
+         */
+        virtual ssize_t pwrite(const uint8_t *buf, size_t size, int64_t offset) = 0;
+
+        /**
+         * @brief Read from the file, updating the position
          * @param buf The buffer to read into
          * @param size The size of the buffer
          * @return The number of bytes read, or on error return -1 and set `error`
          * @note Equivelant to POSIX `read`
          */
-        virtual ssize_t read(uint8_t *buf, size_t size) = 0;
+        ssize_t read(uint8_t *buf, size_t size);
 
         /**
-         * @brief Write to the file.
+         * @brief Write to the file, updating the position
          * @param buf The buffer to write
          * @param size The size of the buffer
          * @return The number of bytes written, or on error return -1 and set `error`
          * @note Equivelant to POSIX `write`
          */
-        virtual ssize_t write(const uint8_t *buf, size_t size) = 0;
-
+        ssize_t write(const uint8_t *buf, size_t size);
         /**
          * @brief Seek to a given position in the file.
          * @param offset The offset to seek to
@@ -170,13 +189,13 @@ namespace Hamster
          * @return The new position in the file, or on error return -1 and set `error`
          * @note Equivelant to POSIX `lseek`
          */
-        virtual int64_t seek(int64_t offset, int whence) = 0;
+        int64_t seek(int64_t offset, int whence);
 
         /**
          * @brief Get the current position in the file.
          * @return The current position in the file
          */
-        virtual int64_t tell() = 0;
+        int64_t tell() { return position; }
 
         /**
          * @brief Truncate the file to a given size.
@@ -190,6 +209,9 @@ namespace Hamster
          * @return The size of the file in bytes
          */
         virtual int64_t size() = 0;
+    
+    private:
+        int64_t position = 0;
     };
 
     class BaseSpecialDriverHandle;
@@ -252,30 +274,13 @@ namespace Hamster
         virtual FileType type() const override { return FileType::Directory; }
 
         /**
-         * @brief List the files in the directory, starting from this directory's offset
+         * @brief List the files in the directory
          * @param count The number of entries to list, by default, it will list all entries
          * @return A newly allocated array of newly allocated strings, or on error, it returns nullptr and sets `error`
          * @note Be sure to free both dimensions
          * @note It may return an array with less than `count` entries, if there are not enough files in the directory
          */
         virtual char * const *list(size_t count = SIZE_MAX) = 0;
-
-        /**
-         * @brief Change the offset of the directory.
-         * @param offset The new offset
-         * @param whence One of H_SEEK_SET, H_SEEK_CUR, or H_SEEK_END
-         * @return The new offset in the directory, or on error return -1 and set `error`
-         * @note Not equivelant to POSIX `lseek`, as this uses well-defined increments of 1,
-         *     * so offset 0 would be the first entry, 1 would be the second entry, etc.
-         */
-        virtual int64_t seek(int64_t offset, int whence) = 0;
-
-        /**
-         * @brief Get the current offset of the directory.
-         * @return The current offset in the directory
-         * @note See `seek` for the definition of the offset, as it is not equivelant to POSIX `lseek`
-         */
-        virtual int64_t tell() = 0;
 
         /**
          * @brief Get a file in the directory.

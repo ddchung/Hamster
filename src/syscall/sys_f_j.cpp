@@ -231,8 +231,6 @@ namespace Hamster
             return cvt_error();
         }
 
-        vfs.seek(vfs_fd, 0, H_SEEK_SET);
-
         char *const *list = file->list();
         if (!list)
             return -H_EINVAL;

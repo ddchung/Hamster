@@ -321,7 +321,7 @@ namespace Hamster
         {
         public:
             RamFsRegularHandle(RamFsRegularNode *node, int flags)
-                : RamFsNodeHandle(node, flags), offset(0)
+                : RamFsNodeHandle(node, flags)
             {
                 if (flags & OPEN_TRUNC)
                     truncate(0);
@@ -346,39 +346,36 @@ namespace Hamster
                 if (!reg_node)
                     return nullptr;
                 
-                auto *new_handle = alloc<RamFsRegularHandle>(1, reg_node, flags);
-                new_handle->offset = offset;
-                return new_handle;
+                return alloc<RamFsRegularHandle>(1, reg_node, flags);
             }
 
-            ssize_t read(uint8_t *buf, size_t size) override
+            ssize_t pread(uint8_t *buf, size_t size, int64_t pos) override
             {
                 auto *reg_node = get_node();
                 if (!reg_node)
                     return -1;
-                if (offset >= reg_node->size)
+                if (pos >= reg_node->size)
                 {
                     error = H_EINVAL;
                     return 0;
                 }
-                if (offset + (int64_t)size > reg_node->size)
-                    size = reg_node->size - offset;
+                if (pos + (int64_t)size > reg_node->size)
+                    size = reg_node->size - pos;
                 if (size == 0)
                     return 0;
                 
-                for (uint64_t addr = offset; addr < (uint64_t)offset + size; ++addr)
+                for (uint64_t addr = pos; addr < (uint64_t)pos + size; ++addr)
                 {
-                    if (reg_node->data.memcpy(buf + (addr - offset), addr, 1) < 0)
+                    if (reg_node->data.memcpy(buf + (addr - pos), addr, 1) < 0)
                     {
                         error = H_EIO;
                         return -1;
                     }
                 }
-                offset += size;
                 return size;
             }
 
-            ssize_t write(const uint8_t *buf, size_t size) override
+            ssize_t pwrite(const uint8_t *buf, size_t size, int64_t pos) override
             {
                 auto *reg_node = get_node();
                 if (!reg_node)
@@ -395,74 +392,20 @@ namespace Hamster
                     seek(0, H_SEEK_END);
                 
                 // See: the comment on the seek function
-                if (offset > reg_node->size && reg_node->data.memset_alloc(reg_node->size, 0, offset - reg_node->size) < 0)
+                if (pos > reg_node->size && reg_node->data.memset_alloc(reg_node->size, 0, pos - reg_node->size) < 0)
                 {
                     error = H_EIO;
                     return -1;
                 }
                 
-                if (reg_node->data.memcpy_alloc(offset, buf, size) < 0)
+                if (reg_node->data.memcpy_alloc(pos, buf, size) < 0)
                 {
                     error = H_EIO;
                     return -1;
                 }
-                offset += size;
-                reg_node->size = std::max(reg_node->size, offset);
+                pos += size;
+                reg_node->size = std::max(reg_node->size, pos);
                 return size;
-            }
-
-            int64_t seek(int64_t offset, int whence) override
-            {
-                auto *reg_node = get_node();
-                if (!reg_node)
-                    return -1;
-                
-                /*
-                Note that this should not check for seeking past the end of the file, as POSIX
-                defines:
-                    The lseek() function shall allow the file offset to be set beyond the end 
-                    of the existing data in the file. If data is later written at this point, 
-                    subsequent reads of data in the gap shall return bytes with the value 0 
-                    until data is actually written into the gap.
-                */
-
-                switch (whence)
-                {
-                case H_SEEK_SET:
-                    if (offset < 0)
-                    {
-                        error = H_EINVAL;
-                        return -1;
-                    }
-                    this->offset = offset;
-                    break;
-                case H_SEEK_CUR:
-                    if (this->offset + offset < 0)
-                    {
-                        error = H_EINVAL;
-                        return -1;
-                    }
-                    this->offset += offset;
-                    break;
-                case H_SEEK_END:
-                    if (reg_node->size + offset < 0)
-                    {
-                        error = H_EINVAL;
-                        return -1;
-                    }
-                    this->offset = reg_node->size + offset;
-                    break;
-                default:
-                    error = H_EINVAL;
-                    return -1;
-                }
-
-                return this->offset;
-            }
-
-            int64_t tell() override
-            {
-                return seek(0, H_SEEK_CUR);
             }
 
             int truncate(int64_t size) override
@@ -506,7 +449,6 @@ namespace Hamster
             }
 
         private:
-            int64_t offset;
 
             RamFsRegularNode *get_node()
             {
@@ -652,7 +594,7 @@ namespace Hamster
         {
         public:
             RamFsDirectoryHandle(RamFsDirectoryNode *node, int flags)
-                : RamFsNodeHandle(node, flags), offset(0)
+                : RamFsNodeHandle(node, flags)
             {
             }
 
@@ -676,7 +618,6 @@ namespace Hamster
                     return nullptr;
                 
                 RamFsDirectoryHandle *new_handle = alloc<RamFsDirectoryHandle>(1, dir_node, flags);
-                new_handle->offset = offset;
                 return new_handle;
             }
 
@@ -686,23 +627,9 @@ namespace Hamster
                 if (!dir_node)
                     return nullptr;
                 
-                if (offset < 0)
-                {
-                    error = H_EINVAL;
-                    return nullptr;
-                }
-
-                if (offset >= (int64_t)dir_node->children.size())
-                {
-                    char **empty_list = alloc<char *>(1);
-                    empty_list[0] = nullptr; // Null-terminate the array
-                    return empty_list;
-                }
-
-                count = std::min((uint64_t)count, (uint64_t)dir_node->children.size() - offset);
+                count = std::min((uint64_t)count, (uint64_t)dir_node->children.size());
 
                 auto it = dir_node->children.begin();
-                std::advance(it, offset);
 
                 char **strings = alloc<char *>(count + 1);
                 strings[count] = nullptr; // Null-terminate the array
@@ -714,54 +641,7 @@ namespace Hamster
                     ++it;
                 }
 
-                offset += count;
-
                 return strings;
-            }
-            
-            int64_t seek(int64_t offset, int whence) override
-            {
-                auto *node = get_node();
-                if (!node)
-                    return -1;
-
-                switch (whence)
-                {
-                case H_SEEK_SET:
-                    if (offset < 0)
-                    {
-                        error = H_EINVAL;
-                        return -1;
-                    }
-                    this->offset = offset;
-                    break;
-                case H_SEEK_CUR:
-                    if (this->offset + offset < 0)
-                    {
-                        error = H_EINVAL;
-                        return -1;
-                    }
-                    this->offset += offset;
-                    break;
-                case H_SEEK_END:
-                    if ((int64_t)node->children.size() + offset < 0)
-                    {
-                        error = H_EINVAL;
-                        return -1;
-                    }
-                    this->offset = node->children.size() + offset;
-                    break;
-                default:
-                    error = H_EINVAL;
-                    return -1;
-                }
-
-                return this->offset;
-            }
-
-            int64_t tell() override
-            {
-                return this->offset;
             }
 
             BaseFile *get(const char *name, int flags, int mode) override
@@ -1046,8 +926,6 @@ namespace Hamster
                 return 0;
             }
         private:
-            int64_t offset;    
-
             RamFsDirectoryNode *get_node()
             {
                 if (!node)

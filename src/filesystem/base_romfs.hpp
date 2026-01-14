@@ -118,23 +118,18 @@ namespace Hamster
             int chown(int uid, int gid) override { return RomFsFile::chown(uid, gid); }
             int set_flags(int flags) override { return RomFsFile::set_flags(flags); }
 
-            ssize_t read(uint8_t *buf, size_t size) override;
-            ssize_t write(const uint8_t *buf, size_t size) override
+            ssize_t pread(uint8_t *buf, size_t size, int64_t pos) override;
+            ssize_t pwrite(const uint8_t *buf, size_t size, int64_t pos) override
             {
                 return error_rofs<ssize_t>();
             }
 
-            int64_t seek(int64_t offset, int whence) override;
-            int64_t tell() override { return offset; }
             int truncate(int64_t length) override
             {
                 return error_rofs();
             }
 
             int64_t size() override;
-
-        private:
-            uint32_t offset = 0;
         };
 
         class RomFsSpecialFile : public BaseSpecialFile, public RomFsFile
@@ -199,8 +194,6 @@ namespace Hamster
             int set_flags(int flags) override { return RomFsFile::set_flags(flags); }
 
             char *const *list(size_t count) override;
-            int64_t seek(int64_t offset, int whence) override;
-            int64_t tell() override { return offset; }
             BaseFile *get(const char *name, int flags, int mode = 0) override;
 
             BaseRegularFile *mkfile(const char *name, int flags, int mode) override
@@ -232,9 +225,6 @@ namespace Hamster
             {
                 return error_rofs();
             }
-
-        private:
-            uint8_t offset = 0;
         };
 
     public:
@@ -301,56 +291,14 @@ namespace Hamster
     }
 
     template <class Backend>
-    ssize_t BaseRomFs<Backend>::RomFsRegularFile::read(uint8_t *buf, size_t size)
+    ssize_t BaseRomFs<Backend>::RomFsRegularFile::pread(uint8_t *buf, size_t size, int64_t pos)
     {
-        if (offset >= this->file_struct.size)
+        if (pos >= this->file_struct.size)
             return 0;
 
-        if (size + offset > this->file_struct.size)
-            size = this->file_struct.size - offset;
-
-        ssize_t read = this->filesystem->read(this->filedata_loc + offset, buf, size);
-        if (read < 0)
-            return read;
-
-        offset += read;
-        return read;
-    }
-
-    template <class Backend>
-    int64_t BaseRomFs<Backend>::RomFsRegularFile::seek(int64_t offset, int whence)
-    {
-        switch (whence)
-        {
-        case H_SEEK_SET:
-            if (offset < 0 || offset > 0xFFFFFFFF)
-            {
-                error = H_EINVAL;
-                return -1;
-            }
-            this->offset = offset;
-            break;
-        case H_SEEK_CUR:
-            if (this->offset + offset < 0 || this->offset + offset > 0xFFFFFFFF)
-            {
-                error = H_EINVAL;
-                return -1;
-            }
-            this->offset += offset;
-            break;
-        case H_SEEK_END:
-            if (this->file_struct.size + offset < 0 || this->file_struct.size + offset > 0xFFFFFFFF)
-            {
-                error = H_EINVAL;
-                return -1;
-            }
-            this->offset = this->file_struct.size + offset;
-            break;
-        default:
-            error = H_EINVAL;
-            return -1;
-        }
-        return this->offset;
+        if (size + pos > this->file_struct.size)
+            size = this->file_struct.size - pos;
+        return this->filesystem->read(this->filedata_loc + pos, buf, size);
     }
 
     template <class Backend>
@@ -386,7 +334,6 @@ namespace Hamster
     template <class Backend>
     char *const *BaseRomFs<Backend>::RomFsDirectory::list(size_t count)
     {
-        uint8_t to_skip = offset;
         Vector<char *> names;
         
         romfs_struct_file entry;
@@ -396,12 +343,6 @@ namespace Hamster
         {
             this->filesystem->read_file(next_loc, &entry, &name);
             next_loc = entry.next_file();
-
-            if (to_skip > 0)
-            {
-                --to_skip;
-                continue;
-            }
 
             count--;
             char *name_str = alloc<char>(name.size() + 1);
@@ -414,42 +355,6 @@ namespace Hamster
         memcpy(result, names.data(), names.size() * sizeof(char *));
 
         return result;
-    }
-
-    template <class Backend>
-    int64_t BaseRomFs<Backend>::RomFsDirectory::seek(int64_t offset, int whence)
-    {
-        switch (whence)
-        {
-        case H_SEEK_SET:
-            if (offset < 0 || offset > 0xFF)
-            {
-                error = H_EINVAL;
-                return -1;
-            }
-            this->offset = offset;
-            break;
-        case H_SEEK_CUR:
-            if (this->offset + offset < 0 || this->offset + offset > 0xFF)
-            {
-                error = H_EINVAL;
-                return -1;
-            }
-            this->offset += offset;
-            break;
-        case H_SEEK_END:
-            if (this->file_struct.size + offset < 0 || this->file_struct.size + offset > 0xFF)
-            {
-                error = H_EINVAL;
-                return -1;
-            }
-            this->offset = this->file_struct.size + offset;
-            break;
-        default:
-            error = H_EINVAL;
-            return -1;
-        }
-        return this->offset;
     }
 
     template <class Backend>

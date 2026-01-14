@@ -785,9 +785,6 @@ namespace Hamster
             }
             return ((BaseBlockDeviceHandle *)handle)->seek(offset, whence);
         }
-        case FileType::Directory:
-            // Seeking in directories changes the offset for list()
-            return ((BaseDirectory *)file)->seek(offset, whence);
         default:
             error = H_ESPIPE;
             return -1;
@@ -804,8 +801,6 @@ namespace Hamster
         {
         case FileType::Regular:
             return ((BaseRegularFile *)file)->tell();
-        case FileType::Directory:
-            return ((BaseDirectory *)file)->tell();
         case FileType::Special:
         {
             auto handle = get_special_handle((BaseSpecialFile *)file);
@@ -819,7 +814,7 @@ namespace Hamster
             return ((BaseBlockDeviceHandle *)handle)->tell();
         }
         default:
-            error = H_EISDIR;
+            error = H_ESPIPE;
             return -1;
         }
     }

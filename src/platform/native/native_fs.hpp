@@ -252,9 +252,9 @@ namespace Hamster
         int chown(int uid, int gid) override { return NativeFileHandle::chown(uid, gid); }
         int set_flags(int flags) override { return NativeFileHandle::set_flags(flags); }
 
-        ssize_t read(uint8_t *buf, size_t size) override
+        ssize_t pread(uint8_t *buf, size_t size, int64_t offset) override
         {
-            ssize_t ret = ::read(fd, buf, size);
+            ssize_t ret = ::pread(fd, buf, size, offset);
             if (ret < 0)
             {
                 swap_error();
@@ -263,31 +263,9 @@ namespace Hamster
             return ret;
         }
 
-        ssize_t write(const uint8_t *buf, size_t size) override
+        ssize_t pwrite(const uint8_t *buf, size_t size, int64_t offset) override
         {
-            ssize_t ret = ::write(fd, buf, size);
-            if (ret < 0)
-            {
-                swap_error();
-                return -1;
-            }
-            return ret;
-        }
-
-        int64_t seek(int64_t offset, int whence) override
-        {
-            off_t ret = lseek(fd, offset, whence);
-            if (ret < 0)
-            {
-                swap_error();
-                return -1;
-            }
-            return ret;
-        }
-
-        int64_t tell() override
-        {
-            off_t ret = lseek(fd, 0, SEEK_CUR);
+            ssize_t ret = ::pwrite(fd, buf, size, offset);
             if (ret < 0)
             {
                 swap_error();
@@ -460,12 +438,6 @@ namespace Hamster
             std::queue<char *> entries;
             struct dirent *entry;
 
-            // Go to position in directory
-            for (int64_t i = 0; i < pos && (entry = readdir(dir)) != nullptr; ++i)
-            {
-                // Just read entries until we reach the desired position
-            }
-
             while ((entry = readdir(dir)) != nullptr)
             {
                 if (count == 0)
@@ -476,7 +448,6 @@ namespace Hamster
                 strcpy(name_copy, name);
                 entries.push(name_copy);
 
-                ++pos;
                 --count;
             }
 
@@ -493,42 +464,6 @@ namespace Hamster
             }
 
             return result;
-        }
-
-        int64_t seek(int64_t offset, int whence) override
-        {
-            switch (whence)
-            {
-            case H_SEEK_SET:
-                if (offset < 0)
-                {
-                    error = H_EINVAL;
-                    return -1; // Invalid offset
-                }
-                pos = offset;
-                break;
-            case H_SEEK_CUR:
-                if (pos + offset < 0)
-                {
-                    error = H_EINVAL;
-                    return -1; // Invalid offset
-                }
-                pos += offset;
-                break;
-            case H_SEEK_END:
-                error = H_ENOTSUP;
-                return -1; // Not supported for directories
-            default:
-                error = H_EINVAL;
-                return -1; // Invalid whence
-            }
-
-            return pos;
-        }
-
-        int64_t tell() override
-        {
-            return pos;
         }
 
         BaseFile *get(const char *name, int flags, int mode) override
@@ -769,8 +704,6 @@ namespace Hamster
             swap_error();
             return -1;
         }
-    private:
-        off_t pos = 0;
     };
 
     class NativeFilesystem : public BaseFilesystem

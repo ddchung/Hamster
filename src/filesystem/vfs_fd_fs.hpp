@@ -40,8 +40,6 @@ namespace Hamster
 
 
             char *const *list(size_t count) override { error = H_EPERM; return nullptr; }
-            int64_t seek(int64_t offset, int whence) override { error = H_EPERM; return -1; }
-            int64_t tell() override { error = H_EPERM; return -1; }
             
             BaseFile *get(const char *name, int flags, int mode = 0) override
             {
