@@ -435,6 +435,8 @@ namespace Hamster
 
     int32_t sys_getrandom(Task &task, uint32_t buf_loc, uint32_t size, uint32_t flags)
     {
+        if (task.mem_is_mapped(buf_loc, size) != 1)
+            return -H_EFAULT;
         // Flags aren't used
         (void)flags;
         for (uint32_t it = buf_loc; it < buf_loc + size; ++it)

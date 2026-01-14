@@ -95,6 +95,8 @@ namespace Hamster
 
     int MemorySpace::is_mapped(uint32_t loc, uint32_t size) const
     {
+        if ((uint64_t)loc + size > UINT32_MAX)
+            return 0;
         uint32_t end = ROUND_UP_PAGE(loc + size) >> HAMSTER_PAGE_SIZE_BITS;
         loc >>= HAMSTER_PAGE_SIZE_BITS;
 

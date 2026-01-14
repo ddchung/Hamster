@@ -121,6 +121,7 @@ namespace Hamster
     uint32_t PageManager::copy(uint32_t id)
     {
         PageEntry *entry = page_table[id];
+        assert(entry->refcount < 65535);
         entry->refcount++;
 
         // Find a new id

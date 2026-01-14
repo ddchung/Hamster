@@ -32,7 +32,7 @@ namespace Hamster
             int64_t offset;
             uint8_t *data;
             FileMappingFD *fd;
-            uint32_t refcount : 4;
+            uint32_t refcount : 16;
             uint32_t swapped : 1; // Note: a lazy-loaded file mapping is considered swapped
             uint32_t dirty : 1;
             uint32_t perms : 3;
