@@ -145,11 +145,25 @@ namespace Hamster
 
     int Task::chroot(const char *path)
     {
+        int dirfd = open_rel_fd(H_AT_FDCWD, path);
+        if (dirfd < 0)
+            return -1;
+        int res = accessat(dirfd, path, PERM_EXEC, 0);
+        vfs.close(dirfd);
+        if (res < 0)
+            return -1;
         return process->get_fs_info()->chroot(path);
     }
 
     int Task::chdir(const char *path)
     {
+        int dirfd = open_rel_fd(H_AT_FDCWD, path);
+        if (dirfd < 0)
+            return -1;
+        int res = accessat(dirfd, path, PERM_EXEC, 0);
+        vfs.close(dirfd);
+        if (res < 0)
+            return -1;
         return process->get_fs_info()->chdir(path);
     }
 
