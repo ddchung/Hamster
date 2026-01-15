@@ -16,6 +16,7 @@
 #include <cstring>
 #include <errno.h>
 #include <limits.h>
+#include <algorithm>
 
 #define HAMSTER_NATIVE_FS_ROOT "rootfs"
 
@@ -435,7 +436,7 @@ namespace Hamster
 
             rewinddir(dir); // Reset the directory stream
 
-            std::queue<char *> entries;
+            std::vector<char *> entries;
             struct dirent *entry;
 
             while ((entry = readdir(dir)) != nullptr)
@@ -446,23 +447,22 @@ namespace Hamster
                 size_t len = strlen(name);
                 char *name_copy = alloc<char>(len + 1);
                 strcpy(name_copy, name);
-                entries.push(name_copy);
+                entries.push_back(name_copy);
 
                 --count;
             }
 
             closedir(dir);
 
+            // Sort entries alphabetically to maintain consistent outputs
+            // when called multiple times
+            std::sort(entries.begin(), entries.end(), [](const char *a, const char *b) {
+                return std::strcmp(a, b) < 0;
+            });
+
             char **result = alloc<char *>(entries.size() + 1);
             result[entries.size()] = nullptr; // Null-terminate the array
-
-            size_t i = 0;
-            while (!entries.empty())
-            {
-                result[i++] = entries.front();
-                entries.pop();
-            }
-
+            memcpy(result, entries.data(), entries.size() * sizeof(char *));
             return result;
         }
 

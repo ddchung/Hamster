@@ -279,6 +279,8 @@ namespace Hamster
          * @return A newly allocated array of newly allocated strings, or on error, it returns nullptr and sets `error`
          * @note Be sure to free both dimensions
          * @note It may return an array with less than `count` entries, if there are not enough files in the directory
+         * @note This is a stable listing, which means that the output will be the same across multiple calls, unless the directory is modified
+         *       If in doubt, sort the entries
          */
         virtual char * const *list(size_t count = SIZE_MAX) = 0;
 

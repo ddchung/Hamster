@@ -238,20 +238,22 @@ namespace Hamster
         bool ok = true;
         uint32_t bytes_read = 0;
         int64_t to_skip = file->tell();
-        int64_t off = to_skip;
+        int64_t off = 0;
 
         for (const char * const *entry = list; *entry != nullptr; ++entry)
         {
             const char *name = *entry;
-            size_t name_len = strlen(name);
+            const size_t name_len = strlen(name);
+            const size_t entry_size = sizeof(sys_dirent) + name_len;
 
-            if (to_skip > 0)
+            if (off < to_skip)
             {
-                to_skip -= sizeof(sys_dirent) + name_len;
+                off += entry_size;
                 continue;
             }
+            off += entry_size;
 
-            if (bytes_read + sizeof(sys_dirent) + name_len > count)
+            if (bytes_read + entry_size > count)
             {
                 // End of buffer
                 break;
@@ -269,12 +271,12 @@ namespace Hamster
             // we need more space than sizeof(sys_dirent)
 
             // sys_dirent's name[1] accounts for the null terminator, so we only add name_len
-            sys_dirent *dirent = (sys_dirent *)_malloc(sizeof(sys_dirent) + name_len);
+            sys_dirent *dirent = (sys_dirent *)_malloc(entry_size);
             assert(dirent != nullptr);
 
             dirent->ino = st.ino;
-            dirent->offset = off + bytes_read;
-            dirent->reclen = sizeof(sys_dirent) + name_len;
+            dirent->offset = off;
+            dirent->reclen = entry_size;
 
             switch (st.mode & STAT_IFMT)
             {
@@ -304,7 +306,7 @@ namespace Hamster
             strcpy(dirent->name, name); // Copy the name into the dirent
 
             // Write the dirent to the user space buffer
-            if (task.memcpy(dirent_loc + bytes_read, dirent, sizeof(sys_dirent) + name_len) < 0)
+            if (task.memcpy(dirent_loc + bytes_read, dirent, entry_size) < 0)
             {
                 _free(dirent);
                 error = H_EFAULT;
@@ -313,7 +315,7 @@ namespace Hamster
             }
 
             _free(dirent);
-            bytes_read += sizeof(sys_dirent) + name_len;
+            bytes_read += entry_size;
         }
 
         // Free the list of entries
@@ -329,7 +331,7 @@ namespace Hamster
         }
 
         // Update file position
-        file->seek(bytes_read, H_SEEK_CUR);
+        file->seek(off, H_SEEK_SET);
 
         return bytes_read; // Return the number of bytes read
     }
