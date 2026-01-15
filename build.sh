@@ -8,6 +8,14 @@ if [[ -z "$command" ]]; then
     exit 1
 fi
 
+CFLAGS="-DNTRACE"
+
+if [[ "$command" == "debug" ]]; then
+    echo "Enabling Hamster tracing"
+    CFLAGS=""
+    command="build"
+fi
+
 if [[ "$command" == "build" ]]; then
     echo "Building the Hamster project..."
 
@@ -53,7 +61,7 @@ if [[ "$command" == "build" ]]; then
         mkdir -p "$(dirname "$output_file")"
 
         g++ -std=c++20 -Wall -Wextra -Wno-maybe-musttail-local-addr -Wno-unused-parameter -Wno-unused-function -Ofast -march=native -mtune=native -funroll-loops \
-            -DNDEBUG -Isrc -Iinclude -c "$file" -o "$output_file" &
+            -DNDEBUG $CFLAGS -Isrc -Iinclude -c "$file" -o "$output_file" &
     done
 
     wait

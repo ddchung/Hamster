@@ -5,7 +5,9 @@
 #include <errno/errno.h>
 
 // Change this to 1 to enable native filesystem support on Linux
-#if defined(__linux__) && 1
+#define LINUX_NATIVE_FS 0
+
+#if defined(__linux__) && LINUX_NATIVE_FS
 
 #include <filesystem/base_file.hpp>
 #include <memory/allocator.hpp>
