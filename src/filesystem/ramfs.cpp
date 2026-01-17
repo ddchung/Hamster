@@ -57,9 +57,18 @@ namespace Hamster
         public:
             FileType type() const override { return FileType::Special; }
 
-            using RamFsNode::RamFsNode;
+            RamFsSpecialNode(int mode, int uid, int gid, BaseSpecialDriver *driver)
+                : RamFsNode(mode, uid, gid), driver(driver)
+            {
+            }
 
-            DeviceID device_id;
+            ~RamFsSpecialNode()
+            {
+                dealloc(driver);
+            }
+
+            using RamFsNode::RamFsNode;
+            BaseSpecialDriver * const driver;
         };
 
         class RamFsSymlinkNode : public RamFsNode
@@ -214,8 +223,7 @@ namespace Hamster
                 }
                 else if (node->type() == FileType::Special)
                 {
-                    auto *special_node = static_cast<RamFsSpecialNode *>(node);
-                    buf->rdev = special_node->device_id.major << 20 | (special_node->device_id.minor & 0xFFFFF);
+                    buf->rdev = ((RamFsSpecialNode *)node)->driver->get_device_id();
                 }
                 else
                 {
@@ -469,8 +477,8 @@ namespace Hamster
         class RamFsSpecialHandle : public BaseSpecialFile, public RamFsNodeHandle
         {
         public:
-            RamFsSpecialHandle(RamFsSpecialNode *node, int flags)
-                : RamFsNodeHandle(node, flags)
+            RamFsSpecialHandle(RamFsSpecialNode *node, BaseSpecialDriverHandle *handle,  int flags)
+                : BaseSpecialFile(handle), RamFsNodeHandle(node, flags)
             {
             }
 
@@ -493,16 +501,7 @@ namespace Hamster
                 if (!special_node)
                     return nullptr;
                 
-                return alloc<RamFsSpecialHandle>(1, special_node, flags);
-            }
-
-            DeviceID get_device_id() override
-            {
-                auto *special_node = get_node();
-                if (!special_node)
-                    return {0, 0};
-
-                return special_node->device_id;
+                return alloc<RamFsSpecialHandle>(1, special_node, get_handle()->clone(), flags);
             }
 
         private:
@@ -678,7 +677,13 @@ namespace Hamster
                     case FileType::Regular:
                         return alloc<RamFsRegularHandle>(1, static_cast<RamFsRegularNode *>(node), flags);
                     case FileType::Special:
-                        return alloc<RamFsSpecialHandle>(1, static_cast<RamFsSpecialNode *>(node), flags);
+                    {
+                        auto *special_node = (RamFsSpecialNode *)node;
+                        BaseSpecialDriverHandle *handle = special_node->driver->create_handle(flags);
+                        if (!handle)
+                            return nullptr;
+                        return alloc<RamFsSpecialHandle>(1, special_node, handle, flags);
+                    }
                     case FileType::Symlink:
                         return alloc<RamFsSymlinkHandle>(1, static_cast<RamFsSymlinkNode *>(node), flags);
                     case FileType::Directory:
@@ -791,14 +796,18 @@ namespace Hamster
                 return alloc<RamFsSymlinkHandle>(1, new_node, flags);
             }
 
-            BaseSpecialFile *mksfile(const char *name, int flags, DeviceID devid, int mode) override
+            BaseSpecialFile *mksfile(const char *name, int flags, BaseSpecialDriver *driver, int mode) override
             {
                 auto *dir_node = get_node();
                 if (!dir_node)
+                {
+                    dealloc(driver);
                     return nullptr;
+                }
 
                 if (strchr(name, '/'))
                 {
+                    dealloc(driver);
                     error = H_EINVAL;
                     return nullptr;
                 }
@@ -806,16 +815,20 @@ namespace Hamster
                 auto it = dir_node->children.find(name);
                 if (it != dir_node->children.end())
                 {
+                    dealloc(driver);
                     error = H_EEXIST;
                     return nullptr;
                 }
 
-                auto *new_node = alloc<RamFsSpecialNode>(1, mode, 0, 0);
+                auto *new_node = alloc<RamFsSpecialNode>(1, mode, 0, 0, driver);
                 new_node->filesystem = dir_node->filesystem;
-                new_node->device_id = devid;
                 dir_node->children[name] = new_node;
 
-                return alloc<RamFsSpecialHandle>(1, new_node, flags);
+                auto *handle = driver->create_handle(flags);
+                if (!handle)
+                    return nullptr;
+
+                return alloc<RamFsSpecialHandle>(1, new_node, handle, flags);
             }
 
             int link(BaseFile *file, const char *name) override

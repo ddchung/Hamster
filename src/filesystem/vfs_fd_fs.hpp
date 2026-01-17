@@ -75,7 +75,6 @@ namespace Hamster
             BaseRegularFile *mkfile(const char *name, int flags, int mode) override { error = H_EROFS; return nullptr; }
             BaseDirectory *mkdir(const char *name, int flags, int mode) override { error = H_EROFS; return nullptr; }
             BaseSymlink *mksym(const char *name, const char *target) override { error = H_EROFS; return nullptr; }
-            BaseSpecialFile *mksfile(const char *name, int flags, DeviceID id, int mode) { error = H_EROFS; return nullptr; }
             int link(BaseFile *file, const char *name) override { error = H_EROFS; return -1; }
             int remove(const char *name) override { error = H_EROFS; return -1; }
         private:

@@ -306,44 +306,6 @@ namespace Hamster
         }
     };
 
-    class NativeSpecialFileHandle : public BaseSpecialFile, public NativeFileHandle
-    {
-    public:
-        using NativeFileHandle::NativeFileHandle;
-
-        BaseFile *clone() override
-        {
-            int new_fd = dup(fd);
-            if (new_fd < 0)
-            {
-                swap_error();
-                return nullptr;
-            }
-            return alloc<NativeSpecialFileHandle>(1, new_fd, filesystem);
-        }
-
-        BaseFilesystem *get_filesystem() override { return NativeFileHandle::get_filesystem(); }
-        int get_id() const override { return NativeFileHandle::get_id(); }
-        int stat(sys_stat *buf) override { return NativeFileHandle::stat(buf); }
-        int get_mode() override { return NativeFileHandle::get_mode(); }
-        int get_flags() override { return NativeFileHandle::get_flags(); }
-        int get_uid() override { return NativeFileHandle::get_uid(); }
-        int get_gid() override { return NativeFileHandle::get_gid(); }
-        int chmod(int mode) override { return NativeFileHandle::chmod(mode); }
-        int chown(int uid, int gid) override { return NativeFileHandle::chown(uid, gid); }
-        int set_flags(int flags) override { return NativeFileHandle::set_flags(flags); }
-
-        DeviceID get_device_id() override
-        {
-            sys_stat st = {};
-            if (stat(&st) < 0)
-            {
-                return {0, 0}; // Return invalid device ID on error
-            }
-            return {static_cast<uint32_t>(st.rdev >> 20), static_cast<uint32_t>(st.rdev & 0xFFFFF)};
-        }
-    };
-
     class NativeSymlinkHandle : public BaseSymlink, public NativeFileHandle
     {
     public:
@@ -547,14 +509,10 @@ namespace Hamster
             {
                 file = alloc<NativeSymlinkHandle>(1, new_fd, filesystem);
             }
-            else if (S_ISCHR(st.st_mode) || S_ISBLK(st.st_mode))
-            {
-                file = alloc<NativeSpecialFileHandle>(1, new_fd, filesystem);
-            }
             else
             {
                 close(new_fd);
-                error = H_ENOSYS; // Unsupported file type
+                error = H_ENOTSUP; // Unsupported file type
                 return nullptr;
             }
 
@@ -629,25 +587,6 @@ namespace Hamster
             return alloc<NativeSymlinkHandle>(1, new_fd, filesystem);
         }
 
-        BaseSpecialFile *mksfile(const char *name, int flags, DeviceID device_id, int mode) override
-        {
-            if (fd < 0)
-            {
-                error = H_EBADF;
-                return nullptr;
-            }
-
-            // Create a special file (character or block device)
-            int new_fd = mknodat(fd, name, mode, device_id.major << 20 | (device_id.minor & 0xFFFFF));
-            if (new_fd < 0)
-            {
-                swap_error();
-                return nullptr;
-            }
-
-            return alloc<NativeSpecialFileHandle>(1, new_fd, filesystem);
-        }
-
         int link(BaseFile *file, const char *name) override
         {
             if (fd < 0)
@@ -673,9 +612,6 @@ namespace Hamster
                 break;
             case FileType::Symlink:
                 file_fd = ((NativeSymlinkHandle *)file)->get_fd();
-                break;
-            case FileType::Special:
-                file_fd = ((NativeSpecialFileHandle *)file)->get_fd();
                 break;
             default:
                 error = H_EBADF; // Invalid file type for linking

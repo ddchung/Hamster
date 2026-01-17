@@ -66,6 +66,7 @@ namespace Hamster
             Handle& operator=(Handle&&) = default;
             ~Handle() = default;
 
+            Handle *clone() override { return alloc<Handle>(1, flags); }
             ssize_t write(const uint8_t *buffer, size_t size) override;
             ssize_t read(uint8_t *buffer, size_t size) override;
             int get_flags() override;

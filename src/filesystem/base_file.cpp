@@ -1,4 +1,5 @@
 #include <filesystem/base_file.hpp>
+#include <memory/allocator.hpp>
 #include <errno/errno.h>
 
 namespace Hamster
@@ -55,6 +56,23 @@ namespace Hamster
 
         position = new_pos;
         return position;
+    }
+
+    BaseSpecialFile::BaseSpecialFile(BaseSpecialDriverHandle *handle)
+        : handle(handle)
+    {
+    }
+
+    BaseSpecialFile::~BaseSpecialFile()
+    {
+        dealloc(handle);
+        handle = nullptr;
+    }
+
+    BaseSpecialFile *BaseDirectory::mksfile(const char *name, int flags, BaseSpecialDriver *driver, int mode)
+    {
+        error = H_ENOTSUP;
+        return nullptr;
     }
 } // namespace Hamster
 

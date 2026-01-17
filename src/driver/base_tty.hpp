@@ -4,7 +4,6 @@
 #pragma once
 
 #include <filesystem/base_file.hpp>
-#include <filesystem/device_manager.hpp>
 #include <memory/allocator.hpp>
 #include <memory/stl_sequential.hpp>
 #include <kscheduler/kscheduler.hpp>
@@ -45,6 +44,7 @@ namespace Hamster
 
         ~BaseTTYHandle() override = default;
 
+        BaseTTYHandle *clone() override { return alloc<BaseTTYHandle>(1, driver, flags); }
         ssize_t write(const uint8_t *buf, size_t size) override;
         ssize_t read(uint8_t *buf, size_t size) override;
         int get_flags() override { return flags; }

@@ -639,4 +639,6 @@ namespace Hamster
     inline bool is_wait_continued(uint16_t status) { return status == 0xffff; }
     inline bool is_wait_terminated(uint16_t status) { return (status & 0x7f) != 0 && (status & 0x7f) != 0x7f; }
     inline bool is_wait_terminated_coredump(uint16_t status) { return is_wait_terminated(status) && (status & 0x80) != 0; }
+
+    inline uint32_t make_device_id(uint16_t major, uint32_t minor) { return (major << 20) | (minor & 0xFFFFF); }
 } // namespace Hamster

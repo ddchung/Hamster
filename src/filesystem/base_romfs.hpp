@@ -132,26 +132,6 @@ namespace Hamster
             int64_t size() override;
         };
 
-        class RomFsSpecialFile : public BaseSpecialFile, public RomFsFile
-        {
-        public:
-            using RomFsFile::RomFsFile;
-
-            BaseFile *clone() override { return alloc<RomFsSpecialFile>(1, *this); }
-            BaseFilesystem *get_filesystem() override { return RomFsFile::get_filesystem(); }
-            int get_id() const override { return RomFsFile::get_id(); }
-            int stat(sys_stat *buf) override { return RomFsFile::stat(buf); }
-            int get_mode() override { return RomFsFile::get_mode(); }
-            int get_flags() override { return RomFsFile::get_flags(); }
-            int get_uid() override { return RomFsFile::get_uid(); }
-            int get_gid() override { return RomFsFile::get_gid(); }
-            int chmod(int mode) override { return RomFsFile::chmod(mode); }
-            int chown(int uid, int gid) override { return RomFsFile::chown(uid, gid); }
-            int set_flags(int flags) override { return RomFsFile::set_flags(flags); }
-
-            DeviceID get_device_id() override;
-        };
-
         class RomFsSymlink : public BaseSymlink, public RomFsFile
         {
         public:
@@ -209,11 +189,6 @@ namespace Hamster
             BaseSymlink *mksym(const char *name, const char *target) override
             {
                 return error_rofs<BaseSymlink *, nullptr>();
-            }
-
-            BaseSpecialFile *mksfile(const char *name, int flags, DeviceID id, int mode) override
-            {
-                return error_rofs<BaseSpecialFile *, nullptr>();
             }
 
             int link(BaseFile *file, const char *name) override
@@ -305,15 +280,6 @@ namespace Hamster
     int64_t BaseRomFs<Backend>::RomFsRegularFile::size()
     {
         return this->file_struct.size;
-    }
-
-    template <class Backend>
-    DeviceID BaseRomFs<Backend>::RomFsSpecialFile::get_device_id()
-    {
-        DeviceID device_id;
-        device_id.major = (this->file_struct.info >> 16) & 0xFFFF;
-        device_id.minor = this->file_struct.info & 0xFFFF;
-        return device_id;
     }
 
     template <class Backend>
@@ -451,7 +417,8 @@ namespace Hamster
         case romfs_type_char:
         case romfs_type_sock:
         case romfs_type_fifo:
-            return alloc<RomFsSpecialFile>(1, this, loc, flags);
+            error = H_ENOTSUP;
+            return -1;
         }
 
         __builtin_unreachable();

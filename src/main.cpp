@@ -3,7 +3,6 @@
 #include <elf/elf_loader.hpp>
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
-#include <filesystem/device_manager.hpp>
 #include <filesystem/vfs_fd_fs.hpp>
 #include <memory/allocator.hpp>
 #include <kscheduler/kscheduler.hpp>
@@ -183,17 +182,11 @@ int main()
     log_operation_status("OK");
 
     // Create some devices in /dev/
-    Hamster::device_manager.register_device({1, 3}, Hamster::alloc<Hamster::CharacterDevice<NullDevice>>());
-    Hamster::device_manager.register_device({1, 5}, Hamster::alloc<Hamster::CharacterDevice<ZeroDevice>>());
-    Hamster::device_manager.register_device({1, 7}, Hamster::alloc<Hamster::CharacterDevice<FullDevice>>());
-    Hamster::device_manager.register_device({1, 8}, Hamster::alloc<Hamster::CharacterDevice<RandomDevice>>());
-    Hamster::device_manager.register_device({1, 9}, Hamster::alloc<Hamster::CharacterDevice<RandomDevice>>());
-
-    Hamster::vfs.mknod("/dev/null", {1, 3}, 0666);
-    Hamster::vfs.mknod("/dev/zero", {1, 5}, 0666);
-    Hamster::vfs.mknod("/dev/full", {1, 7}, 0666);
-    Hamster::vfs.mknod("/dev/random", {1, 8}, 0666);
-    Hamster::vfs.mknod("/dev/urandom", {1, 9}, 0666);
+    Hamster::vfs.mknod("/dev/null", Hamster::alloc<Hamster::CharacterDevice<NullDevice>>(), 0666);
+    Hamster::vfs.mknod("/dev/zero", Hamster::alloc<Hamster::CharacterDevice<ZeroDevice>>(), 0666);
+    Hamster::vfs.mknod("/dev/full", Hamster::alloc<Hamster::CharacterDevice<FullDevice>>(), 0666);
+    Hamster::vfs.mknod("/dev/random", Hamster::alloc<Hamster::CharacterDevice<RandomDevice>>(), 0666);
+    Hamster::vfs.mknod("/dev/urandom", Hamster::alloc<Hamster::CharacterDevice<RandomDevice>>(), 0666);
     Hamster::vfs.mkdir("/dev/shm", 0777);
     Hamster::vfs.mkdir("/dev/fd", 0777);
     Hamster::vfs.mount("/dev/shm", Hamster::alloc<Hamster::RamFs>());

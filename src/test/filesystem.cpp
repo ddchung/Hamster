@@ -2,7 +2,6 @@
 
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
-#include <filesystem/device_manager.hpp>
 #include <memory/allocator.hpp>
 #include <memory/stl_sequential.hpp>
 #include <memory/memory_space.hpp>
@@ -148,6 +147,11 @@ void test_filesystem()
     public:
         TestSpecialDriverHandle(Deque<int> &deque, int flags) : deque(deque), flags(flags) {}
 
+        TestSpecialDriverHandle *clone() override
+        {
+            return alloc<TestSpecialDriverHandle>(1, deque, flags);
+        }
+
         ssize_t read(uint8_t *buf, size_t count) override
         {
             if (deque.empty())
@@ -219,9 +223,7 @@ void test_filesystem()
         Deque<int> &deque;
     };
 
-    TestSpecialDriver *driver = alloc<TestSpecialDriver>(1, deque);
-    device_manager.register_device({1, 1}, driver);
-    int special_fd = vfs->mknod(special_path, OPEN_RDWR | OPEN_CREAT, {1, 1}, 0777);
+    int special_fd = vfs->mknod(special_path, OPEN_RDWR | OPEN_CREAT, alloc<TestSpecialDriver>(1, deque), 0777);
     assert(special_fd >= 0);
 
     // Write to special file
@@ -323,7 +325,7 @@ void test_filesystem()
     // first, make the directory for the special file
     assert(vfs->mkdir("/dev", 0755) == 0);
 
-    int sfd = vfs->mknod("/dev/test", OPEN_RDWR | OPEN_CREAT, {1, 1}, 0666);
+    int sfd = vfs->mknod("/dev/test", OPEN_RDWR | OPEN_CREAT, alloc<TestSpecialDriver>(1, deque), 0666);
     assert(sfd >= 0);
     // Try to open with wrong flags
     assert(vfs->open("/dev/test", OPEN_DIRECTORY) < 0);

@@ -55,13 +55,6 @@ namespace Hamster
             return -1;
         }
         auto &file = fds[fd].file;
-        if (file->type() == FileType::Special)
-        {
-            BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
-            BaseSpecialDriverHandle *handle = sp_file->get_handle();
-            dealloc(handle);
-            sp_file->set_handle(nullptr);
-        }
         dealloc(file);
         file = nullptr;
         return 0;
@@ -88,13 +81,6 @@ namespace Hamster
         {
             if (fd.file == nullptr)
                 continue;
-            if (fd.file->type() == FileType::Special)
-            {
-                BaseSpecialFile *sp_file = (BaseSpecialFile *)fd.file;
-                BaseSpecialDriverHandle *handle = sp_file->get_handle();
-                dealloc(handle);
-                sp_file->set_handle(nullptr);
-            }
             dealloc(fd.file);
             fd.file = nullptr;
         }

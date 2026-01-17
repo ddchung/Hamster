@@ -3,7 +3,6 @@
 #include <filesystem/vfs.hpp>
 #include <filesystem/vfs_mounts.hpp>
 #include <filesystem/vfs_fdman.hpp>
-#include <filesystem/device_manager.hpp>
 #include <memory/allocator.hpp>
 #include <memory/stl_sequential.hpp>
 #include <memory/stl_map.hpp>
@@ -12,50 +11,6 @@
 
 namespace Hamster
 {
-    /* Special File Helpers */
-    namespace
-    {
-        int open_special_handle(BaseSpecialFile *file) 
-        {
-            if (!file)
-            {
-                error = H_EINVAL;
-                return -1;
-            }
-
-            dealloc(file->get_handle());
-
-            auto handle = device_manager.create_handle(file->get_device_id(), file->get_flags());
-            if (!handle)
-            {
-                error = H_EIO;
-                return -1;
-            }
-
-            file->set_handle(handle);
-            return 0;
-        }
-
-        BaseSpecialDriverHandle *get_special_handle(BaseSpecialFile *file)
-        {
-            if (!file)
-            {
-                error = H_EINVAL;
-                return nullptr;
-            }
-
-            BaseSpecialDriverHandle *handle = file->get_handle();
-            if (!handle)
-            {
-                if (open_special_handle(file) < 0)
-                    return nullptr;
-                handle = file->get_handle();
-            }
-
-            return handle;
-        }
-    } // namespace
-
     class VFSData
     {
     public:
@@ -309,12 +264,7 @@ namespace Hamster
         if (file->type() == FileType::Special)
         {
             // Get the special file handle
-            BaseSpecialDriverHandle *handle = get_special_handle((BaseSpecialFile *)file);
-            if (!handle)
-            {
-                error = H_EBADF;
-                return -1;
-            }
+            BaseSpecialDriverHandle *handle = ((BaseSpecialFile *)file)->get_handle();
 
             buf->mode &= ~STAT_IFMT; // Clear the file type bits
 
@@ -400,34 +350,26 @@ namespace Hamster
         if (file->type() == FileType::Special)
         {
             // Get the special file handle
-            BaseSpecialDriverHandle *handle = get_special_handle((BaseSpecialFile *)file);
-            if (handle)
+            BaseSpecialDriverHandle *handle = ((BaseSpecialFile *)file)->get_handle();
+            buf->mode &= ~STAT_IFMT; // Clear the file type bits
+
+            switch (handle->special_type())
             {
-                buf->mode &= ~STAT_IFMT; // Clear the file type bits
-
-                switch (handle->special_type())
-                {
-                    case SpecialFileType::CharacterDevice:
-                        buf->mode |= STAT_IFCHR;
-                        break;
-                    case SpecialFileType::BlockDevice:
-                        buf->mode |= STAT_IFBLK;
-                        break;
-                    case SpecialFileType::Socket:
-                        buf->mode |= STAT_IFSOCK;
-                        break;
-                    case SpecialFileType::Fifo:
-                        buf->mode |= STAT_IFIFO;
-                        break;
-                    default:
-                        // Do nothing for other types
-                        break;
-                }
-
-                // we must delete the handle here, because this file isn't owned by
-                // the file descriptor manager, and thus won't have the handle deleted
-                // automatically.
-                dealloc(handle);
+                case SpecialFileType::CharacterDevice:
+                    buf->mode |= STAT_IFCHR;
+                    break;
+                case SpecialFileType::BlockDevice:
+                    buf->mode |= STAT_IFBLK;
+                    break;
+                case SpecialFileType::Socket:
+                    buf->mode |= STAT_IFSOCK;
+                    break;
+                case SpecialFileType::Fifo:
+                    buf->mode |= STAT_IFIFO;
+                    break;
+                default:
+                    // Do nothing for other types
+                    break;
             }
         }
 
@@ -729,10 +671,8 @@ namespace Hamster
             return ((BaseRegularFile *)file)->read((uint8_t*)buf, size);
         case FileType::Special:
         {
-            auto handle = get_special_handle((BaseSpecialFile *)file);
-            if (!handle)
-                return -1;
-            
+            auto handle = ((BaseSpecialFile *)file)->get_handle();
+
             // Automatically call start_read and end_read if not in a multi-read section
             int was_reading = handle->is_reading();
             if (was_reading < 0)
@@ -762,9 +702,7 @@ namespace Hamster
             return ((BaseRegularFile *)file)->write((const uint8_t*)buf, size);
         case FileType::Special:
         {
-            auto handle = get_special_handle((BaseSpecialFile *)file);
-            if (!handle)
-                return -1;
+            auto handle = ((BaseSpecialFile *)file)->get_handle();
             
             // See read()
             int was_writing = handle->is_writing();
@@ -795,9 +733,7 @@ namespace Hamster
             return ((BaseRegularFile *)file)->seek(offset, whence);
         case FileType::Special:
         {
-            auto handle = get_special_handle((BaseSpecialFile *)file);
-            if (!handle)
-                return -1;
+            auto handle = ((BaseSpecialFile *)file)->get_handle();
             if (handle->special_type() != SpecialFileType::BlockDevice)
             {
                 error = H_EISDIR;
@@ -823,9 +759,7 @@ namespace Hamster
             return ((BaseRegularFile *)file)->tell();
         case FileType::Special:
         {
-            auto handle = get_special_handle((BaseSpecialFile *)file);
-            if (!handle)
-                return -1;
+            auto handle = ((BaseSpecialFile *)file)->get_handle();
             if (handle->special_type() != SpecialFileType::BlockDevice)
             {
                 error = H_EISDIR;
@@ -866,9 +800,7 @@ namespace Hamster
             return ((BaseRegularFile *)file)->size();
         case FileType::Special:
         {
-            auto handle = get_special_handle((BaseSpecialFile *)file);
-            if (!handle)
-                return -1;
+            auto handle = ((BaseSpecialFile *)file)->get_handle();
             if (handle->special_type() != SpecialFileType::BlockDevice)
             {
                 error = H_EISDIR;
@@ -1123,70 +1055,44 @@ namespace Hamster
         }
     }
 
-    int VFS::mknod(const char *path, int flags, DeviceID id, int mode)
+    int VFS::mknod(const char *path, int flags, BaseSpecialDriver *driver, int mode)
     {
-        if (!path)
-        {
-            error = H_EINVAL;
+        int root_fd = open("/", OPEN_RDONLY | OPEN_DIRECTORY);
+        if (root_fd < 0)
             return -1;
-        }
-
-        const char *last = strrchr(path, '/');
-        if (!last)
-        {
-            error = H_EINVAL;
-            return -1;
-        }
-
-        String parent_path(path, last - path);
-
-        BaseFile *parent = data->mounts.lopen(parent_path.c_str(), OPEN_RDONLY | OPEN_DIRECTORY, 0);
-        if (!parent)
-        {
-            return -1;
-        }
-
-        assert(parent->type() == FileType::Directory);
-
-        // Create the special file
-        BaseSpecialFile *sfile = ((BaseDirectory *)parent)->mksfile(last + 1, flags, id, mode);
-        dealloc(parent);
-        if (!sfile)
-        {
-            return -1;
-        }
-
-        // Create the handle
-        int fd = data->fd_manager.add_fd(sfile);
-        if (fd < 0)
-        {
-            dealloc(sfile);
-            return -1;
-        }
-
-        return fd;
+        int res = mknodat(root_fd, path, flags, driver, mode);
+        close(root_fd);
+        return res;
     }
 
-    int VFS::mknodat(int dir_fd, const char *path, int flags, DeviceID id, int mode)
+    int VFS::mknodat(int dir_fd, const char *path, int flags, BaseSpecialDriver *driver, int mode)
     {
         if (!path)
         {
+            dealloc(driver);
             error = H_EINVAL;
             return -1;
         }
 
         BaseFile *dir = data->fd_manager.get_fd(dir_fd);
         if (!dir)
+        {
+            dealloc(driver);
             return -1;
+        }
         if (dir->type() != FileType::Directory)
         {
+            dealloc(driver);
             error = H_ENOTDIR;
             return -1;
         }
 
         BaseFile *cloned_file = dir->clone();
         if (!cloned_file)
+        {
+            dealloc(driver);
             return -1;
+        }
         assert(cloned_file->type() == FileType::Directory);
 
         // Create the special file
@@ -1194,6 +1100,7 @@ namespace Hamster
         if (!last)
         {
             error = H_EINVAL;
+            dealloc(driver);
             dealloc(cloned_file);
             return -1;
         }
@@ -1205,7 +1112,7 @@ namespace Hamster
             return -1;
 
         assert(parent->type() == FileType::Directory);
-        auto sfile = ((BaseDirectory *)parent)->mksfile(last + 1, flags, id, mode);
+        auto sfile = ((BaseDirectory *)parent)->mksfile(last + 1, flags, driver, mode);
         dealloc(parent);
 
         // Create the handle
@@ -1264,24 +1171,20 @@ namespace Hamster
         return 0;
     }
 
-    int VFS::mknod(const char *path, DeviceID id, int mode)
+    int VFS::mknod(const char *path, BaseSpecialDriver *driver, int mode)
     {
-        int fd = mknod(path, OPEN_RDONLY, id, mode);
+        int fd = mknod(path, OPEN_RDONLY, driver, mode);
         if (fd < 0)
-        {
             return -1;
-        }
         close(fd);
         return 0;
     }
 
-    int VFS::mknodat(int dir_fd, const char *path, DeviceID id, int mode)
+    int VFS::mknodat(int dir_fd, const char *path, BaseSpecialDriver *driver, int mode)
     {
-        int fd = mknodat(dir_fd, path, OPEN_RDONLY, id, mode);
+        int fd = mknodat(dir_fd, path, OPEN_RDONLY, driver, mode);
         if (fd < 0)
-        {
             return -1;
-        }
         close(fd);
         return 0;
     }
@@ -1298,10 +1201,7 @@ namespace Hamster
             return -1;
         }
         
-        BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
-        auto handle = get_special_handle(sp_file);
-        if (!handle)
-            return -1;
+        auto handle = ((BaseSpecialFile *)file)->get_handle();
         return handle->ioctl(req, arg);
     }
 
@@ -1350,10 +1250,7 @@ namespace Hamster
             return 0;
         }
 
-        BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
-        auto handle = get_special_handle(sp_file);
-        if (!handle)
-            return -1;
+        auto handle = ((BaseSpecialFile *)file)->get_handle();
         
         if (handle->special_type() != SpecialFileType::CharacterDevice)
         {
@@ -1361,21 +1258,6 @@ namespace Hamster
             return 0;
         }
         return ((BaseCharacterDeviceHandle *)handle)->is_tty();
-    }
-
-    DeviceID VFS::get_device_id(int fd)
-    {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
-            return {0, 0};
-        if (file->type() != FileType::Special)
-        {
-            error = H_ENOTTY;
-            return {0, 0};
-        }
-
-        BaseSpecialFile *sp_file = (BaseSpecialFile *)file;
-        return sp_file->get_device_id();
     }
 
     int VFS::is_directory(int fd)
@@ -1396,10 +1278,7 @@ namespace Hamster
         if (file->type() != FileType::Special)
             return 1; // Always allow reading from non-special files
 
-        auto handle = get_special_handle((BaseSpecialFile *)file);
-        if (!handle)
-            return -1;
-
+        auto handle = ((BaseSpecialFile *)file)->get_handle();
         return handle->poll(op);
     }
 
@@ -1471,10 +1350,8 @@ namespace Hamster
         if (file->type() != FileType::Special)
             return size; // Do nothing on non-special files
         
-        auto handle = get_special_handle((BaseSpecialFile *)file);
-        if (!handle)
-            return -1;
-        
+        auto handle = ((BaseSpecialFile *)file)->get_handle();
+
         if (handle->is_reading() > 0)
             // TODO: what to do when already reading?
             return size;
@@ -1491,10 +1368,7 @@ namespace Hamster
         if (file->type() != FileType::Special)
             return 0; // Not reading on non-special files
         
-        auto handle = get_special_handle((BaseSpecialFile *)file);
-        if (!handle)
-            return -1;
-        
+        auto handle = ((BaseSpecialFile *)file)->get_handle();
         return handle->is_reading();
     }
 
@@ -1507,10 +1381,7 @@ namespace Hamster
         if (file->type() != FileType::Special)
             return 0; // Do nothing on non-special files
         
-        auto handle = get_special_handle((BaseSpecialFile *)file);
-        if (!handle)
-            return -1;
-        
+        auto handle = ((BaseSpecialFile *)file)->get_handle();
         if (handle->is_reading() <= 0)
             return 0;
         
@@ -1526,10 +1397,7 @@ namespace Hamster
         if (file->type() != FileType::Special)
             return size; // Do nothing on non-special files
         
-        auto handle = get_special_handle((BaseSpecialFile *)file);
-        if (!handle)
-            return -1;
-        
+        auto handle = ((BaseSpecialFile *)file)->get_handle();
         if (handle->is_writing() > 0)
             return size;
         return handle->start_write(size, task);
@@ -1544,10 +1412,7 @@ namespace Hamster
         if (file->type() != FileType::Special)
             return 0; // Not writing on non-special files
         
-        auto handle = get_special_handle((BaseSpecialFile *)file);
-        if (!handle)
-            return -1;
-        
+        auto handle = ((BaseSpecialFile *)file)->get_handle();
         return handle->is_writing();
     }
 
@@ -1560,10 +1425,7 @@ namespace Hamster
         if (file->type() != FileType::Special)
             return 0; // Do nothing on non-special files
         
-        auto handle = get_special_handle((BaseSpecialFile *)file);
-        if (!handle)
-            return -1;
-        
+        auto handle = ((BaseSpecialFile *)file)->get_handle();
         if (handle->is_writing() <= 0)
             return 0;
         

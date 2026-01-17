@@ -4,7 +4,6 @@
 #include <platform/platform.hpp>
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
-#include <filesystem/device_manager.hpp>
 #include <driver/base_tty.hpp>
 #include <abi/values.hpp>
 #include <errno/errno.h>
@@ -159,9 +158,7 @@ int Hamster::_mount_rootfs()
     Hamster::vfs.mount("/dev", ramfs) == 0 ? (void)0 : Hamster::dealloc(ramfs);
     ramfs = Hamster::alloc<Hamster::RamFs>();
     Hamster::vfs.mount("/tmp", ramfs) == 0 ? (void)0 : Hamster::dealloc(ramfs);
-    auto console_device = Hamster::alloc<ConsoleCharDevice>();
-    Hamster::device_manager.register_device({5, 1}, console_device);
-    Hamster::vfs.mknod("/dev/console", {5, 1}, 0666);
+    Hamster::vfs.mknod("/dev/console", Hamster::alloc<ConsoleCharDevice>(), 0666);
     Hamster::vfs.symlink("/dev/tty", "/dev/console");
 
     return 0;
