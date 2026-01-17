@@ -74,7 +74,10 @@ sudo chown -R $(whoami):$(whoami) ~/hamster_rw_rootfs
 chmod -R u+rw ~/hamster_rw_rootfs
 ```
 
-Then, edit `src/platform/native/native_fs.hpp` and change the `LINUX_NATIVE_FS` from `0` to `1`.
+Make a file `port/native/native_fs.local.hpp` with the contents;
+```c
+#define LINUX_NATIVE_FS 1
+```
 
 After that, make a symlink from your new root filesystem directory to `rootfs`:
 ```sh
@@ -88,6 +91,8 @@ Finally, rebuild Hamster as above and run it. You should now have a read-write r
 If you have a cross compiler targeting riscv32-linux-musl, you can compile
 your own programs for Hamster. To avoid libc version mismatches, it's recommended
 to statically link your custom programs. There are a variety of C programs in `root`'s home directory.
+
+Note: You will need to have a read-write root filesystem as above.
 
 Example compilation command:
 ```sh

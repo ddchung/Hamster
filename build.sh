@@ -37,8 +37,8 @@ if [[ "$command" == "build" ]]; then
     rm -rf build/* 2>/dev/null
     rm hamster 2>/dev/null
 
-    # Find the C++ source files in the src directory
-    files=$(find src -type f -name "*.cpp")
+    # Find the C++ source files in the src and port/native directories
+    files="$(find src -type f -name "*.cpp") $(find port/native -type f -name "*.cpp")"
 
     echo "Compiling the following files:"
 

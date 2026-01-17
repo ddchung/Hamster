@@ -4,8 +4,14 @@
 
 #include <errno/errno.h>
 
-// Change this to 1 to enable native filesystem support on Linux
-#define LINUX_NATIVE_FS 0
+#if __has_include ("native_fs.local.hpp")
+# include "native_fs.local.hpp"
+#endif
+
+// Change this to 1 or create a file 'native_fs.local.hpp' and define it there to enable native filesystem support on Linux
+#ifndef LINUX_NATIVE_FS
+# define LINUX_NATIVE_FS 0
+#endif
 
 #if defined(__linux__) && LINUX_NATIVE_FS
 
@@ -20,7 +26,9 @@
 #include <limits.h>
 #include <algorithm>
 
-#define HAMSTER_NATIVE_FS_ROOT "rootfs"
+#ifndef HAMSTER_NATIVE_FS_ROOT
+# define HAMSTER_NATIVE_FS_ROOT "rootfs"
+#endif
 
 namespace Hamster
 {
@@ -732,7 +740,9 @@ namespace Hamster
 #include <filesystem/base_romfs.hpp>
 #include <fcntl.h>
 
-#define HAMSTER_ROOT_IMG_LOC "rootfs.img"
+#ifndef HAMSTER_ROOT_IMG_LOC
+# define HAMSTER_ROOT_IMG_LOC "rootfs.img"
+#endif
 
 namespace Hamster
 {

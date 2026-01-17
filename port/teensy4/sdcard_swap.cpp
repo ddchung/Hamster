@@ -1,7 +1,5 @@
 // SD card swapping
 
-#if defined(ARDUINO) && 1
-
 #include <Arduino.h>
 #include <SdFat.h>
 
@@ -69,5 +67,3 @@ int Hamster::_swap_in(int index, uint8_t *data)
 
     return 0;
 }
-
-#endif

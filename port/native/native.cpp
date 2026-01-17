@@ -1,8 +1,6 @@
 // Native version
 
-#if !defined(ARDUINO) && 1
-
-#include <platform/native/native_fs.hpp>
+#include "native_fs.hpp"
 #include <platform/platform.hpp>
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
@@ -220,4 +218,3 @@ uint64_t Hamster::_get_sys_time()
     return time_ms;
 }
 
-#endif

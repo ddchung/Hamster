@@ -1,9 +1,5 @@
 // Ram-resident swap
 
-// shouldn't be used on the limited memory of Arduino's and compatibles
-// override here  ------------v
-#if !defined(ARDUINO) && 1 || 0
-
 #include <platform/platform.hpp>
 #include <platform/config.hpp>
 #include <memory/stl_map.hpp>
@@ -45,6 +41,4 @@ int Hamster::_swap_in(int index, uint8_t *dest)
 
     return 0;
 }
-
-#endif
 

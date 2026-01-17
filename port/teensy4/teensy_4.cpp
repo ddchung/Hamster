@@ -1,7 +1,5 @@
 // Teensy 4 implementation
 
-#if (defined(ARDUINO_TEENSY41) || defined(ARDUINO_TEENSY40)) && 1
-
 #include <Arduino.h>
 #include <SD.h>
 #include <platform/platform.hpp>
@@ -459,5 +457,3 @@ void Hamster::_trace(const char *fmt, ...)
     va_end(args);
 }
 #endif
-
-#endif // TEENSY41
