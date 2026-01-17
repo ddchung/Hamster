@@ -8,6 +8,10 @@
 # include "config.local.hpp"
 #endif
 
+#if __has_include ("config.platform.hpp")
+# include "config.platform.hpp"
+#endif
+
 // The stack top, leave some space above for reserved data
 #ifndef HAMSTER_STACK_TOP
 # define HAMSTER_STACK_TOP (120 * 1024 * 1024)
