@@ -6,13 +6,11 @@ platform = env.GetProjectOption("hamster_platform")
 
 pioenv = env["PIOENV"]
 config = env.GetProjectConfig()
+project_dir = env.subst("$PROJECT_DIR")
 
-src_filter = config.get(f'env:{pioenv}', 'build_src_filter')
+src_filter = [ f'{filter[:2]}../port/{platform}/{filter[2:]}' for filter in config.get(f'env:{pioenv}', 'build_src_filter') ]
 
-src_filter_copy = src_filter.copy()
-for filter in src_filter_copy:
-    src_filter.append(f'{filter[:2]}../port/{platform}/{filter[2:]}')
+env.AppendUnique(SRC_FILTER=src_filter)
+env.Append(CCFLAGS=[f'-I{project_dir}/port/{platform}'])
 
-env.Replace(SRC_FILTER=src_filter)
-
-print(f"Hamster: building $PROJECT_DIR/port/{platform}")
+print(f"Hamster: building {project_dir}/port/{platform}")

@@ -2,33 +2,55 @@
 
 #pragma once
 
+// Note: If you want to modify some of these, create a 'config.local.hpp'
+//       file in either the src/ dir or the port/{platform}/ dir
+#if __has_include ("config.local.hpp")
+# include "config.local.hpp"
+#endif
+
 // The stack top, leave some space above for reserved data
-#define HAMSTER_STACK_TOP (120 * 1024 * 1024)
+#ifndef HAMSTER_STACK_TOP
+# define HAMSTER_STACK_TOP (120 * 1024 * 1024)
+#endif
 
 // Stack size
-#define HAMSTER_STACK_SIZE (8 * 1024 * 1024)
+#ifndef HAMSTER_STACK_SIZE
+# define HAMSTER_STACK_SIZE (8 * 1024 * 1024)
+#endif
 
 // ioctl pointer max structure size. Must be less than HAMSTER_PAGE_SIZE
-#define HAMSTER_MAX_IOCTL_SIZE 512
+#ifndef HAMSTER_MAX_IOCTL_SIZE
+# define HAMSTER_MAX_IOCTL_SIZE 512
+#endif
 
 // The length of each thread's time slice, in # of instructions
-#define HAMSTER_THREAD_TIME_SLICE 65536
+#ifndef HAMSTER_THREAD_TIME_SLICE
+# define HAMSTER_THREAD_TIME_SLICE 65536
+#endif
 
 // The maximum number of cached instructions in the trace cache
-#define HAMSTER_TRACE_SIZE 128
+#ifndef HAMSTER_TRACE_SIZE
+# define HAMSTER_TRACE_SIZE 128
+#endif
 
 // The target amount of free RAM for the page manager, in bytes
 // This controls the "swappiness" of the system
 // Ensure it's not too low or too high:
 // - too low: The system will keep too many pages in RAM, possibly causing an out-of-memory situation
 // - too high: The system will swap out too many pages, possibly causing performance issues
-#define HAMSTER_TARGET_FREE_RAM (512 * 1024)
+#ifndef HAMSTER_TARGET_FREE_RAM
+# define HAMSTER_TARGET_FREE_RAM (512 * 1024)
+#endif
 
 // Maximum memory pressure for disk caching
-#define HAMSTER_DISK_FREE_RAM (1 * 1024 * 1024)
+#ifndef HAMSTER_DISK_FREE_RAM
+# define HAMSTER_DISK_FREE_RAM (1 * 1024 * 1024)
+#endif
 
 // Maximum pipe buffer size, in bytes
-#define HAMSTER_MAX_PIPE_BUFFERED 512
+#ifndef HAMSTER_MAX_PIPE_BUFFERED
+# define HAMSTER_MAX_PIPE_BUFFERED 512
+#endif
 
 // Maximum number of pages per process
 //
@@ -37,39 +59,64 @@
 //
 // For example, if PAGES_PER_PROC=32768 and PAGE_SIZE=4096:
 // 0x00000000...0x08000000 (128MiB)
-#define HAMSTER_PAGES_PER_PROC 32768
+#ifndef HAMSTER_PAGES_PER_PROC
+# define HAMSTER_PAGES_PER_PROC 32768
+#endif
 
 // Page table page ID type
 // uint16_t or uint32_t. This defines the maximmum pages in the whole system
-#define HAMSTER_PAGE_ID_TYPE uint16_t
+#ifndef HAMSTER_PAGE_ID_TYPE
+# define HAMSTER_PAGE_ID_TYPE uint16_t
+#endif
 
 // Maximum global total number of futexes
-#define HAMSTER_MAX_FUTEXES 1024
+#ifndef HAMSTER_MAX_FUTEXES
+# define HAMSTER_MAX_FUTEXES 1024
+#endif
 
 // Maximum number of file descriptors per process
 // (actually the max per TaskFDTable, but there is usually one per process)
-#define HAMSTER_MAX_FD_TABLE_SIZE 128
+#ifndef HAMSTER_MAX_FD_TABLE_SIZE
+# define HAMSTER_MAX_FD_TABLE_SIZE 128
+#endif
 
 // warning: Changing this won't adversely affect the kernel, but RISC-V linux
 //          userspace programs expect a 4096-byte page size, and so changing this
 //          will probably break all the programs
-#define HAMSTER_PAGE_SIZE_BITS 12
+#ifndef HAMSTER_PAGE_SIZE_BITS
+# define HAMSTER_PAGE_SIZE_BITS 12
+#endif
 
-// compatibility
+// can't modify this
 #define HAMSTER_PAGE_SIZE (1 << HAMSTER_PAGE_SIZE_BITS)
-static_assert((HAMSTER_PAGE_SIZE & (HAMSTER_PAGE_SIZE - 1)) == 0, "Page size must be a power of 2");
 
 // Likely/unlikely
 
-#define HAMSTER_LIKELY(x) (__builtin_expect(!!(x), 1))
-#define HAMSTER_UNLIKELY(x) (__builtin_expect(!!(x), 0))
+#ifndef HAMSTER_LIKELY
+# define HAMSTER_LIKELY(x) (__builtin_expect(!!(x), 1))
+#endif
+#ifndef HAMSTER_UNLIKELY
+# define HAMSTER_UNLIKELY(x) (__builtin_expect(!!(x), 0))
+#endif
 
 // uname
 
-#define HAMSTER_SYSNAME "Hamster"
-#define HAMSTER_NODENAME "localhost"
-#define HAMSTER_RELEASE "dev"
-#define HAMSTER_VERSION "0.0"
-#define HAMSTER_MACHINE "riscv32"
-#define HAMSTER_DOMAINNAME "localdomain"
+#ifndef HAMSTER_SYSNAME
+# define HAMSTER_SYSNAME "Hamster"
+#endif
+#ifndef HAMSTER_NODENAME
+# define HAMSTER_NODENAME "localhost"
+#endif
+#ifndef HAMSTER_RELEASE
+# define HAMSTER_RELEASE "dev"
+#endif
+#ifndef HAMSTER_VERSION
+# define HAMSTER_VERSION "0.0"
+#endif
+#ifndef HAMSTER_MACHINE
+# define HAMSTER_MACHINE "riscv32"
+#endif
+#ifndef HAMSTER_DOMAINNAME
+# define HAMSTER_DOMAINNAME "localdomain"
+#endif
 

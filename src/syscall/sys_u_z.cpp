@@ -181,12 +181,12 @@ namespace Hamster
     int32_t sys_uname(Task &task, uint32_t buf_loc)
     {
         constexpr sys_utsname default_uname = {
-            .sysname = "Hamster",
-            .nodename = "localhost",
-            .release = "dev",
-            .version = "0.0",
-            .machine = "riscv32",
-            .domainname = "localdomain",
+            .sysname = HAMSTER_SYSNAME,
+            .nodename = HAMSTER_NODENAME,
+            .release = HAMSTER_RELEASE,
+            .version = HAMSTER_VERSION,
+            .machine = HAMSTER_MACHINE,
+            .domainname = HAMSTER_DOMAINNAME,
         };
 
         if (task.copy_to_memory(buf_loc, default_uname) < 0)
