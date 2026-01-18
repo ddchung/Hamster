@@ -55,17 +55,6 @@ namespace Hamster
         }
         int ioctl(int request, IoctlArg arg = {}) override;
         bool is_tty() override { return true; }
-
-        int64_t seek(int64_t offset, int whence) override
-        {
-            error = H_ESPIPE; // TTYs do not support seeking
-            return -1;
-        }
-        int64_t tell() override
-        {
-            error = H_ESPIPE;
-            return -1;
-        }
         int poll(int op) override;
 
     private:
@@ -543,11 +532,6 @@ namespace Hamster
         case H_TIOCSCTTY:
         {
             // // Set the controlling TTY
-            if (driver->sid && arg.i == 0)
-            {
-                error = H_EPERM;
-                return -1;
-            }
             Task *current_task = Task::get_current_task();
             if (!current_task)
             {
@@ -556,9 +540,13 @@ namespace Hamster
             }
             if (driver->sid)
             {
-                // Stealing not supported
-                error = H_ENOTSUP;
-                return -1;
+                int uid;
+                current_task->get_uid(nullptr, &uid);
+                if (arg.i != 1 || uid != 0)
+                {
+                    error = H_EPERM;
+                    return -1;
+                }
             }
             driver->sid = current_task->get_sid();
             return 0;

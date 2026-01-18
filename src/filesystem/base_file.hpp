@@ -501,13 +501,13 @@ namespace Hamster
          * @return The new position in the block device, or on error return -1 and set `error`
          * @note Equivelant to POSIX `lseek`
          */
-        virtual int64_t seek(int64_t offset, int whence) = 0;
+        virtual int64_t seek(int64_t offset, int whence);
 
         /**
          * @brief Get the current position in the block device.
          * @return The current position in the block device
          */
-        virtual int64_t tell() = 0;
+        virtual int64_t tell();
 
         /**
          * @brief Check whether the special file is ready for reading or writing.

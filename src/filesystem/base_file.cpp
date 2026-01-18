@@ -74,5 +74,16 @@ namespace Hamster
         error = H_ENOTSUP;
         return nullptr;
     }
+
+    int64_t BaseSpecialDriverHandle::seek(int64_t offset, int whence)
+    {
+        error = H_ESPIPE;
+        return -1;
+    }
+
+    int64_t BaseSpecialDriverHandle::tell()
+    {
+        return seek(0, H_SEEK_CUR);
+    }
 } // namespace Hamster
 
