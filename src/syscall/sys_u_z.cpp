@@ -83,10 +83,18 @@ namespace Hamster
         }
     } // namespace
     
-    int32_t sys_write(Task &task, int32_t fd, uint32_t buf_loc, uint32_t count)
+    int32_t sys_write(Task &task, int32_t task_fd, uint32_t buf_loc, uint32_t count)
     {
+        BaseTaskFD *fd = task.get_fd(task_fd);
+        if (!fd)
+            return cvt_error();
+        ssize_t writable = fd->start_write(count, &task);
+        if (writable < 0)
+            return cvt_error();
+        count = std::min<ssize_t>(writable, count);
+
         // Ensure registers are correct for block()
-        task.get_emulator().x[10] = fd; // a0
+        task.get_emulator().x[10] = task_fd; // a0
         task.get_emulator().x[11] = buf_loc; // a1
         task.get_emulator().x[12] = count; // a2
 
@@ -94,7 +102,10 @@ namespace Hamster
             BaseTaskFD *fd = task.get_fd(task_fd);
             if (!fd)
                 return -1;
-            return do_write(task, fd, buf_loc, count);
+            int res = do_write(task, fd, buf_loc, count);
+            if (res != -1 || error != H_EAGAIN)
+                fd->stop_write();
+            return res;
         }));
     }
 
@@ -195,9 +206,15 @@ namespace Hamster
         return 0;
     }
 
-    int32_t sys_writev(Task &task, int32_t fd, uint32_t vec_loc, uint32_t vlen)
+    int32_t sys_writev(Task &task, int32_t task_fd, uint32_t vec_loc, uint32_t vlen)
     {
-        task.get_emulator().x[10] = fd;
+        BaseTaskFD *fd = task.get_fd(task_fd);
+        if (!fd)
+            return cvt_error();
+        if (fd->start_write(SIZE_MAX, &task) < 0)
+            return cvt_error();
+
+        task.get_emulator().x[10] = task_fd;
         task.get_emulator().x[11] = vec_loc;
         task.get_emulator().x[12] = vlen;
 
@@ -205,7 +222,10 @@ namespace Hamster
             BaseTaskFD *fd = task.get_fd(task_fd);
             if (!fd)
                 return -1;
-            return do_writev(task, fd, vec_loc, vlen);
+            int res = do_writev(task, fd, vec_loc, vlen);
+            if (res != -1 || error != H_EAGAIN)
+                fd->stop_write();
+            return res;
         }));
     }
 } // namespace Hamster

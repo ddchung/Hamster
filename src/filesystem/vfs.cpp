@@ -1348,13 +1348,13 @@ namespace Hamster
             return -1;
 
         if (file->type() != FileType::Special)
-            return size; // Do nothing on non-special files
+            return INT32_MAX; // Do nothing on non-special files
         
         auto handle = ((BaseSpecialFile *)file)->get_handle();
 
         if (handle->is_reading() > 0)
             // TODO: what to do when already reading?
-            return size;
+            return INT32_MAX;
         
         return handle->start_read(size, task);
     }
@@ -1395,11 +1395,11 @@ namespace Hamster
             return -1;
 
         if (file->type() != FileType::Special)
-            return size; // Do nothing on non-special files
+            return INT32_MAX; // Do nothing on non-special files
         
         auto handle = ((BaseSpecialFile *)file)->get_handle();
         if (handle->is_writing() > 0)
-            return size;
+            return INT32_MAX;
         return handle->start_write(size, task);
     }
 

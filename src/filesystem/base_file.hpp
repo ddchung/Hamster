@@ -427,12 +427,12 @@ namespace Hamster
          * @param size The total bytes to read
          * @param task The calling task, or nullptr if kernel
          * @return The number of bytes available to read, or -1 on error and set `error`
-         * @note May return more bytes than available
+         * @note May return more/less bytes than available
          * @note The entire read may be split across multiple `read()` calls
          * @note Guaranteed to be called before `read()`, and that `!is_writing()`
          * @note `BaseRegularFile` provides a default that does nothing
          */
-        virtual ssize_t start_read(size_t size, class Task *task = nullptr) { return size; };
+        virtual ssize_t start_read(size_t size = SIZE_MAX, class Task *task = nullptr) { return INT32_MAX; };
 
         /**
          * @brief Check if a read is in progress
@@ -452,12 +452,12 @@ namespace Hamster
          * @param size The total bytes to write
          * @param task The calling task, or nullptr if none
          * @return The number of bytes available for writing, or -1 on error and set `error`
-         * @note May return more bytes than requested
+         * @note May return more/less bytes than requested
          * @note The write may be split across multiple calls to `write()`
          * @note Guaranteed to be called before `write()` and that `!is_reading()`
          * @note BaseRegularFile provides a default that does nothing
          */
-        virtual ssize_t start_write(size_t size, class Task *task = nullptr) { return size; }
+        virtual ssize_t start_write(size_t size = SIZE_MAX, class Task *task = nullptr) { return INT32_MAX; }
 
         /**
          * @brief Check if a write is in progress
@@ -533,14 +533,6 @@ namespace Hamster
     {
     public:
         virtual SpecialFileType special_type() override { return SpecialFileType::Fifo; }
-    };
-
-    class BaseSocketDeviceHandle : public BaseSpecialDriverHandle
-    {
-    public:
-        virtual SpecialFileType special_type() override { return SpecialFileType::Socket; }
-
-        // TODO: Implement special socket operations
     };
 
     class BaseBlockDeviceHandle : public BaseSpecialDriverHandle

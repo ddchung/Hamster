@@ -22,6 +22,10 @@ namespace Hamster
 
         ssize_t read(void *buf, size_t size) override { return vfs.read(fd, buf, size); }
         ssize_t write(const void *buf, size_t size) override { return vfs.write(fd, buf, size); }
+        virtual ssize_t start_read(size_t size, class Task *task = nullptr) { return vfs.start_read(fd, size, task); }
+        virtual int stop_read() { return vfs.end_read(fd); }
+        virtual ssize_t start_write(size_t size, class Task *task = nullptr) { return vfs.start_write(fd, size, task); }
+        virtual int stop_write() { return vfs.end_write(fd); }
         int64_t seek(int64_t off, int whence) override
         {
             if (is_dir)
