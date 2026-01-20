@@ -418,7 +418,7 @@ namespace Hamster
         case romfs_type_sock:
         case romfs_type_fifo:
             error = H_ENOTSUP;
-            return -1;
+            return nullptr;
         }
 
         __builtin_unreachable();
