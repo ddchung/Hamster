@@ -613,6 +613,8 @@ namespace Hamster
 
     inline constexpr int H_SYS_RISCV_FLUSH_ICACHE_LOCAL = 1;
 
+    inline constexpr int H_SIOCPROTOPRIVATE = 0x89E0;
+
     // clang-format off
     inline constexpr uint8_t H_SIGHAND_TRAMPOLINE[] = {
         0x93, 0x08, 0xb0, 0x08, // li a7,139 # SyscallID::RT_SIGRETURN

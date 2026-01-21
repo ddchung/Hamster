@@ -317,6 +317,21 @@ namespace Hamster
         int16_t revents;
     };
 
+    using sys_sa_family_t = uint16_t;
+    using sys_socklen_t = uint32_t;
+
+    struct sys_sockaddr
+    {
+        sys_sa_family_t sa_family;
+        char sa_data[14];
+    };
+
+    struct sys_sockaddr_un
+    {
+        sys_sa_family_t sun_family;
+        char sun_path[108];
+    };
+
     inline uint64_t timespec_to_systick(const sys_timespec &ts)
     {
         // right now, 1 systick = 1 ms
