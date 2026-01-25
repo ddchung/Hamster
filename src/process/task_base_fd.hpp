@@ -23,10 +23,6 @@ namespace Hamster
 
         virtual ssize_t read(void *buf, size_t size) = 0;
         virtual ssize_t write(const void *buf, size_t size) = 0;
-        virtual ssize_t start_read(size_t size, class Task *task = nullptr) { return INT32_MAX; }
-        virtual int stop_read() { return 0; }
-        virtual ssize_t start_write(size_t size, class Task *task = nullptr) { return INT32_MAX; }
-        virtual int stop_write() { return 0; }
         virtual int64_t seek(int64_t off, int whence) = 0;
         virtual int64_t tell() { return seek(0, H_SEEK_CUR); }
         virtual int stat(sys_stat *buf) = 0;

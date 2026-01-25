@@ -670,20 +670,7 @@ namespace Hamster
         case FileType::Regular:
             return ((BaseRegularFile *)file)->read((uint8_t*)buf, size);
         case FileType::Special:
-        {
-            auto handle = ((BaseSpecialFile *)file)->get_handle();
-
-            // Automatically call start_read and end_read if not in a multi-read section
-            int was_reading = handle->is_reading();
-            if (was_reading < 0)
-                return -1;
-            if (!was_reading && handle->start_read(size) < 0)
-                return -1;
-            ssize_t ret = handle->read((uint8_t*)buf, size);
-            if (!was_reading)
-                handle->end_read(); // ignore errors here
-            return ret;
-        }
+            return ((BaseSpecialFile *)file)->get_handle()->read((uint8_t *)buf, size);
         default:
             error = H_EISDIR;
             return -1;
@@ -701,20 +688,7 @@ namespace Hamster
         case FileType::Regular:
             return ((BaseRegularFile *)file)->write((const uint8_t*)buf, size);
         case FileType::Special:
-        {
-            auto handle = ((BaseSpecialFile *)file)->get_handle();
-            
-            // See read()
-            int was_writing = handle->is_writing();
-            if (was_writing < 0)
-                return -1;
-            if (!was_writing && handle->start_write(size) < 0)
-                return -1;
-            ssize_t ret = handle->write((const uint8_t*)buf, size);
-            if (!was_writing)
-                handle->end_write();
-            return ret;
-        }
+            return ((BaseSpecialFile *)file)->get_handle()->write((const uint8_t *)buf, size);
         default:
             error = H_EISDIR;
             return -1;
@@ -1339,96 +1313,5 @@ namespace Hamster
         if (!file)
             return nullptr;
         return file->clone();
-    }
-
-    ssize_t VFS::start_read(int fd, size_t size, class Task *task)
-    {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
-            return -1;
-
-        if (file->type() != FileType::Special)
-            return INT32_MAX; // Do nothing on non-special files
-        
-        auto handle = ((BaseSpecialFile *)file)->get_handle();
-
-        if (handle->is_reading() > 0)
-            // TODO: what to do when already reading?
-            return INT32_MAX;
-        
-        return handle->start_read(size, task);
-    }
-
-    int VFS::is_reading(int fd)
-    {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
-            return -1;
-
-        if (file->type() != FileType::Special)
-            return 0; // Not reading on non-special files
-        
-        auto handle = ((BaseSpecialFile *)file)->get_handle();
-        return handle->is_reading();
-    }
-
-    int VFS::end_read(int fd)
-    {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
-            return -1;
-
-        if (file->type() != FileType::Special)
-            return 0; // Do nothing on non-special files
-        
-        auto handle = ((BaseSpecialFile *)file)->get_handle();
-        if (handle->is_reading() <= 0)
-            return 0;
-        
-        return handle->end_read();
-    }
-
-    ssize_t VFS::start_write(int fd, size_t size, class Task *task)
-    {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
-            return -1;
-
-        if (file->type() != FileType::Special)
-            return INT32_MAX; // Do nothing on non-special files
-        
-        auto handle = ((BaseSpecialFile *)file)->get_handle();
-        if (handle->is_writing() > 0)
-            return INT32_MAX;
-        return handle->start_write(size, task);
-    }
-
-    int VFS::is_writing(int fd)
-    {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
-            return -1;
-
-        if (file->type() != FileType::Special)
-            return 0; // Not writing on non-special files
-        
-        auto handle = ((BaseSpecialFile *)file)->get_handle();
-        return handle->is_writing();
-    }
-
-    int VFS::end_write(int fd)
-    {
-        BaseFile *file = data->fd_manager.get_fd(fd);
-        if (!file)
-            return -1;
-
-        if (file->type() != FileType::Special)
-            return 0; // Do nothing on non-special files
-        
-        auto handle = ((BaseSpecialFile *)file)->get_handle();
-        if (handle->is_writing() <= 0)
-            return 0;
-        
-        return handle->end_write();
     }
 } // namespace Hamster
