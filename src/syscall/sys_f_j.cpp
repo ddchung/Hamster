@@ -559,5 +559,23 @@ namespace Hamster
             return -H_EINVAL;
         }
     }
+
+    int32_t sys_fsync(Task &task, int32_t task_fd)
+    {
+        BaseTaskFD *fd = task.get_fd(task_fd);
+        if (!fd)
+            return cvt_error();
+        
+        return cvt_error(fd->sync());
+    }
+
+    int32_t sys_fdatasync(Task &task, int32_t task_fd)
+    {
+        BaseTaskFD *fd = task.get_fd(task_fd);
+        if (!fd)
+            return cvt_error();
+        
+        return cvt_error(fd->datasync());
+    }
 } // namespace Hamster
 
