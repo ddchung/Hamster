@@ -59,7 +59,7 @@ namespace Hamster
          * @brief Set the umask
          * @param new_umask
          */
-        void set_umask(int new_umask) { umask = new_umask & 0777; }
+        void set_umask(int new_umask) { umask = new_umask & 07777; }
 
         /**
          * @brief Mask a mode with the umask

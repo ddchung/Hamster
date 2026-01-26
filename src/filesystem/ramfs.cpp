@@ -199,7 +199,7 @@ namespace Hamster
                 memset(buf, 0, sizeof(sys_stat));
 
                 buf->ino = get_id();
-                buf->mode = node->mode & 0777;
+                buf->mode = node->mode & 07777;
                 buf->uid = node->uid;
                 buf->gid = node->gid;
                 buf->size = 0;

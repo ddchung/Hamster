@@ -273,6 +273,9 @@ namespace Hamster
              */
             FCHMODAT = 53,////
 
+            // Same thing but with flags
+            FCHMODAT2 = 452,
+
             /**
              * @brief Change the permissions of a file specified by a file descriptor
              * This system call changes the permissions of a file descriptor.

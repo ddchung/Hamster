@@ -382,12 +382,16 @@ namespace Hamster
         return 0;
     }
 
-    int32_t sys_fchmodat(Task &task, int32_t dirfd, uint32_t path_loc, uint32_t mode, int32_t flags)
+    int32_t sys_fchmodat2(Task &task, int32_t dirfd, uint32_t path_loc, uint32_t mode, int32_t flags)
     {
-        // We don't support AT_SYMLINK_NOFOLLOW
+        // Flags aren't supported
         if (flags != 0)
             return -H_ENOTSUP;
-        
+        return sys_fchmodat(task, dirfd, path_loc, mode);
+    }
+
+    int32_t sys_fchmodat(Task &task, int32_t dirfd, uint32_t path_loc, uint32_t mode)
+    {   
         char *path = task.mem_get_string(path_loc);
         if (!path)
             return cvt_error();

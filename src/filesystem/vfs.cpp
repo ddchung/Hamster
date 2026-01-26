@@ -553,7 +553,7 @@ namespace Hamster
         if (!file)
             return -1;
 
-        int ret = file->chmod(mode);
+        int ret = file->chmod(mode & 07777);
         return ret;
     }
 

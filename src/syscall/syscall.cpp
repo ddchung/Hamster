@@ -614,9 +614,17 @@ namespace Hamster
             trace_syscall<
                 SysTraceParam("dirfd", PT_INT),
                 SysTraceParam("pathname", PT_STR),
-                SysTraceParam("mode", PT_UINT),
-                SysTraceParam("flags", PT_INT)>("fchmodat", task, args);
+                SysTraceParam("mode", PT_UINT)>("fchmodat", task, args);
             result = syscall(task, sys_fchmodat);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::FCHMODAT2:
+            trace_syscall<
+                SysTraceParam("dirfd", PT_INT),
+                SysTraceParam("pathname", PT_STR),
+                SysTraceParam("mode", PT_UINT),
+                SysTraceParam("flags", PT_INT)>("fchmodat2", task, args);
+            result = syscall(task, sys_fchmodat2);
             trace_syscall_result(task, result);
             break;
         case SyscallID::FCHMOD:
@@ -1283,6 +1291,8 @@ namespace Hamster
                                                uint32_t owner, uint32_t group, int32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_fchown(Task &task, int32_t fd, uint32_t owner, uint32_t group) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_fchmodat(Task &task, int32_t dirfd, uint32_t pathname_loc,
+                                               uint32_t mode) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_fchmodat2(Task &task, int32_t dirfd, uint32_t pathname_loc,
                                                uint32_t mode, int32_t flags) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_fchmod(Task &task, int32_t fd, uint32_t mode) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_ftruncate64(Task &task, int32_t fd, uint32_t off_high, uint32_t off_low) { return -H_ENOSYS; }

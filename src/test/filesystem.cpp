@@ -63,7 +63,7 @@ void test_filesystem()
     fd = vfs->open(path, OPEN_RDWR);
     assert(vfs->get_flags(fd) & OPEN_RDWR);
     assert(vfs->chmod(fd, 0600) == 0);
-    assert((vfs->get_mode(fd) & 0777) == 0600);
+    assert((vfs->get_mode(fd) & 07777) == 0600);
     assert(vfs->chown(fd, 1000, 1000) == 0);
     assert(vfs->get_uid(fd) == 1000);
     assert(vfs->get_gid(fd) == 1000);

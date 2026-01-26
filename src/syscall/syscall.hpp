@@ -69,6 +69,8 @@ namespace Hamster
                          uint32_t owner, uint32_t group, int32_t flags);
     int32_t sys_fchown(Task &task, int32_t fd, uint32_t owner, uint32_t group);
     int32_t sys_fchmodat(Task &task, int32_t dirfd, uint32_t pathname_loc,
+                         uint32_t mode);
+    int32_t sys_fchmodat2(Task &task, int32_t dirfd, uint32_t pathname_loc,
                          uint32_t mode, int32_t flags);
     int32_t sys_fchmod(Task &task, int32_t fd, uint32_t mode);
     int32_t sys_ftruncate64(Task &task, int32_t fd, uint32_t off_high, uint32_t off_low);
