@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <process/scatter_io.hpp>
 #include <filesystem/base_file.hpp>
 #include <sys/types.h>
 #include <cstdint>
@@ -21,12 +22,16 @@ namespace Hamster
         // Common functions
         // See `vfs.hpp` for more info
 
-        virtual ssize_t read(void *buf, size_t size) = 0;
-        virtual ssize_t write(const void *buf, size_t size) = 0;
-        virtual int64_t seek(int64_t off, int whence) = 0;
+        // Please implement at least one of read/readv and of write/writev
+        virtual ssize_t read(void *buf, size_t size);
+        virtual ssize_t write(const void *buf, size_t size);
+        virtual ssize_t readv(const IOVec *iovec, size_t iovcnt);
+        virtual ssize_t writev(const IOVec *iovec, size_t iovcnt);
+
+        virtual int64_t seek(int64_t off, int whence);
         virtual int64_t tell() { return seek(0, H_SEEK_CUR); }
         virtual int stat(sys_stat *buf) = 0;
-        virtual int truncate(int64_t size) = 0;
+        virtual int truncate(int64_t size);
         virtual int64_t size() = 0;
         virtual int ioctl(int req, IoctlArg arg = IoctlArg()) = 0;
         virtual int set_flags(int flags) = 0;
