@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <process/task.hpp>
+#include <memory/page_manager.hpp> // for PERM_*
 #include <abi/structs.hpp>
 #include <cstdint>
 #include <cstddef>
@@ -26,7 +26,7 @@ namespace Hamster
      * @param perms Required memory permissions, a bitmask of (PERM_*)
      * @return A newly allocated array of kernel IO vectors, in the right order. Be sure to deallocate. nullptr on error
      */
-    std::pair<IOVec *, size_t> make_iovec(Task &task, uint32_t iovec_loc, uint32_t iovec_count, uint8_t perms = PERM_READ);
+    std::pair<IOVec *, size_t> make_iovec(class Task &task, uint32_t iovec_loc, uint32_t iovec_count, uint8_t perms = PERM_READ);
 
     /**
      * @brief Make a kernel IO vector from a userspace one
@@ -36,7 +36,7 @@ namespace Hamster
      * @param perms A bitmask of required memory permissions
      * @return A newly allocated array of kernel IO vectors, in the right order. Be sure to deallocate. nullptr on error
      */
-    std::pair<IOVec *, size_t> make_iovec(Task &task, const sys_iovec *iovec, size_t iovec_count, uint8_t perms = PERM_READ);
+    std::pair<IOVec *, size_t> make_iovec(class Task &task, const sys_iovec *iovec, size_t iovec_count, uint8_t perms = PERM_READ);
 
     /**
      * @brief Make a kernel IO vector from a single userspace buffer
@@ -46,6 +46,6 @@ namespace Hamster
      * @param perms A bitmask of required memory permissions
      * @return A newly allocated array of kernel IOVecs, or nullptr on error and set `error`
      */
-    std::pair<IOVec *, size_t> make_iovec_buf(Task &task, uint32_t buf_loc, uint32_t buf_size, uint8_t perms = PERM_READ);
+    std::pair<IOVec *, size_t> make_iovec_buf(class Task &task, uint32_t buf_loc, uint32_t buf_size, uint8_t perms = PERM_READ);
 } // namespace Hamster
 
