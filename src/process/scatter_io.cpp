@@ -55,7 +55,7 @@ namespace Hamster
                 return ERR_PAIR;
             }
             iovec[it].data = p;
-            iovec[it].size = std::min<uint32_t>(buf_loc + buf_size - addr, HAMSTER_PAGE_SIZE);
+            iovec[it].size = std::min<uint32_t>(buf_loc + buf_size - addr, ((addr + HAMSTER_PAGE_SIZE) & ~(HAMSTER_PAGE_SIZE-1)) - addr);
         }
         return std::make_pair(iovec, iov_cnt);
     }

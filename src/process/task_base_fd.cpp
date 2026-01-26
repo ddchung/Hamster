@@ -19,7 +19,7 @@ namespace Hamster
     ssize_t BaseTaskFD::readv(const IOVec *iov, size_t iov_cnt)
     {
         size_t total_read = 0;
-        for (const IOVec *it = iov; it - iov < iov_cnt; ++it)
+        for (const IOVec *it = iov; it - iov < (ptrdiff_t)iov_cnt; ++it)
         {
             // skip zero size buffers
             if (it->size == 0)
@@ -32,7 +32,7 @@ namespace Hamster
             total_read += bytes_read;
             
             // short read, break
-            if (bytes_read < it->size)
+            if ((size_t)bytes_read < it->size)
                 break;
         }
         return total_read;
@@ -42,13 +42,13 @@ namespace Hamster
     {
         // same as above
         size_t total_written = 0;
-        for (const IOVec *it = iov; it - iov < iov_cnt; ++it)
+        for (const IOVec *it = iov; it - iov < (ptrdiff_t)iov_cnt; ++it)
         {
             if (it->size == 0) continue;
             ssize_t bytes_written = write(it->data, it->size);
             if (bytes_written < 0) return total_written > 0 ? total_written : -1;
             total_written += bytes_written;
-            if (bytes_written < it->size) break;
+            if ((size_t)bytes_written < it->size) break;
         }
         return total_written;
     }

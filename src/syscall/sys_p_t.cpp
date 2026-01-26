@@ -2,10 +2,12 @@
 
 #include <syscall/syscall.hpp>
 #include <process/task.hpp>
+#include <process/scatter_io.hpp>
 #include <process/task_vfs_fd.hpp>
 #include <process/task_pipe.hpp>
 #include <abi/values.hpp>
 #include <abi/structs.hpp>
+#include <inttypes.h>
 
 namespace Hamster
 {
@@ -16,97 +18,52 @@ namespace Hamster
             return (fds[fd / 32] & (1u << (fd % 32))) != 0;
         }
 
-        int do_read(Task &task, BaseTaskFD *fd, uint32_t buf_loc, uint32_t count)
+        int do_read(Task &task, int32_t task_fd, const std::pair<IOVec  *, uint32_t> &iov)
         {
-            bool is_nonblock = fd->get_flags() & OPEN_NONBLOCK;
+            return task.block([](Task &task, uint64_t data, void *iov) {
+                uint32_t task_fd = data >> 32, iovlen = data & 0xFFFF'FFFF;
+                int32_t res = 0;
 
-            // Check if file is readable
-            switch (fd->poll(POLL_READ))
-            {
-            case 0:
-                if (is_nonblock)
-                    return -H_EAGAIN;
-                error = H_EAGAIN;
-                return -1;
-            case 1:
-                break;
-            default:
-                return -1;
-            }
+                BaseTaskFD *fd = task.get_fd(task_fd);
+                if (!fd)
+                {
+                    res = cvt_error();
+                    goto done;
+                }
 
-            uint32_t read = 0;
-
-            while (count > 0)
-            {
-                // Read up to end of VM page
-
-                uint32_t to_read = std::min(count, HAMSTER_PAGE_SIZE - (buf_loc % HAMSTER_PAGE_SIZE));
-
-                void *it = task.mem_make_iterator(buf_loc);
-                if (!it)
-                    return -1;
-                
-                ssize_t res = fd->read(it, to_read);
-                if (res == 0) // propagate EOF
-                    return read;
+                res = fd->readv((const IOVec *)iov, iovlen);
                 if (res < 0)
                 {
-                    if (read > 0)
-                        return read;
-                    if (error == H_EAGAIN && is_nonblock)
-                        return -H_EAGAIN;
-                    return res;
+                    if (error == H_EAGAIN && !(fd->get_flags() & OPEN_NONBLOCK))
+                        return; // continue blocking
+                    res = cvt_error();
                 }
 
-                buf_loc += res;
-                count -= res;
-                read += res;
-            }
-            return read;
-        }
-
-        int do_readv(Task &task, BaseTaskFD *fd, uint32_t vec_loc, uint32_t vlen)
-        {
-            uint32_t read = 0;
-            while (vlen > 0)
-            {
-                sys_iovec vec;
-                if (task.copy_from_memory(vec, vec_loc) < 0)
-                    return cvt_error();
-                
-                if (vec.size > 0)
-                {
-                    int res = do_read(task, fd, vec.data, vec.size);
-                    if (res == 0) // EOF
-                        return read;
-                    if (res < 0)
-                    {
-                        if (read > 0)
-                            return read;
-                        return res;
-                    }
-                    read += res;
-                }
-                vec_loc += sizeof(sys_iovec);
-                vlen -= 1;
-            }
-            return read;
+            done:
+                dealloc((IOVec *)iov);
+                task.end_block();
+                _trace("do_read: Done read operation, result: %" PRIi32 "\n", res);
+                task.get_emulator().x[10] = res;
+            }, iov.second | ((uint64_t)task_fd << 32), iov.first, [](Task &task, uint64_t iovlen, void *iov) {
+                dealloc((IOVec *)iov);
+                task.get_emulator().x[10] = -H_EINTR;
+            });
         }
     } // namespace
 
     int32_t sys_read(Task &task, int32_t task_fd, uint32_t buf_loc, uint32_t count)
     {
-        // Ensure registers are correct for block()
-        task.get_emulator().x[10] = task_fd; // a0
-        task.get_emulator().x[11] = buf_loc; // a1
-        task.get_emulator().x[12] = count; // a2
-
-        return cvt_error(task.block([](Task &task, uint32_t task_fd, uint32_t buf_loc, uint32_t count, uint32_t, uint32_t, uint32_t) -> int {
-            BaseTaskFD *fd = task.get_fd(task_fd);
-            if (!fd)
-                return -1;
-            return do_read(task, fd, buf_loc, count);
-        }));
+        std::pair<IOVec *, uint32_t> iov = make_iovec_buf(task, buf_loc, count, PERM_READ | PERM_WRITE);
+        if (!iov.first)
+            return cvt_error();
+        
+        int res = do_read(task, task_fd, iov);
+        if (res < 0)
+        {
+            dealloc(iov.first);
+            return cvt_error();
+        }
+        return 0;
     }
 
     int32_t sys_setpgid(Task &task, int32_t pid, int32_t pgid)
@@ -675,19 +632,17 @@ namespace Hamster
 
     int32_t sys_readv(Task &task, int32_t task_fd, uint32_t vec_loc, uint32_t vlen)
     {
-        if (vlen == 0)
-            return 0;
+        std::pair<IOVec *, uint32_t> iov = make_iovec(task, vec_loc, vlen, PERM_READ | PERM_WRITE);
+        if (!iov.first)
+            return cvt_error();
         
-        task.get_emulator().x[10] = task_fd; // a0
-        task.get_emulator().x[11] = vec_loc; // a1
-        task.get_emulator().x[12] = vlen; // a2
-
-        return cvt_error(task.block([](Task &task, uint32_t task_fd, uint32_t vec_loc, uint32_t vlen, uint32_t, uint32_t, uint32_t) -> int {
-            BaseTaskFD *fd = task.get_fd(task_fd);
-            if (!fd)
-                return -1;
-            return do_readv(task, fd, vec_loc, vlen);
-        }));
+        int res = do_read(task, task_fd, iov);
+        if (res < 0)
+        {
+            dealloc(iov.first);
+            return cvt_error();
+        }
+        return 0;
     }
     
     int32_t sys_tkill(Task &task, int32_t tid, int32_t signal)
