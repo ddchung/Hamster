@@ -49,6 +49,11 @@ namespace Hamster
         return process->get_process_group()->get_session()->get_sid();
     }
 
+    const Vector<int> &Task::get_groups() const
+    {
+        return process->get_groups();
+    }
+
     int Task::set_groups(const Vector<int> &groups)
     {
         return process->set_groups(groups);

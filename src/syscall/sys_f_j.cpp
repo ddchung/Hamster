@@ -577,5 +577,24 @@ namespace Hamster
         
         return cvt_error(fd->datasync());
     }
+
+    int32_t sys_getgroups(Task &task, uint32_t size, uint32_t list_loc)
+    {
+        const Vector<int> &groups = task.get_groups();
+
+        if (size == 0)
+            // If size is 0, just return the number of groups
+            return groups.size();
+
+        if (size < groups.size())
+            // Buffer too small
+            return -H_EINVAL;
+
+        // Copy the group IDs to the user space
+        if (task.memcpy(list_loc, groups.data(), groups.size() * sizeof(uint32_t)) < 0)
+            return cvt_error();
+
+        return groups.size();
+    }
 } // namespace Hamster
 

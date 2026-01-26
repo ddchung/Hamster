@@ -776,5 +776,20 @@ namespace Hamster
             return cvt_error();
         return len;
     }
+
+    int32_t sys_setgroups(Task &task, uint32_t size, uint32_t list_loc)
+    {
+        if (sys_geteuid(task) != 0)
+            // Only root can set groups
+            return -H_EPERM;
+
+        Vector<int> new_groups;
+
+        new_groups.resize(size);
+
+        if (task.memcpy(new_groups.data(), list_loc, size * sizeof(uint32_t)) < 0)
+            return cvt_error();
+        return cvt_error(task.set_groups(new_groups));
+    }
 } // namespace Hamster
 
