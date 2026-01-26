@@ -126,17 +126,24 @@ namespace Hamster
     int Task::load_executable(int fd, const char *execfn, const char *const *argv, const char *const *envp)
     {
         // TODO: Execute scripts (#!)
-        // TODO: Handle setuid/setgid
+
+        release_mem();
+
+        int mode = vfs.get_mode(fd), fsuid = vfs.get_uid(fd), fsgid = vfs.get_gid(fd);
+        if (mode < 0 || fsuid < 0 || fsgid < 0)
+            return -1;
 
         auto &memory = this->memory->ms;
-
-        // Release the memory space
-        release_mem();
 
         uint64_t entry_point = 0, ph_num = 0, brk = 0, ph_loc = 0;
         bool dyn = false;
         if (load_elf(fd, memory, entry_point, ph_num, brk, ph_loc, dyn) < 0)
             return -1;
+        
+        if (mode & 04000) // setuid, set euid
+            process->set_uid(-1, fsuid);
+        if (mode & 02000)
+            process->set_gid(-1, fsgid);
         
         this->memory->brk = brk;
 
