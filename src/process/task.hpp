@@ -239,8 +239,6 @@ namespace Hamster
         Task &operator=(Task &&) = delete;
         ~Task() = default;
 
-        using BlockingCallback = void (*)(Task &, uint64_t);
-
         // Give access to default constructor
         friend Task *alloc<Task>(size_t N);
 
@@ -360,7 +358,7 @@ namespace Hamster
          * @return 0 on success, -1 on error
          * @note By default, the interrupt callback sets register `a0` to `-EINTR` and ends blocking
          */
-        int block(BlockingCallback callback, uint64_t saved, BlockingCallback interrupt_callback = nullptr);
+        int block(void (*callback)(Task &, uint64_t, void *), uint64_t saved, void *saved2, void (*interrupt_callback)(Task &, uint64_t, void*) = nullptr);
 
         /**
          * @brief Enter a blocking operation
@@ -674,10 +672,10 @@ namespace Hamster
         TaskSignalQueue pending_signals;
         TaskSignalMask signal_mask;
         RiscVEmulator emulator;
-        BlockingCallback blocking_operation = nullptr;
-        int (*blocking_operation_alt)(Task &, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); // Used by other overload of `block`
+        void (*blocking_operation)(Task &, uint64_t, void *) = nullptr;
         uint64_t blocking_operation_saved = 0; // Optionally used by blocking operations
-        BlockingCallback interrupt_blocking = nullptr; // Called when signal recieved while blocking
+        void *blocking_saved2 = nullptr;
+        void (*interrupt_blocking)(Task &, uint64_t, void *) = nullptr; // Called when signal recieved while blocking
         uint64_t last_instruction_tick = 0;
         uint32_t tid;
         Task *parent = nullptr; // may be null

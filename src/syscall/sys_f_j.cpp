@@ -480,7 +480,7 @@ namespace Hamster
                     task->end_block();
             }, (void *)(uintptr_t)task.get_tid(), val3) < 0) // pass TID instead of task to avoid dangling pointer when task dies
                 return cvt_error();
-            task.block([](Task &, uint64_t){}, 0);
+            task.block([](Task &, uint64_t, void *){}, 0, nullptr);
             return 0;
         case H_FUTEX_WAKE:
             val3 = UINT32_MAX;

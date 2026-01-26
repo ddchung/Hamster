@@ -198,7 +198,7 @@ namespace Hamster
         if (flags & H_CLONE_VFORK)
         {
             // Block "forever", until interrupted by child
-            block([](Task &, uint64_t){}, 0, [](Task &, uint64_t){});
+            block([](Task &, uint64_t, void*){}, 0, nullptr, [](Task &, uint64_t, void*){});
             new_task->is_vfork = true;
         }
         new_task->is_handling_signal = is_handling_signal;
@@ -367,7 +367,7 @@ namespace Hamster
         return process->exit(code);
     }
 
-    int Task::block(BlockingCallback callback, uint64_t saved, BlockingCallback interrupt_callback)
+    int Task::block(void (*callback)(Task &, uint64_t, void*), uint64_t saved, void *saved2, void (*interrupt_callback)(Task &, uint64_t, void*))
     {
         if (!callback)
         {
@@ -382,7 +382,7 @@ namespace Hamster
         }
 
         if (!interrupt_callback)
-            interrupt_callback = [](Task &task, uint64_t saved) {
+            interrupt_callback = [](Task &task, uint64_t saved, void*) {
                 task.get_emulator().x[10] = -H_EINTR;
                 task.end_block();
                 _trace("TID \033[34m%" PRIu32 "\033[0m\tFinished blocking operation, result: \033[36m%" PRIi32 "\033[0m\n", task.get_tid(), -H_EINTR);
@@ -390,6 +390,7 @@ namespace Hamster
     
         blocking_operation = callback;
         blocking_operation_saved = saved;
+        blocking_saved2 = saved2;
         interrupt_blocking = interrupt_callback;
 
         return 0;
@@ -409,11 +410,11 @@ namespace Hamster
             return -1;
         }
 
-        blocking_operation_alt = callback;
+        blocking_saved2 = (void *)callback;
         
-        return block([](Task &task, uint64_t saved){
+        return block([](Task &task, uint64_t saved, void *saved2){
             uint32_t *x = task.emulator.x;
-            int res = task.blocking_operation_alt(task, saved, x[11], x[12], x[13], x[14], x[15]);
+            int res = ((int (*)(Task &, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t))saved2)(task, saved, x[11], x[12], x[13], x[14], x[15]);
             if (res == -1)
             {
                 if (error == H_EAGAIN)
@@ -423,10 +424,9 @@ namespace Hamster
 
             x[10] = res;
             task.end_block();
-            task.blocking_operation_alt = nullptr;
 
             _trace("TID \033[34m%" PRIu32 "\033[0m\tFinished blocking operation, result: \033[36m%" PRIi32 "\033[0m\n", task.get_tid(), res);
-        }, emulator.x[10]); // save a0 because if this function is called from a 
+        }, emulator.x[10], (void *)callback); // save a0 because if this function is called from a 
         //                     system call, a0 will be overwritten by the call's return value
     }
 
@@ -438,7 +438,7 @@ namespace Hamster
             return -1;
         }
 
-        interrupt_blocking(*this, blocking_operation_saved);
+        interrupt_blocking(*this, blocking_operation_saved, blocking_saved2);
         end_block();
         return 0;
     }
@@ -446,6 +446,8 @@ namespace Hamster
     void Task::end_block()
     {
         blocking_operation = nullptr;
+        blocking_operation_saved = 0;
+        blocking_saved2 = nullptr;
         interrupt_blocking = nullptr;
     }
 
@@ -502,7 +504,7 @@ namespace Hamster
 
         if (blocking_operation)
         {
-            blocking_operation(*this, blocking_operation_saved);
+            blocking_operation(*this, blocking_operation_saved, blocking_saved2);
 
             // Limit blocking checks to once a millisecond
             this->BaseKTask::next_tick = _get_sys_time() + 1;
