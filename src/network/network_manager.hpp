@@ -31,5 +31,7 @@ namespace Hamster
     private:
         Map<int, UniquePtr<BaseNetwork>> networks; // type -> network
     };
+
+    extern NetworkManager network_manager;
 } // namespace Hamster
 

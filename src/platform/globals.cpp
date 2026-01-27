@@ -4,6 +4,7 @@
 #include <memory/allocator.hpp>
 #include <filesystem/vfs.hpp>
 #include <kscheduler/kscheduler.hpp>
+#include <network/network_manager.hpp>
 
 #ifndef NDEBUG
 #include <unordered_set>
@@ -92,5 +93,10 @@ namespace Hamster
      * requires: page_manager, vfs, allocator, error, fd_refcount
      * provides: process
      */
+
+     /**
+      * Network Manager
+      */
+     NetworkManager network_manager;
 } // namespace Hamster
 
