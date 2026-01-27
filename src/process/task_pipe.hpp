@@ -1,5 +1,7 @@
 // Hamster unnamed pipes
 
+#pragma once
+
 #include <process/task_base_fd.hpp>
 #include <memory/stl_sequential.hpp>
 #include <memory/allocator.hpp>
