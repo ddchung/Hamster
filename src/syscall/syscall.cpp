@@ -1228,6 +1228,135 @@ namespace Hamster
             result = syscall(task, sys_ppoll_time64);
             trace_syscall_result(task, result);
             break;
+        case SyscallID::SOCKET:
+            trace_syscall<
+                SysTraceParam("domain", PT_INT),
+                SysTraceParam("type", PT_INT),
+                SysTraceParam("protocol", PT_INT)>("socket", task, args);
+            result = syscall(task, sys_socket);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::SENDTO:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("buf", PT_PTR),
+                SysTraceParam("len", PT_UINT),
+                SysTraceParam("flags", PT_INT),
+                SysTraceParam("dest_addr", PT_PTR),
+                SysTraceParam("addrlen", PT_UINT)>("sendto", task, args);
+            result = syscall(task, sys_sendto);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::RECVFROM:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("buf", PT_PTR),
+                SysTraceParam("len", PT_UINT),
+                SysTraceParam("flags", PT_INT),
+                SysTraceParam("src_addr", PT_PTR),
+                SysTraceParam("addrlen", PT_PTR)>("recvfrom", task, args);
+            result = syscall(task, sys_recvfrom);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::BIND:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("addr", PT_PTR),
+                SysTraceParam("addrlen", PT_UINT)>("bind", task, args);
+            result = syscall(task, sys_bind);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::CONNECT:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("addr", PT_PTR),
+                SysTraceParam("addrlen", PT_UINT)>("connect", task, args);
+            result = syscall(task, sys_connect);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::LISTEN:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("backlog", PT_INT)>("listen", task, args);
+            result = syscall(task, sys_listen);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::ACCEPT:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("addr", PT_PTR),
+                SysTraceParam("addrlen", PT_PTR)>("accept", task, args);
+            result = syscall(task, sys_accept);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::ACCEPT4:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("addr", PT_PTR),
+                SysTraceParam("addrlen", PT_PTR),
+                SysTraceParam("flags", PT_INT)>("accept4", task, args);
+            result = syscall(task, sys_accept4);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::GETSOCKOPT:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("level", PT_INT),
+                SysTraceParam("optname", PT_INT),
+                SysTraceParam("optval", PT_PTR),
+                SysTraceParam("optlen", PT_PTR)>("getsockopt", task, args);
+            result = syscall(task, sys_getsockopt);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::SETSOCKOPT:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("level", PT_INT),
+                SysTraceParam("optname", PT_INT),
+                SysTraceParam("optval", PT_PTR),
+                SysTraceParam("optlen", PT_UINT)>("setsockopt", task, args);
+            result = syscall(task, sys_setsockopt);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::GETSOCKNAME:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("addr", PT_PTR),
+                SysTraceParam("addrlen", PT_PTR)>("getsockname", task, args);
+            result = syscall(task, sys_getsockname);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::GETPEERNAME:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("addr", PT_PTR),
+                SysTraceParam("addrlen", PT_PTR)>("getpeername", task, args);
+            result = syscall(task, sys_getpeername);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::SHUTDOWN:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("how", PT_INT)>("shutdown", task, args);
+            result = syscall(task, sys_shutdown);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::SENDMSG:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("msg", PT_PTR),
+                SysTraceParam("flags", PT_INT)>("sendmsg", task, args);
+            result = syscall(task, sys_sendmsg);
+            trace_syscall_result(task, result);
+            break;
+        case SyscallID::RECVMSG:
+            trace_syscall<
+                SysTraceParam("sockfd", PT_INT),
+                SysTraceParam("msg", PT_PTR),
+                SysTraceParam("flags", PT_INT)>("recvmsg", task, args);
+            result = syscall(task, sys_recvmsg);
+            trace_syscall_result(task, result);
+            break;
         default:
             _trace("TID %" PRIu32 "\tUnknown system call %" PRIu32 " at pc 0x%08" PRIx32 " -> ENOSYS - Invalid system call number\n", task.get_tid(), sys_id, task.get_emulator().pc);
             // Unsupported syscall ID
@@ -1410,4 +1539,23 @@ namespace Hamster
     __attribute__((weak)) int32_t sys_tkill(Task &task, int32_t tid, int32_t sig) { return -H_ENOSYS; }
     __attribute__((weak)) int32_t sys_ppoll_time64(Task &task, uint32_t fds_loc, uint32_t nfds, uint32_t timeout_loc,
                                                    uint32_t sigmask_loc, uint32_t sigset_size) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_socket(Task &task, int32_t domain, int32_t type, int32_t protocol) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_bind(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_listen(Task &task, int32_t sockfd, int32_t backlog) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_accept(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen_loc) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_accept4(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen_loc, int32_t flags) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_connect(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_sendto(Task &task, int32_t sockfd, uint32_t buf_loc, uint32_t len, int32_t flags,
+                                             uint32_t dest_addr_loc, uint32_t addrlen) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_recvfrom(Task &task, int32_t sockfd, uint32_t buf_loc, uint32_t len, int32_t flags,
+                                               uint32_t src_addr_loc, uint32_t addrlen_loc) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_setsockopt(Task &task, int32_t sockfd, int32_t level, int32_t optname, uint32_t optval_loc,
+                                                 uint32_t optlen) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_getsockopt(Task &task, int32_t sockfd, int32_t level, int32_t optname, uint32_t optval_loc,
+                                                 uint32_t optlen_loc) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_getsockname(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen_loc) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_getpeername(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen_loc) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_shutdown(Task &task, int32_t sockfd, int32_t how) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_sendmsg(Task &task, int32_t sockfd, uint32_t msg_loc, int32_t flags) { return -H_ENOSYS; }
+    __attribute__((weak)) int32_t sys_recvmsg(Task &task, int32_t sockfd, uint32_t msg_loc, int32_t flags) { return -H_ENOSYS; }
 } // namespace Hamster

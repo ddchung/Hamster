@@ -188,6 +188,25 @@ namespace Hamster
     int32_t sys_tkill(Task &task, int32_t tid, int32_t sig);
     int32_t sys_ppoll_time64(Task &task, uint32_t fds_loc, uint32_t nfds, uint32_t timeout_loc,
                              uint32_t sigmask_loc, uint32_t sigset_size);
+    int32_t sys_socket(Task &task, int32_t domain, int32_t type, int32_t protocol);
+    int32_t sys_bind(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen);
+    int32_t sys_listen(Task &task, int32_t sockfd, int32_t backlog);
+    int32_t sys_accept(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen_loc);
+    int32_t sys_accept4(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen_loc, int32_t flags);
+    int32_t sys_connect(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen);
+    int32_t sys_sendto(Task &task, int32_t sockfd, uint32_t buf_loc, uint32_t len, int32_t flags,
+                       uint32_t dest_addr_loc, uint32_t addrlen);
+    int32_t sys_recvfrom(Task &task, int32_t sockfd, uint32_t buf_loc, uint32_t len, int32_t flags,
+                         uint32_t src_addr_loc, uint32_t addrlen_loc);
+    int32_t sys_setsockopt(Task &task, int32_t sockfd, int32_t level, int32_t optname, uint32_t optval_loc,
+                           uint32_t optlen);
+    int32_t sys_getsockopt(Task &task, int32_t sockfd, int32_t level, int32_t optname, uint32_t optval_loc,
+                           uint32_t optlen_loc);
+    int32_t sys_getsockname(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen_loc);
+    int32_t sys_getpeername(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen_loc);
+    int32_t sys_shutdown(Task &task, int32_t sockfd, int32_t how);
+    int32_t sys_sendmsg(Task &task, int32_t sockfd, uint32_t msg_loc, int32_t flags);
+    int32_t sys_recvmsg(Task &task, int32_t sockfd, uint32_t msg_loc, int32_t flags);
 
     /**
      * @brief Call a system call

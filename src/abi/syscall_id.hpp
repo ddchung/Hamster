@@ -737,6 +737,23 @@ namespace Hamster
              * @brief Wait for file descriptor(s) to become ready
              */
             PPOLL_TIME64 = 414,////
+
+            SOCKET = 198,
+            SOCKETPAIR = 199,
+            SENDTO = 206,
+            RECVFROM = 207,
+            BIND = 200,
+            CONNECT = 203,
+            LISTEN = 201,
+            ACCEPT = 202,
+            ACCEPT4 = 242,
+            GETSOCKOPT = 209,
+            SETSOCKOPT = 208,
+            GETSOCKNAME = 204,
+            GETPEERNAME = 205,
+            SHUTDOWN = 210,
+            SENDMSG = 211,
+            RECVMSG = 212,
         };
     } // namespace SyscallID
 } // namespace Hamster
