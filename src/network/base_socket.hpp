@@ -27,6 +27,7 @@ namespace Hamster
          * @param addr The address to send to, or nullptr
          * @param addrlen The length of the address, or 0
          * @return Number of bytes sent, or -1 on error and set `error`
+         * @note Doesn't send SIGPIPE.
          */
         virtual ssize_t sendto(const IOVec *buf, size_t count, int flags, const sys_sockaddr *addr, sys_socklen_t addrlen) = 0;
 

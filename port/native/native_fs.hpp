@@ -30,16 +30,10 @@
 # define HAMSTER_NATIVE_FS_ROOT "rootfs"
 #endif
 
+void swap_error();
+
 namespace Hamster
 {
-    void swap_error()
-    {
-        // Swap the error code with the global error code
-        int err = Hamster::error;
-        Hamster::error = errno;
-        errno = err;
-    }
-
     class NativeFileHandle
     {
     public:

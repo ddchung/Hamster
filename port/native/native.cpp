@@ -1,6 +1,9 @@
 // Native version
 
 #include "native_fs.hpp"
+#ifdef __linux__
+# include "native_net.hpp"
+#endif
 #include <platform/platform.hpp>
 #include <filesystem/vfs.hpp>
 #include <filesystem/ramfs.hpp>
@@ -16,16 +19,16 @@
 
 using namespace Hamster;
 
+void swap_error()
+{
+    // Swap the error code with the global error code
+    int err = Hamster::error;
+    Hamster::error = errno;
+    errno = err;
+}
+
 namespace
 {
-    void swap_error()
-    {
-        // Swap the error code with the global error code
-        int err = Hamster::error;
-        Hamster::error = errno;
-        errno = err;
-    }
-
 #ifndef NTRACE
     FILE *trace_file = nullptr;
 
@@ -129,6 +132,10 @@ int Hamster::_init_platform()
     {
         trace_file = nullptr;
     }
+#endif
+
+#ifdef __linux__
+    network_manager.register_network(AF_INET, alloc<NativeNetwork>());
 #endif
 
     return 0;
