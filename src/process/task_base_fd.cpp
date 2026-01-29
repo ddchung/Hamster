@@ -64,4 +64,10 @@ namespace Hamster
         error = H_EINVAL;
         return -1;
     }
+
+    int BaseTaskFD::get_vfs_fd()
+    {
+        error = H_EINVAL;
+        return -1;
+    }
 } // namespace Hamster

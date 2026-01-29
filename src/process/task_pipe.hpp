@@ -39,6 +39,8 @@ namespace Hamster
          */
         static std::pair<TaskPipe *, TaskPipe *> make_pair(int flags);
 
+        TaskFDType type() const override { return TaskFDType::Pipe; }
+
         ssize_t read(void *buf, size_t size);
         ssize_t write(const void *buf, size_t size);
         int64_t seek(int64_t off, int whence);

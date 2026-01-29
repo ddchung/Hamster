@@ -43,10 +43,7 @@ namespace Hamster
         // Make a new TaskVFSFD with the opened file descriptor, and put it in the
         // allocated slot
         if (task.set_fd(p_fd, task_fd) < 0)
-        {
-            dealloc(p_fd);
             return cvt_error();
-        }
         task.set_fd_flags(task_fd, flags & OPEN_CLOEXEC ? H_FD_CLOEXEC : 0);
         return task_fd;
     }

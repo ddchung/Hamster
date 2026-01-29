@@ -80,18 +80,21 @@ namespace Hamster
         {
             fd = allocate_fd();
             if (fd < 0)
-                return -1;
+                goto err;
         }
 
         if (fd < 0 || fd >= (int)fd_table.size())
         {
             error = H_EBADF;
-            return -1;
+            goto err;
         }
 
         fd_table[fd].fd.construct(task_fd);
         fd_table[fd].fd_flags = 0;
         return fd;
+    err:
+        dealloc(task_fd);
+        return -1;
     }
 
     int TaskFDTable::dup(int fd, int new_fd)

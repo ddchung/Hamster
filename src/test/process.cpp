@@ -22,6 +22,7 @@ public:
     int value;
     int flags;
     DummyFD(int v, int f = 0) : value(v), flags(f) {}
+    TaskFDType type() const override { return TaskFDType::VFS; } // dummy
     int get_flags() override { return flags; }
     int set_flags(int f) override
     {

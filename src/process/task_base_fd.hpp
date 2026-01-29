@@ -10,6 +10,13 @@
 
 namespace Hamster
 {
+    enum class TaskFDType
+    {
+        VFS,
+        Pipe,
+        Socket,
+    };
+    
     class BaseTaskFD
     {
     public:
@@ -18,6 +25,8 @@ namespace Hamster
         BaseTaskFD() = default;
         BaseTaskFD(const BaseTaskFD &) = delete;
         BaseTaskFD &operator=(const BaseTaskFD &) = delete;
+
+        virtual TaskFDType type() const = 0;
 
         // Common functions
         // See `vfs.hpp` for more info
@@ -45,9 +54,8 @@ namespace Hamster
          * @brief Get the VFS file descriptor
          * @return The VFS FD, or -1 on error and set `error`
          * @note Only valid for VFS task FDs
-         * @note Other file descriptor types should error with `EINVAL`
          */
-        virtual int get_vfs_fd() = 0;
+        virtual int get_vfs_fd();
     };
 } // namespace Hamster
 

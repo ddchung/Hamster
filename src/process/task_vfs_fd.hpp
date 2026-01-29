@@ -20,6 +20,8 @@ namespace Hamster
         TaskVFSFD(TaskVFSFD &&) = delete;
         TaskVFSFD &operator=(TaskVFSFD &&) = delete;
 
+        TaskFDType type() const override { return TaskFDType::VFS; }
+
         ssize_t read(void *buf, size_t size) override { return vfs.read(fd, buf, size); }
         ssize_t write(const void *buf, size_t size) override { return vfs.write(fd, buf, size); }
         int64_t seek(int64_t off, int whence) override
