@@ -2,6 +2,7 @@
 
 #include <syscall/syscall.hpp>
 #include <process/task.hpp>
+#include <process/task_socket.hpp>
 #include <memory/stl_sequential.hpp>
 #include <abi/values.hpp>
 #include <abi/structs.hpp>
@@ -275,6 +276,36 @@ namespace Hamster
         });
 
         return 0;
+    }
+
+    int32_t sys_connect(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen)
+    {
+        BaseTaskFD *fd = task.get_fd(sockfd);
+        if (!fd)
+            return cvt_error();
+        if (fd->type() != TaskFDType::Socket)
+            return -H_ENOTSOCK;
+        TaskSocket *socket_fd = (TaskSocket *)fd;
+
+        void *buf = alloca(addrlen);
+        if (task.memcpy(buf, addr_loc, addrlen) < 0)
+            return cvt_error();
+        return cvt_error(socket_fd->get_socket()->connect((sys_sockaddr *)buf, addrlen));
+    }
+
+    int32_t sys_bind(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen)
+    {
+        BaseTaskFD *fd = task.get_fd(sockfd);
+        if (!fd)
+            return cvt_error();
+        if (fd->type() != TaskFDType::Socket)
+            return -H_ENOTSOCK;
+        TaskSocket *socket_fd = (TaskSocket *)fd;
+
+        void *buf = alloca(addrlen);
+        if (task.memcpy(buf, addr_loc, addrlen) < 0)
+            return cvt_error();
+        return cvt_error(socket_fd->get_socket()->bind((sys_sockaddr *)buf, addrlen));
     }
 } // namespace Hamster
 

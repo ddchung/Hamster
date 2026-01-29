@@ -5,6 +5,8 @@
 #include <process/scatter_io.hpp>
 #include <process/task_vfs_fd.hpp>
 #include <process/task_pipe.hpp>
+#include <process/task_socket.hpp>
+#include <network/network_manager.hpp>
 #include <abi/values.hpp>
 #include <abi/structs.hpp>
 #include <inttypes.h>
@@ -790,6 +792,22 @@ namespace Hamster
         if (task.memcpy(new_groups.data(), list_loc, size * sizeof(uint32_t)) < 0)
             return cvt_error();
         return cvt_error(task.set_groups(new_groups));
+    }
+
+    int32_t sys_socket(Task &task, int32_t domain, int32_t type, int32_t protocol)
+    {
+        BaseSocket *sock = network_manager.socket(domain, type, protocol);
+        if (!sock)
+            return cvt_error();
+        
+        int flags = 0
+                    | (type & H_SOCK_NONBLOCK ? OPEN_NONBLOCK : 0)
+                    | (type & H_SOCK_CLOEXEC ? H_FD_CLOEXEC : 0);
+        flags &= ~ (H_SOCK_NONBLOCK | H_SOCK_CLOEXEC);
+        
+        TaskSocket *fd = alloc<TaskSocket>(1, flags, sock);
+
+        return cvt_error(task.set_fd(fd));
     }
 } // namespace Hamster
 
