@@ -50,17 +50,15 @@ class NativeNetwork : public Hamster::BaseNetwork
 
         ssize_t recvfrom(const Hamster::IOVec *buf, size_t count, int flags, Hamster::sys_sockaddr *addr, Hamster::sys_socklen_t *addrlen) override
         {
-            socklen_t alen;
             struct ::msghdr hdr = {};
             hdr.msg_name = (void *)addr;
-            hdr.msg_namelen = alen;
             hdr.msg_iov = (struct ::iovec *)buf;
             hdr.msg_iovlen = count;
             ssize_t res = ::sendmsg(fd, &hdr, MSG_DONTWAIT);
             if (res == 0)
                 swap_error();
             if (addrlen)
-                *addrlen = alen;
+                *addrlen = hdr.msg_namelen;
             return res;
         }
         
