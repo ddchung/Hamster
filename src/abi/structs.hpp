@@ -319,17 +319,31 @@ namespace Hamster
 
     using sys_sa_family_t = uint16_t;
     using sys_socklen_t = uint32_t;
+    using sys_in_port_t = uint16_t;
+    using sys_in_addr_t = uint32_t;
 
     struct sys_sockaddr
     {
-        sys_sa_family_t sa_family;
-        char sa_data[14];
+        sys_sa_family_t family;
+        char data[14];
     };
 
     struct sys_sockaddr_un
     {
-        sys_sa_family_t sun_family;
-        char sun_path[108];
+        sys_sa_family_t family;
+        char path[108];
+    };
+
+    struct sys_in_addr
+    {
+        sys_in_addr_t addr;
+    };
+
+    struct sys_sockaddr_in {
+        sys_sa_family_t family;
+        sys_in_port_t port;
+        sys_in_addr addr;
+        uint8_t zero[8];
     };
 
     inline uint64_t timespec_to_systick(const sys_timespec &ts)
