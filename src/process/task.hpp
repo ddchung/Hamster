@@ -16,6 +16,7 @@
 #include <memory/stl_map.hpp>
 #include <memory/stl_set.hpp>
 #include <abi/structs.hpp>
+#include <functional>
 
 namespace Hamster
 {
@@ -360,6 +361,9 @@ namespace Hamster
          */
         int block(void (*callback)(Task &, uint64_t, void *), uint64_t saved, void *saved2, void (*interrupt_callback)(Task &, uint64_t, void*) = nullptr);
 
+        // Newer block, works the same
+        int block(std::function<void(Task&)> callback, std::function<void(Task&)> interrupt = nullptr);
+
         /**
          * @brief Enter a blocking operation
          * @param callback The blocking callback. Called with registers from a0-a5
@@ -652,7 +656,7 @@ namespace Hamster
         RiscVEmulator &get_emulator() { return emulator; }
         uint32_t get_tid() const { return tid; }
         Task *get_parent() const { return parent; }
-        bool is_blocking() const { return blocking_operation != nullptr; }
+        bool is_blocking() const { return callback_blocking != nullptr; }
         bool is_pause() const { return is_paused; }
 
     private:
@@ -672,10 +676,7 @@ namespace Hamster
         TaskSignalQueue pending_signals;
         TaskSignalMask signal_mask;
         RiscVEmulator emulator;
-        void (*blocking_operation)(Task &, uint64_t, void *) = nullptr;
-        uint64_t blocking_operation_saved = 0; // Optionally used by blocking operations
-        void *blocking_saved2 = nullptr;
-        void (*interrupt_blocking)(Task &, uint64_t, void *) = nullptr; // Called when signal recieved while blocking
+        std::function<void (Task &)> callback_blocking, callback_interrupt_blocking;
         uint64_t last_instruction_tick = 0;
         uint32_t tid;
         Task *parent = nullptr; // may be null

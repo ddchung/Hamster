@@ -369,30 +369,26 @@ namespace Hamster
 
     int Task::block(void (*callback)(Task &, uint64_t, void*), uint64_t saved, void *saved2, void (*interrupt_callback)(Task &, uint64_t, void*))
     {
-        if (!callback)
-        {
-            error = H_EINVAL;
-            return -1;
-        }
+        std::function<void (Task &)> int_func;
+        if (interrupt_callback)
+            int_func = [saved, saved2, interrupt_callback](Task &task){interrupt_callback(task, saved, saved2);};
+        return block([saved, saved2, callback](Task &task){callback(task, saved, saved2);}, int_func);
+    }
 
+    int Task::block(std::function<void (Task &)> callback, std::function<void (Task &)> interrupt)
+    {
         if (is_blocking())
         {
-            error = H_EAGAIN;
+            error = H_EBUSY;
             return -1;
         }
-
-        if (!interrupt_callback)
-            interrupt_callback = [](Task &task, uint64_t saved, void*) {
+        assert(callback);
+        if (!interrupt)
+            interrupt = [](Task &task){
                 task.get_emulator().x[10] = -H_EINTR;
-                task.end_block();
-                _trace("TID \033[34m%" PRIu32 "\033[0m\tFinished blocking operation, result: \033[36m%" PRIi32 "\033[0m\n", task.get_tid(), -H_EINTR);
             };
-    
-        blocking_operation = callback;
-        blocking_operation_saved = saved;
-        blocking_saved2 = saved2;
-        interrupt_blocking = interrupt_callback;
-
+        callback_blocking = callback;
+        callback_interrupt_blocking = interrupt;
         return 0;
     }
 
@@ -409,8 +405,6 @@ namespace Hamster
             error = H_EAGAIN;
             return -1;
         }
-
-        blocking_saved2 = (void *)callback;
         
         return block([](Task &task, uint64_t saved, void *saved2){
             uint32_t *x = task.emulator.x;
@@ -438,17 +432,15 @@ namespace Hamster
             return -1;
         }
 
-        interrupt_blocking(*this, blocking_operation_saved, blocking_saved2);
+        callback_interrupt_blocking(*this);
         end_block();
         return 0;
     }
 
     void Task::end_block()
     {
-        blocking_operation = nullptr;
-        blocking_operation_saved = 0;
-        blocking_saved2 = nullptr;
-        interrupt_blocking = nullptr;
+        callback_blocking = nullptr;
+        callback_interrupt_blocking = nullptr;
     }
 
     bool Task::is_leader() const
@@ -502,9 +494,9 @@ namespace Hamster
             // Signals present, but masked, continue normally
         }
 
-        if (blocking_operation)
+        if (callback_blocking)
         {
-            blocking_operation(*this, blocking_operation_saved, blocking_saved2);
+            callback_blocking(*this);
 
             // Limit blocking checks to once a millisecond
             this->BaseKTask::next_tick = _get_sys_time() + 1;
