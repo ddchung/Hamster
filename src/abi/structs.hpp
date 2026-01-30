@@ -346,6 +346,16 @@ namespace Hamster
         uint8_t zero[8];
     };
 
+    struct sys_sockaddr_storage {
+        union {
+            struct {
+                sys_sa_family_t	ss_family;
+                char _data[126];
+            } s;
+            void *_align;
+        };
+    };
+
     inline uint64_t timespec_to_systick(const sys_timespec &ts)
     {
         // right now, 1 systick = 1 ms
