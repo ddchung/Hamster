@@ -280,17 +280,44 @@ namespace Hamster
 
     int32_t sys_connect(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen)
     {
+        if (addrlen > sizeof(sys_sockaddr_storage))
+            return -H_EINVAL;
         BaseTaskFD *fd = task.get_fd(sockfd);
         if (!fd)
             return cvt_error();
         if (fd->type() != TaskFDType::Socket)
             return -H_ENOTSOCK;
-        TaskSocket *socket_fd = (TaskSocket *)fd;
-
-        void *buf = alloca(addrlen);
-        if (task.memcpy(buf, addr_loc, addrlen) < 0)
+        
+        BaseSocket *sock = ((TaskSocket *)fd)->get_socket();
+        
+        sys_sockaddr_storage addr;
+        if (task.memcpy(&addr, addr_loc, addrlen) < 0)
             return cvt_error();
-        return cvt_error(socket_fd->get_socket()->connect((sys_sockaddr *)buf, addrlen));
+        
+        int res = sock->connect((sys_sockaddr *)&addr, addrlen);
+        if (res < 0)
+        {
+            // needs blocking and non nonblocking
+            if ((error == H_EAGAIN || error == H_EINPROGRESS) && !(fd->get_flags() & OPEN_NONBLOCK))
+            {
+                // block until connected
+                // stroe sockfd instead of sock or fd because we might outlive it
+                return task.block([](Task &task, uint32_t sockfd, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t){
+                    auto *fd = task.get_fd(sockfd);
+                    if (!fd) return -1;
+                    if (fd->type() != TaskFDType::Socket) return -1;
+                    int res = fd->poll(POLL_WRITE);
+                    if (res < 0) return -1;
+                    if (res == 0) { error = H_EAGAIN; return -1;} // continue blocking
+                    return 0;
+                });
+            }
+
+            // actual error
+            return cvt_error();
+        }
+
+        return 0;
     }
 
     int32_t sys_bind(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen)
