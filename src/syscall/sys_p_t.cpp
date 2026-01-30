@@ -51,6 +51,82 @@ namespace Hamster
                 task.get_emulator().x[10] = -H_EINTR;
             });
         }
+
+        // Takes ownership of iov, does not touch addr
+        int do_send(Task &task, BaseTaskFD *fd, int flags, const std::pair<IOVec *, uint32_t> &iov, sys_sockaddr *addr, sys_socklen_t addrlen)
+        {
+            assert(fd && fd->type() == TaskFDType::Socket);
+            void *addr_cpy = nullptr;
+            if (addr)
+            {
+                addr_cpy = _malloc(addrlen);
+                memcpy(addr_cpy, addr, addrlen);
+            }
+            return task.block([fd, iov, flags, addr_cpy, addrlen](Task &task) {
+                int32_t res = ((TaskSocket *)fd)->get_socket()->sendto(iov.first, iov.second, flags & ~(H_MSG_DONTWAIT | H_MSG_NOSIGNAL), (sys_sockaddr *)addr_cpy, addrlen);
+                if (res < 0)
+                {
+                    // continue blocking if needed
+                    if (error == H_EAGAIN && !((flags & H_MSG_DONTWAIT) || fd->get_flags() & OPEN_NONBLOCK))
+                        return;
+                    
+                    // send sigpipe if needed
+                    if (error == H_EPIPE && !(flags & H_MSG_NOSIGNAL))
+                        task.send_signal(make_kill_siginfo(H_SIGPIPE));
+                    res = cvt_error();
+                }
+
+                dealloc((sys_sockaddr *)iov.first);
+                if (addr_cpy) _free(addr_cpy);
+                task.end_block();
+                task.get_emulator().x[10] = res;
+                _trace("do_send: Done send operation, result %" PRIi32 "\n", res);
+            }, [iov, addr_cpy](Task &task) {
+                _trace("do_send: Send operation interrupted.");
+                dealloc((sys_sockaddr *)iov.first);
+                if (addr_cpy) _free(addr_cpy);
+                task.get_emulator().x[10] = -H_EINTR;
+            });
+        }
+
+        int do_recv(Task &task, BaseTaskFD *fd, int flags, const std::pair<IOVec *, uint32_t> &iov, uint32_t addr_loc, uint32_t addrlen_loc)
+        {
+            assert(fd && fd->type() == TaskFDType::Socket);
+            return task.block([fd, iov, flags, addr_loc, addrlen_loc](Task &task) {
+                sys_sockaddr_storage sa;
+                sys_socklen_t sl;
+                int32_t res = ((TaskSocket *)fd)->get_socket()->recvfrom(iov.first, iov.second, flags & ~(H_MSG_DONTWAIT | H_MSG_NOSIGNAL), (sys_sockaddr *)&sa, &sl);
+                if (res < 0)
+                {
+                    // continue blocking if needed
+                    if (error == H_EAGAIN && !((flags & H_MSG_DONTWAIT) || fd->get_flags() & OPEN_NONBLOCK))
+                        return;
+                    
+                    // send sigpipe if needed
+                    if (error == H_EPIPE && !(flags & H_MSG_NOSIGNAL))
+                        task.send_signal(make_kill_siginfo(H_SIGPIPE));
+                    res = cvt_error();
+                    goto done;
+                }
+
+                if ((addr_loc && task.memcpy(addr_loc, &sa, sl) < 0)
+                 || (addrlen_loc && task.memcpy(addrlen_loc, &sl, sizeof(sys_socklen_t)) < 0))
+                {
+                    res = cvt_error();
+                    goto done;
+                }
+            
+            done:
+                dealloc((sys_sockaddr *)iov.first);
+                task.end_block();
+                task.get_emulator().x[10] = res;
+                _trace("do_recv: Done receive operation, result %" PRIi32 "\n", res);
+            }, [iov](Task &task) {
+                _trace("do_recv: Receive operation interrupted.");
+                dealloc((sys_sockaddr *)iov.first);
+                task.get_emulator().x[10] = -H_EINTR;
+            });
+        }
     } // namespace
 
     int32_t sys_read(Task &task, int32_t task_fd, uint32_t buf_loc, uint32_t count)
@@ -712,6 +788,7 @@ namespace Hamster
                 if (fd.fd >= 0)
                 {
                     BaseTaskFD *task_fd = task.get_fd(fd.fd);
+                    fd.revents = 0;
                     if (task_fd)
                     {
                         if ((fd.events & H_POLLIN) && task_fd->poll(POLL_READ) == 1)
@@ -808,6 +885,65 @@ namespace Hamster
         TaskSocket *fd = alloc<TaskSocket>(1, flags, sock);
 
         return cvt_error(task.set_fd(fd));
+    }
+
+    int32_t sys_sendto(Task &task, int32_t sockfd, uint32_t buf_loc, uint32_t len, int32_t flags, uint32_t dest_addr_loc, uint32_t addrlen)
+    {
+        BaseTaskFD *fd = task.get_fd(sockfd);
+        if (!fd)
+            return cvt_error();
+        if (fd->type() != TaskFDType::Socket)
+            return -H_ENOTSOCK;
+        
+        if ((bool)dest_addr_loc != (bool)addrlen)
+            return -H_EINVAL;
+        
+        auto vecs = make_iovec_buf(task, buf_loc, len);
+        if (!vecs.first)
+            return cvt_error();
+        
+        if (dest_addr_loc)
+        {
+            sys_sockaddr addr;
+            if (task.copy_from_memory(addr, dest_addr_loc) < 0
+             || do_send(task, fd, flags, vecs, &addr, addrlen) < 0)
+            {
+                dealloc(vecs.first);
+                return cvt_error();
+            }
+        }
+        else
+        {
+            if (do_send(task, fd, flags, vecs, nullptr, 0) < 0)
+            {
+                dealloc(vecs.first);
+                return cvt_error();
+            }
+        }
+        return 0;
+    }
+
+    int32_t sys_recvfrom(Task &task, int32_t sockfd, uint32_t buf_loc, uint32_t len, int32_t flags, uint32_t addr_loc, uint32_t addrlen_loc)
+    {
+        BaseTaskFD *fd = task.get_fd(sockfd);
+        if (!fd)
+            return cvt_error();
+        if (fd->type() != TaskFDType::Socket)
+            return -H_ENOTSOCK;
+        
+        if ((bool)addr_loc != (bool)addrlen_loc)
+            return -H_EINVAL;
+        
+        auto vecs = make_iovec_buf(task, buf_loc, len);
+        if (!vecs.first)
+            return cvt_error();
+    
+        if (do_recv(task, fd, flags, vecs, addr_loc, addrlen_loc) < 0)
+        {
+            dealloc(vecs.first);
+            return cvt_error();
+        }
+        return 0;
     }
 } // namespace Hamster
 
