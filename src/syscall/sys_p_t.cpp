@@ -82,7 +82,7 @@ namespace Hamster
                 task.get_emulator().x[10] = res;
                 _trace("do_send: Done send operation, result %" PRIi32 "\n", res);
             }, [iov, addr_cpy](Task &task) {
-                _trace("do_send: Send operation interrupted.");
+                _trace("do_send: Send operation interrupted.\n");
                 dealloc((sys_sockaddr *)iov.first);
                 if (addr_cpy) _free(addr_cpy);
                 task.get_emulator().x[10] = -H_EINTR;
@@ -94,17 +94,20 @@ namespace Hamster
             assert(fd && fd->type() == TaskFDType::Socket);
             return task.block([fd, iov, flags, addr_loc, addrlen_loc](Task &task) {
                 sys_sockaddr_storage sa;
-                sys_socklen_t sl;
-                int32_t res = ((TaskSocket *)fd)->get_socket()->recvfrom(iov.first, iov.second, flags & ~(H_MSG_DONTWAIT | H_MSG_NOSIGNAL), (sys_sockaddr *)&sa, &sl);
+                sys_socklen_t sl = 0;
+                int32_t res;
+                if (addrlen_loc != 0 && task.copy_from_memory(sl, addrlen_loc) < 0)
+                {
+                    res = cvt_error();
+                    goto done;
+                }
+                res = ((TaskSocket *)fd)->get_socket()->recvfrom(iov.first, iov.second, flags & ~(H_MSG_DONTWAIT | H_MSG_NOSIGNAL), (sys_sockaddr *)&sa, &sl);
                 if (res < 0)
                 {
                     // continue blocking if needed
                     if (error == H_EAGAIN && !((flags & H_MSG_DONTWAIT) || fd->get_flags() & OPEN_NONBLOCK))
                         return;
-                    
-                    // send sigpipe if needed
-                    if (error == H_EPIPE && !(flags & H_MSG_NOSIGNAL))
-                        task.send_signal(make_kill_siginfo(H_SIGPIPE));
+
                     res = cvt_error();
                     goto done;
                 }
@@ -122,7 +125,7 @@ namespace Hamster
                 task.get_emulator().x[10] = res;
                 _trace("do_recv: Done receive operation, result %" PRIi32 "\n", res);
             }, [iov](Task &task) {
-                _trace("do_recv: Receive operation interrupted.");
+                _trace("do_recv: Receive operation interrupted.\n");
                 dealloc((sys_sockaddr *)iov.first);
                 task.get_emulator().x[10] = -H_EINTR;
             });
@@ -710,6 +713,7 @@ namespace Hamster
 
     int32_t sys_readv(Task &task, int32_t task_fd, uint32_t vec_loc, uint32_t vlen)
     {
+        // TODO: forward read/write onto send/recv on sockets
         std::pair<IOVec *, uint32_t> iov = make_iovec(task, vec_loc, vlen, PERM_READ | PERM_WRITE);
         if (!iov.first)
             return cvt_error();
@@ -873,14 +877,13 @@ namespace Hamster
 
     int32_t sys_socket(Task &task, int32_t domain, int32_t type, int32_t protocol)
     {
-        BaseSocket *sock = network_manager.socket(domain, type, protocol);
+        BaseSocket *sock = network_manager.socket(domain, type & ~(H_SOCK_NONBLOCK | H_SOCK_CLOEXEC), protocol);
         if (!sock)
             return cvt_error();
         
         int flags = 0
                     | (type & H_SOCK_NONBLOCK ? OPEN_NONBLOCK : 0)
                     | (type & H_SOCK_CLOEXEC ? H_FD_CLOEXEC : 0);
-        flags &= ~ (H_SOCK_NONBLOCK | H_SOCK_CLOEXEC);
         
         TaskSocket *fd = alloc<TaskSocket>(1, flags, sock);
 
@@ -934,11 +937,75 @@ namespace Hamster
         if ((bool)addr_loc != (bool)addrlen_loc)
             return -H_EINVAL;
         
-        auto vecs = make_iovec_buf(task, buf_loc, len);
+        auto vecs = make_iovec_buf(task, buf_loc, len, PERM_READ | PERM_WRITE);
         if (!vecs.first)
             return cvt_error();
     
         if (do_recv(task, fd, flags, vecs, addr_loc, addrlen_loc) < 0)
+        {
+            dealloc(vecs.first);
+            return cvt_error();
+        }
+        return 0;
+    }
+
+    int32_t sys_recvmsg(Task &task, int32_t sockfd, uint32_t msg_loc, int32_t flags)
+    {
+        // get socket
+        BaseTaskFD *fd = task.get_fd(sockfd);
+        if (!fd)
+            return cvt_error();
+        if (fd->type() != TaskFDType::Socket)
+            return -H_ENOTSOCK;
+
+        // get msg
+        sys_msghdr msg;
+        if (task.copy_from_memory(msg, msg_loc) < 0)
+            return cvt_error();
+        
+        // get kernel iovectors with read/write memory perms
+        auto vecs = make_iovec(task, msg.iov_loc, msg.iovlen, PERM_READ | PERM_WRITE);
+        if (vecs.first == nullptr)
+            return cvt_error();
+        
+        if (do_recv(task, fd, flags, vecs, msg.name_loc, msg.name_loc ? msg_loc + offsetof(sys_msghdr, namelen) : 0) < 0)
+        {
+            dealloc(vecs.first);
+            return cvt_error();
+        }
+        return 0;
+    }
+
+    int32_t sys_sendmsg(Task &task, int32_t sockfd, uint32_t msg_loc, int32_t flags)
+    {
+        BaseTaskFD *fd = task.get_fd(sockfd);
+        if (!fd)
+            return cvt_error();
+        if (fd->type() != TaskFDType::Socket)
+            return -H_ENOTSOCK;
+        
+        sys_msghdr msg;
+        if (task.copy_from_memory(msg, msg_loc) < 0)
+            return cvt_error();
+        
+        // TODO: Extra stuff over sockets not supported
+        if (msg.control_loc != 0 || msg.controllen != 0)
+            return -H_ENOTSUP;
+        
+        sys_sockaddr *addr = nullptr;
+        if (msg.name_loc)
+        {
+            assert(msg.namelen <= sizeof(sys_sockaddr_storage));
+            addr = (sys_sockaddr *)alloca(msg.namelen);
+            if (task.memcpy(&addr, msg.name_loc, msg.namelen) < 0)
+                return cvt_error();
+        }
+        
+        auto vecs = make_iovec(task, msg.iov_loc, msg.iovlen);
+        if (!vecs.first)
+            return cvt_error();
+        
+        if (do_send(task, fd, flags, vecs, addr, msg.namelen) < 0)
         {
             dealloc(vecs.first);
             return cvt_error();
