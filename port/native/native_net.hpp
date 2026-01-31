@@ -52,6 +52,7 @@ class NativeNetwork : public Hamster::BaseNetwork
         {
             struct ::msghdr hdr = {};
             hdr.msg_name = (void *)addr;
+            hdr.msg_namelen = addrlen ? *addrlen : 0;
             hdr.msg_iov = (struct ::iovec *)buf;
             hdr.msg_iovlen = count;
             ssize_t res = ::recvmsg(fd, &hdr, MSG_DONTWAIT);
