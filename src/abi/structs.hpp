@@ -356,6 +356,27 @@ namespace Hamster
         };
     };
 
+    struct sys_msghdr {
+        uint32_t name_loc;
+        sys_socklen_t namelen;
+        uint32_t iov_loc;
+        int32_t iovlen;
+        uint32_t control_loc;
+        sys_socklen_t controllen;
+        int32_t flags;
+    };
+
+    struct sys_cmsghdr {
+        sys_socklen_t len;
+        int32_t level;
+        int32_t type;
+    };
+
+    struct sys_mmsghdr {
+        sys_msghdr hdr;
+        uint32_t len;
+    };
+
     inline uint64_t timespec_to_systick(const sys_timespec &ts)
     {
         // right now, 1 systick = 1 ms
