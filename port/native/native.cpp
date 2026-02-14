@@ -42,6 +42,8 @@ namespace
     }
 #endif
 
+    uint64_t sys_time_start = 0;
+
     // Console device
 
     class ConsoleTTYBackend
@@ -138,6 +140,8 @@ int Hamster::_init_platform()
     network_manager.register_network(AF_INET, alloc<NativeNetwork>());
 #endif
 
+    sys_time_start = _get_sys_time();
+
     return 0;
 }
 
@@ -219,6 +223,6 @@ uint64_t Hamster::_get_sys_time()
 
     // Convert to milliseconds
     uint64_t time_ms = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-    return time_ms;
+    return time_ms - sys_time_start;
 }
 

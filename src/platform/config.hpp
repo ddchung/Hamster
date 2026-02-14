@@ -12,6 +12,11 @@
 # include "config.platform.hpp"
 #endif
 
+// Define to 1 if you want to disable colors in the logger
+#ifndef HAMSTER_LOGGER_NO_COLORS
+# define HAMSTER_LOGGER_NO_COLORS 0
+#endif
+
 // The stack top, leave some space above for reserved data
 #ifndef HAMSTER_STACK_TOP
 # define HAMSTER_STACK_TOP (120 * 1024 * 1024)

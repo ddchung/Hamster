@@ -9,6 +9,7 @@
 #include <riscv/riscv_emulator.hpp>
 #include <driver/base_char_device.hpp>
 #include <process/task.hpp>
+#include <logger/logger.hpp>
 #include <errno/errno.h>
 #include <cstring>
 #include <cstdlib>
@@ -60,7 +61,7 @@ namespace
         void run() override
         {
             uint64_t current_tick_count = Hamster::total_instructions_executed;
-            Hamster::_trace("Instructions executed in the last %llums: %llu\n", (unsigned long long)interval, (unsigned long long)(current_tick_count - last_tick_count));
+            Hamster::logger("kernel", "PERF") << "Instructions executed in the last " << interval << "ms: " << (current_tick_count - last_tick_count);
             last_tick_count = current_tick_count;
         }
     private:
@@ -147,6 +148,9 @@ int main()
         // Don't log here, as we don't know if log would work
         return -1;
     }
+
+    Hamster::logger("kernel", "MAIN") << HAMSTER_SYSNAME << " " << HAMSTER_RELEASE << " (" << HAMSTER_MACHINE << ") v" << HAMSTER_VERSION
+        << "\nstarting up...";
 
 #ifndef NDEBUG
     log_operation("Testing platform...");

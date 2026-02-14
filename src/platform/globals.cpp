@@ -5,6 +5,7 @@
 #include <filesystem/vfs.hpp>
 #include <kscheduler/kscheduler.hpp>
 #include <network/network_manager.hpp>
+#include <logger/logger.hpp>
 
 #ifndef NDEBUG
 #include <unordered_set>
@@ -51,6 +52,13 @@ namespace Hamster
      * provides: total_instructions_executed
      */
     uint64_t total_instructions_executed{0};
+
+    /**
+     * Logger     
+     * requires: none
+     * provides: logger
+     */
+    Logger logger;
 
     /**
      * Kernel Scheduler
