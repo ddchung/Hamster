@@ -149,7 +149,7 @@ int main()
         return -1;
     }
 
-    Hamster::logger("kernel", "MAIN") << HAMSTER_SYSNAME << " " << HAMSTER_RELEASE << " (" << HAMSTER_MACHINE << ") v" << HAMSTER_VERSION
+    Hamster::logger("kernel", "MAIN", Hamster::Logger::LEVEL_INFO) << HAMSTER_SYSNAME << " " << HAMSTER_RELEASE << " (" << HAMSTER_MACHINE << ") v" << HAMSTER_VERSION
         << "\nstarting up...";
 
 #ifndef NDEBUG

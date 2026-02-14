@@ -7,6 +7,7 @@
 #include <process/task_pipe.hpp>
 #include <process/task_socket.hpp>
 #include <network/network_manager.hpp>
+#include <logger/logger.hpp>
 #include <abi/values.hpp>
 #include <abi/structs.hpp>
 #include <inttypes.h>
@@ -44,7 +45,7 @@ namespace Hamster
             done:
                 dealloc((IOVec *)iov);
                 task.end_block();
-                _trace("do_read: Done read operation, result: %" PRIi32 "\n", res);
+                logger("syscall", "do_read", Logger::LEVEL_DEBUG) << "Done read operation, result " << res;
                 task.get_emulator().x[10] = res;
             }, iov.second | ((uint64_t)task_fd << 32), iov.first, [](Task &task, uint64_t iovlen, void *iov) {
                 dealloc((IOVec *)iov);
@@ -80,9 +81,9 @@ namespace Hamster
                 if (addr_cpy) _free(addr_cpy);
                 task.end_block();
                 task.get_emulator().x[10] = res;
-                _trace("do_send: Done send operation, result %" PRIi32 "\n", res);
+                logger("syscall", "do_send", Logger::LEVEL_DEBUG) << "Done send operation, result " << res;
             }, [iov, addr_cpy](Task &task) {
-                _trace("do_send: Send operation interrupted.\n");
+                logger("syscall", "do_send", Logger::LEVEL_DEBUG) << "send operation interrupted";
                 dealloc((sys_sockaddr *)iov.first);
                 if (addr_cpy) _free(addr_cpy);
                 task.get_emulator().x[10] = -H_EINTR;
@@ -123,9 +124,9 @@ namespace Hamster
                 dealloc((sys_sockaddr *)iov.first);
                 task.end_block();
                 task.get_emulator().x[10] = res;
-                _trace("do_recv: Done receive operation, result %" PRIi32 "\n", res);
+                logger("syscall", "do_recv", Logger::LEVEL_DEBUG) << "Done recieve operation, result " << res;
             }, [iov](Task &task) {
-                _trace("do_recv: Receive operation interrupted.\n");
+                logger("syscall", "do_recv", Logger::LEVEL_DEBUG) << "Receive operation interrupted";
                 dealloc((sys_sockaddr *)iov.first);
                 task.get_emulator().x[10] = -H_EINTR;
             });

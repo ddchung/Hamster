@@ -4,6 +4,7 @@
 #include <process/task.hpp>
 #include <process/task_vfs_fd.hpp>
 #include <process/scatter_io.hpp>
+#include <logger/logger.hpp>
 #include <abi/values.hpp>
 #include <abi/structs.hpp>
 #include <inttypes.h>
@@ -36,7 +37,7 @@ namespace Hamster
             done:
                 dealloc((IOVec *)iov);
                 task.end_block();
-                _trace("do_write: Done write operation, result: %" PRIi32 "\n", res);
+                logger("syscall", "do_write", Logger::LEVEL_DEBUG) << "Done write operation, result " << res;
                 task.get_emulator().x[10] = res;
             }, iov.second | ((uint64_t)task_fd << 32), iov.first, [](Task &task, uint64_t iovlen, void *iov) {
                 dealloc((IOVec *)iov);
@@ -125,10 +126,9 @@ namespace Hamster
         }
         else
         {
-            _trace("WARN: sys_unlinkat: lstatat failed for path '%s' with unexpected error %d, return value %d\n",
-                   path_str, error, result);
-            _trace("WARN: sys_unlinkat: continuing anyway with remove operation..\n");
-            _trace("WARN: sys_unlinkat: note: from %s:%d\n", __FILE__, __LINE__);
+            logger("syscall", "sys_unlinkat", Logger::LEVEL_WARNING) << "lstatat failed for path '" << path_str << "'\n"
+                << "Unexpected error: " << error << "\n"
+                << "Return value: " << result;
         }
 
         // Unlink the file or directory

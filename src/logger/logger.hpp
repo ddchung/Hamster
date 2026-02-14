@@ -78,6 +78,8 @@ namespace Hamster
 #define CONCAT(a, b) a##b
 #define LOGLEVEL(x) CONCAT(LEVEL_, x)
         LogLevel log_level = LogLevel::LOGLEVEL(HAMSTER_DEFAULT_LOG_LEVEL);
+#undef CONCAT
+#undef LOGLEVEL
     };
 
     extern Logger logger;

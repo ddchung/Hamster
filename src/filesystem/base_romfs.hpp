@@ -6,6 +6,7 @@
 #include <filesystem/base_file.hpp>
 #include <memory/allocator.hpp>
 #include <memory/stl_sequential.hpp>
+#include <logger/logger.hpp>
 #include <errno/errno.h>
 #include <cassert>
 #include <cstring>
@@ -351,7 +352,8 @@ namespace Hamster
         read(0, &fs_header, sizeof(fs_header));
         fs_header.init();
 
-        _trace("Mounted romfs with volume name '");
+        auto log = logger("filesystem", "romfs", Logger::LEVEL_INFO);
+        log << "Mounted RomFs with volume name \"";
 
         uint32_t pos = sizeof(fs_header);
         char c;
@@ -359,10 +361,10 @@ namespace Hamster
         {
             read(pos, &c, sizeof(c));
             pos += sizeof(c);
-            _trace("%c", c);
+            log << c;
         } while (c != 0);
         fs_start = round_up_16(pos);
-        _trace("'\n");
+        log << "\"";
     }
 
     template <class Backend>

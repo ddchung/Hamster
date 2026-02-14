@@ -5,6 +5,7 @@
 #include <platform/platform.hpp>
 #include <syscall/syscall.hpp>
 #include <syscall/syscall_manager.hpp>
+#include <logger/logger.hpp>
 #include <errno/errno.h>
 #include <cassert>
 #include <cinttypes>
@@ -420,7 +421,8 @@ namespace Hamster
             x[10] = res;
             task.end_block();
 
-            _trace("TID \033[34m%" PRIu32 "\033[0m\tFinished blocking operation, result: \033[36m%" PRIi32 "\033[0m\n", task.get_tid(), res);
+            logger("kernel", "task", Logger::LEVEL_DEBUG) << "TID " << Logger::COLOR_CYAN << task.get_tid() << Logger::COLOR_DEFAULT
+                << "Finished blocking operation, result " << Logger::COLOR_YELLOW << res;
         }, emulator.x[10], (void *)callback); // save a0 because if this function is called from a 
         //                     system call, a0 will be overwritten by the call's return value
     }
@@ -521,7 +523,7 @@ namespace Hamster
                 send_signal(make_kill_siginfo(H_SIGTRAP));
                 break;
             case Status::IllegalInstruction:
-                _trace("TID %" PRIu32 ": illegal instruction at pc 0x%08" PRIx32 "\n", tid, emulator.pc);
+                logger("kernel", "Task", Logger::LEVEL_WARNING) << "TID " << tid << " Illegal instruction at PC " << (void *)(uintptr_t)emulator.pc;
                 siginfo.signo = H_SIGILL;
                 siginfo.code = H_ILL_ILLOPC;
                 siginfo.fields.fault.addr = emulator.pc;
@@ -529,7 +531,7 @@ namespace Hamster
                 break;
             case Status::IllegalLoad:
             case Status::IllegalStore:
-                _trace("TID %" PRIu32 ": segfault at pc 0x%08" PRIx32 "\n", tid, emulator.pc);
+                logger("process", "Task", Logger::LEVEL_WARNING) << "TID " << tid << " Illegal memory access at PC " << (void *)(uintptr_t)emulator.pc;
                 siginfo.signo = H_SIGSEGV;
                 siginfo.code = H_SEGV_BNDERR;
                 siginfo.fields.fault.addr = emulator.pc;
@@ -537,6 +539,7 @@ namespace Hamster
                 break;
             case Status::Error:
                 // TODO: Handle generic error
+                logger("process", "Task", Logger::LEVEL_ERROR) << "TID " << tid << " Illegal state!";
                 this->exit(make_wait_terminated_coredump(H_SIGKILL));
                 break;
             }
