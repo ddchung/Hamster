@@ -17,6 +17,12 @@
 # define HAMSTER_LOGGER_NO_COLORS 0
 #endif
 
+// Default log level
+// One of: DEBUG INFO WARNING ERROR
+#ifndef HAMSTER_DEFAULT_LOG_LEVEL
+# define HAMSTER_DEFAULT_LOG_LEVEL INFO
+#endif
+
 // The stack top, leave some space above for reserved data
 #ifndef HAMSTER_STACK_TOP
 # define HAMSTER_STACK_TOP (120 * 1024 * 1024)

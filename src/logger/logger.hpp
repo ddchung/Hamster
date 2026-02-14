@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <platform/config.hpp>
 #include <cstdint>
 #include <cstddef>
 
@@ -44,10 +45,16 @@ namespace Hamster
 
             LoggerImpl &operator<<(const char *);
             LoggerImpl &operator<<(char);
-            LoggerImpl &operator<<(long long);
+            LoggerImpl &operator<<(unsigned char i) { return operator<<((unsigned long long)i); }
+            LoggerImpl &operator<<(signed char i) { return operator<<((long long)i); }
+            LoggerImpl &operator<<(unsigned short i) { return operator<<((unsigned long long)i); }
+            LoggerImpl &operator<<(short i) { return operator<<((long long)i); }
+            LoggerImpl &operator<<(unsigned int i) { return operator<<((unsigned long long)i); }
+            LoggerImpl &operator<<(int i) { return operator<<((long long)i); }
             LoggerImpl &operator<<(unsigned long i) { return operator<<((unsigned long long)i); }
             LoggerImpl &operator<<(long i) { return operator<<((long long)i); }
             LoggerImpl &operator<<(unsigned long long);
+            LoggerImpl &operator<<(long long);
             LoggerImpl &operator<<(const void *);
 
             // Set color
@@ -67,7 +74,10 @@ namespace Hamster
         void set_log_level(LogLevel level) { log_level = level; }
 
     private:
-        LogLevel log_level = LogLevel::LEVEL_DEBUG;
+
+#define CONCAT(a, b) a##b
+#define LOGLEVEL(x) CONCAT(LEVEL_, x)
+        LogLevel log_level = LogLevel::LOGLEVEL(HAMSTER_DEFAULT_LOG_LEVEL);
     };
 
     extern Logger logger;

@@ -209,48 +209,9 @@ namespace Hamster
     int32_t sys_recvmsg(Task &task, int32_t sockfd, uint32_t msg_loc, int32_t flags);
 
     /**
-     * @brief Call a system call
-     * @param task The task
-     * @param sys_id The system call ID to call, one of `Hamster::SyscallID::*`
-     * @return Whatever the sys_* function returns, or -H_ENOSYS if the ID is not recognized
-     */
-    int32_t syscall(Task &task, int32_t sys_id);
-
-    /**
      * @brief Convert and clear the global `error` variable in the kernel
      * @param val
      * @return `val < 0 ? -error : val`. Also clears `error`
      */
     int32_t cvt_error(int32_t val = -1);
-
-    /**
-     * @brief Call a system call directly, but still automatically getting arguments
-     * @param task The task
-     * @param sys_fn The system call function to call, one of `Hamster::sys_*`
-     * @return Whatever the system call returns
-     * @note This will automatically get the arguments from the current task's registers
-     */
-    template <typename... SysArgs>
-    int32_t syscall(Task &task, int32_t (*sys_fn)(Task &, SysArgs...))
-    {
-        static constexpr size_t num_args = sizeof...(SysArgs);
-        static_assert(num_args <= 6, "syscall must have 6 or fewer arguments");
-
-        // Enumerator
-
-        if constexpr (num_args == 0)
-            return sys_fn(task);
-        else if constexpr (num_args == 1)
-            return sys_fn(task, task.get_emulator().x[10]);
-        else if constexpr (num_args == 2)
-            return sys_fn(task, task.get_emulator().x[10], task.get_emulator().x[11]);
-        else if constexpr (num_args == 3)
-            return sys_fn(task, task.get_emulator().x[10], task.get_emulator().x[11], task.get_emulator().x[12]);
-        else if constexpr (num_args == 4)
-            return sys_fn(task, task.get_emulator().x[10], task.get_emulator().x[11], task.get_emulator().x[12], task.get_emulator().x[13]);
-        else if constexpr (num_args == 5)
-            return sys_fn(task, task.get_emulator().x[10], task.get_emulator().x[11], task.get_emulator().x[12], task.get_emulator().x[13], task.get_emulator().x[14]);
-        else if constexpr (num_args == 6)
-            return sys_fn(task, task.get_emulator().x[10], task.get_emulator().x[11], task.get_emulator().x[12], task.get_emulator().x[13], task.get_emulator().x[14], task.get_emulator().x[15]);
-    }
 }

@@ -4,6 +4,7 @@
 #include <memory/allocator.hpp>
 #include <platform/platform.hpp>
 #include <syscall/syscall.hpp>
+#include <syscall/syscall_manager.hpp>
 #include <errno/errno.h>
 #include <cassert>
 #include <cinttypes>
@@ -514,7 +515,7 @@ namespace Hamster
             case Status::Success:
                 break;
             case Status::ECALL:
-                emulator.x[10] = syscall(*this, emulator.x[17]);
+                emulator.x[10] = syscall_manager.do_syscall(emulator.x[17], *this, emulator.x + 10);
                 break;
             case Status::EBREAK:
                 send_signal(make_kill_siginfo(H_SIGTRAP));

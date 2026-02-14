@@ -6,6 +6,7 @@
 #include <kscheduler/kscheduler.hpp>
 #include <network/network_manager.hpp>
 #include <logger/logger.hpp>
+#include <syscall/syscall_manager.hpp>
 
 #ifndef NDEBUG
 #include <unordered_set>
@@ -102,9 +103,14 @@ namespace Hamster
      * provides: process
      */
 
-     /**
-      * Network Manager
-      */
-     NetworkManager network_manager;
+    /**
+     * Network Manager
+     */
+    NetworkManager network_manager;
+
+    /**
+     * System call manager
+     */
+    SyscallManager syscall_manager;
 } // namespace Hamster
 
