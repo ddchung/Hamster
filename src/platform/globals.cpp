@@ -68,13 +68,6 @@ namespace Hamster
      */
     KScheduler kscheduler;
 
-    /**
-     * FD Reference Count
-     * requires: none
-     * provides: fd_refcount
-     */
-    UnorderedMap<int, unsigned int> fd_refcount;
-
     /* These ones depend on each other, in this order */
 
     /**
@@ -99,7 +92,7 @@ namespace Hamster
 
     /**
      * Process
-     * requires: page_manager, vfs, allocator, error, fd_refcount
+     * requires: page_manager, vfs, allocator, error
      * provides: process
      */
 
