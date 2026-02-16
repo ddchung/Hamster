@@ -1,5 +1,6 @@
 #include <process/task_socket.hpp>
 #include <memory/allocator.hpp>
+#include <errno/errno.h>
 
 namespace Hamster
 {

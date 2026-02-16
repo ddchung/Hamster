@@ -3,6 +3,7 @@
 #pragma once
 
 #include <memory/page_manager.hpp> // for PERM_*
+#include <memory/scatter_io.hpp>
 #include <abi/structs.hpp>
 #include <cstdint>
 #include <cstddef>
@@ -11,13 +12,6 @@
 
 namespace Hamster
 {
-    // Note: This is NOT the ABI io vector struct, see `struct sys_iovec` in `abi/structs.hpp`
-    struct IOVec
-    {
-        void *data;
-        size_t size;
-    };
-
     /**
      * @brief Make a kernel IO vector from a userspace one
      * @param task The task

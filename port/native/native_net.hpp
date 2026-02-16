@@ -6,6 +6,7 @@
 #include <network/base_network.hpp>
 #include <network/network_manager.hpp>
 #include <memory/allocator.hpp>
+#include <filesystem/vfs.hpp>
 
 #ifndef __linux__
 # error "native networking only supports linux for now."

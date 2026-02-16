@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <process/scatter_io.hpp>
+#include <memory/scatter_io.hpp>
 #include <abi/structs.hpp>
 #include <abi/values.hpp>
 #include <cstdint>
