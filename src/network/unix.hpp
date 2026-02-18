@@ -5,11 +5,32 @@
 #include <network/base_socket.hpp>
 #include <filesystem/base_file.hpp>
 #include <memory/stl_sequential.hpp>
+#include <abi/structs.hpp>
+#include <abi/values.hpp>
 #include <cstdint>
 #include <cstddef>
 
 namespace Hamster
 {
+    /**
+     * @brief Generate a sockaddr_un from a pathname
+     * @param addr The structure to fill
+     * @param size The size of the buffer
+     * @param path The pathname
+     * @return The number of bytes that would have been filled in
+     */
+    size_t unix_make_sockaddr(sys_sockaddr_un *addr, size_t size, const String &path);
+
+    /**
+     * @brief Get a name from a sockaddr_un
+     * @param addr The address
+     * @param size The size of the address
+     * @param path The destination string
+     * @return The length of the path on success, or -1 on error
+     * @note Fails on empty path
+     */
+    ssize_t unix_read_sockaddr(const sys_sockaddr_un *addr, size_t size, String &path);
+
     enum class UnixType : uint8_t
     {
         STREAM,
@@ -21,7 +42,7 @@ namespace Hamster
     public:
         virtual UnixType unix_type() const = 0;
         virtual bool is_listening() = 0;
-        virtual void set_unlisten() = 0;
+        virtual void set_listening(bool) = 0;
 
         // These don't make sense here, since Unix socket handles
         // won't be used anywhere outside of Unix sockets
@@ -53,9 +74,13 @@ namespace Hamster
         int connect(const sys_sockaddr *addr, sys_socklen_t addrlen) override;
         int listen(int backlog) override;
         BaseSocket *accept(sys_sockaddr *addr, sys_socklen_t *addrlen) override;
-        int poll(int ops) override;    
+        int poll(int ops) override;
 
     private:
+        State state;
+
+        // Hold onto the BaseSpecialFile, not just the socket node handle,
+        // for the reference counting of the node
         BaseSpecialFile *node;
         Deque<char> recv_buf;
         String peername, name;
@@ -67,7 +92,7 @@ namespace Hamster
     public:
         UnixType unix_type() const override { return UnixType::STREAM; }
         bool is_listening() override;
-        void set_unlisten() override;
+        void set_listening(bool listening) override;
 
         /**
          * @brief Push a connector
@@ -83,6 +108,12 @@ namespace Hamster
          */
         int cancel_connect(UnixStreamSocket *client);
 
+        /**
+         * @brief Pop a client from the queue
+         * @return The client, or nullptr on error and set `error`
+         */
+        UnixStreamSocket *accept();
+
     private:
         class UnixStreamNode *node;
     };
@@ -90,6 +121,7 @@ namespace Hamster
     class UnixStreamNode : public BaseSpecialDriver
     {
     public:
+        UnixStreamNode();
         ~UnixStreamNode() override = default;
         UnixStreamNodeHandle *create_handle(int flags) override;
 
@@ -129,7 +161,7 @@ namespace Hamster
     public:
         UnixType unix_type() const override { return UnixType::DGRAM; }
         bool is_listening() override;
-        void set_unlisten() override;
+        void set_listening(bool) override;
 
         /**
          * @brief Queue up a message

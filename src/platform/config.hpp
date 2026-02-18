@@ -95,6 +95,11 @@
 # define HAMSTER_MAX_FD_TABLE_SIZE 128
 #endif
 
+// Max Unix socket receive buffer size (bytes)
+#ifndef HAMSTER_UN_MAX_QUEUED
+# define HAMSTER_UN_MAX_QUEUED 1024
+#endif
+
 // warning: Changing this won't adversely affect the kernel, but RISC-V linux
 //          userspace programs expect a 4096-byte page size, and so changing this
 //          will probably break all the programs
