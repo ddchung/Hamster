@@ -40,6 +40,7 @@ namespace Hamster
     class BaseUnixSocketHandle : public BaseSpecialDriverHandle
     {
     public:
+        SpecialFileType special_type() override { return SpecialFileType::Socket; }
         virtual UnixType unix_type() const = 0;
         virtual bool is_listening() = 0;
         virtual void set_listening(bool) = 0;
@@ -48,8 +49,8 @@ namespace Hamster
         // won't be used anywhere outside of Unix sockets
         ssize_t write(const uint8_t *buf, size_t size) override;
         ssize_t read(uint8_t *buf, size_t size) override;
-        int get_flags() override;
-        int set_flags(int flags) override;
+        int get_flags() override { return flags; }
+        int set_flags(int flags) override { this->flags = flags; return 0; }
         int ioctl(int req, IoctlArg arg = IoctlArg()) override;
 
     protected:
@@ -76,6 +77,9 @@ namespace Hamster
         BaseSocket *accept(sys_sockaddr *addr, sys_socklen_t *addrlen) override;
         int poll(int ops) override;
 
+        // remove: whether to remove us from the node queue
+        void cancel_connect(bool remove = true);
+
     private:
         State state;
 
@@ -90,9 +94,12 @@ namespace Hamster
     class UnixStreamNodeHandle : public BaseUnixSocketHandle
     {
     public:
+        UnixStreamNodeHandle(int flags, class UnixStreamNode *node);
         UnixType unix_type() const override { return UnixType::STREAM; }
         bool is_listening() override;
         void set_listening(bool listening) override;
+
+        UnixStreamNodeHandle *clone() override;
 
         /**
          * @brief Push a connector
@@ -126,6 +133,7 @@ namespace Hamster
         UnixStreamNodeHandle *create_handle(int flags) override;
 
     private:
+        friend class UnixStreamNodeHandle;
         Deque<UnixStreamSocket *> client_queue;
         bool is_listening;
     };
@@ -159,6 +167,8 @@ namespace Hamster
     class UnixDgramNodeHandle : public BaseUnixSocketHandle
     {
     public:
+        UnixDgramNodeHandle(int flags, class UnixDgramNode *node);
+        UnixDgramNodeHandle *clone() override;
         UnixType unix_type() const override { return UnixType::DGRAM; }
         bool is_listening() override;
         void set_listening(bool) override;

@@ -100,6 +100,11 @@
 # define HAMSTER_UN_MAX_QUEUED 1024
 #endif
 
+// Unix socket max connection queue (backlog)
+#ifndef HAMSTER_UN_BACKLOG
+# define HAMSTER_UN_BACKLOG 32
+#endif
+
 // warning: Changing this won't adversely affect the kernel, but RISC-V linux
 //          userspace programs expect a 4096-byte page size, and so changing this
 //          will probably break all the programs

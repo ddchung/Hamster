@@ -20,6 +20,7 @@ void test_memory();
 void test_filesystem();
 void test_emulator();
 void test_process();
+void test_network();
 
 namespace
 {
@@ -171,6 +172,10 @@ int main()
 
     log_operation("Testing Process...");
     test_process();
+    log_operation_status();
+
+    log_operation("Testing Network...");
+    test_network();
     log_operation_status();
 
     Hamster::error = 0; // Reset error after tests

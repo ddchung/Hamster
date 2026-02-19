@@ -78,15 +78,7 @@ namespace Hamster
     UnixStreamSocket::~UnixStreamSocket()
     {
         if (state == State::CONNECTING)
-        {
-            // Remove us from queue
-            assert(node);
-            UnixStreamNodeHandle *handle = get_handle(node);
-            assert(handle);
-            int res = handle->cancel_connect(this);
-            (void)res;
-            assert(res == 0);
-        }
+            cancel_connect();
         if (state == State::LISTENING)
         {
             // Mark socket as dead
@@ -192,7 +184,7 @@ namespace Hamster
             it += s;
         }
 
-        assert(it - recv_buf.begin() == to_read);
+        assert(it - recv_buf.begin() == (ptrdiff_t)to_read);
         assert(remaining == 0);
 
         if ((flags & H_MSG_PEEK) == 0)
@@ -217,7 +209,7 @@ namespace Hamster
             return -1;
         
         BaseSpecialFile *file;
-        if (file = open_socket(path.c_str()))
+        if ((file = open_socket(path.c_str())))
         {
             // Already exists
             dealloc(file);
@@ -258,7 +250,7 @@ namespace Hamster
             node = nullptr;
         }
 
-        UnixStreamNodeHandle *handle = get_handle(node);
+        UnixStreamNodeHandle *handle = get_handle(file);
         assert(handle);
         if (handle->connect(this) < 0)
         {
@@ -341,10 +333,119 @@ namespace Hamster
         if ((ops & POLL_READ) && recv_buf.size() == 0)
             return 0;
         
-        // asking for write and disconnected/full
-        if ((ops & POLL_WRITE) && (peer == nullptr || peer->recv_buf.size() >= HAMSTER_UN_MAX_QUEUED))
-            return 0;
+        if (ops & POLL_WRITE)
+        {
+            if (state != State::CONNECTING && state != State::CONNECTED)
+            {
+                error = H_EPIPE;
+                return -1;
+            }
+            if (!peer || peer->recv_buf.size() >= HAMSTER_UN_MAX_QUEUED)
+                return 0;
+        }
         return 1;
+    }
+
+    void UnixStreamSocket::cancel_connect(bool remove)
+    {
+        if (state != State::CONNECTING)
+            return;
+        if (remove)
+            get_handle(node)->cancel_connect(this);
+        dealloc(node);
+        node = nullptr;
+        assert(!peer);
+        state = State::NONE;
+    }
+
+    UnixStreamNodeHandle::UnixStreamNodeHandle(int flags, UnixStreamNode *node)
+        : node(node)
+    {
+        assert(node != nullptr);
+        flags = flags;
+    }
+
+    UnixStreamNodeHandle *UnixStreamNodeHandle::clone()
+    {
+        return alloc<UnixStreamNodeHandle>(1, flags, node);
+    }
+
+    bool UnixStreamNodeHandle::is_listening()
+    {
+        return node->is_listening;
+    }
+
+    void UnixStreamNodeHandle::set_listening(bool listening)
+    {
+        if (node->is_listening == listening)
+            return;
+        if (node->is_listening)
+        {
+            // clean up connecting queue
+            for (UnixStreamSocket *client : node->client_queue)
+                client->cancel_connect(false);
+            node->client_queue.clear();
+        }
+        node->is_listening = listening;
+    }
+
+    int UnixStreamNodeHandle::connect(UnixStreamSocket *client)
+    {
+        assert(client);
+        for (UnixStreamSocket *cur_client : node->client_queue)
+            if (cur_client == client)
+            {
+                error = H_EALREADY;
+                return -1;
+            }
+        
+        if (!is_listening())
+        {
+            error = H_ECONNREFUSED;
+            return -1;
+        }
+
+        if (node->client_queue.size() >= HAMSTER_UN_BACKLOG)
+        {
+            error = H_ECONNREFUSED;
+            return -1;
+        }
+
+        node->client_queue.push_back(client);
+        return 0;
+    }
+
+    int UnixStreamNodeHandle::cancel_connect(UnixStreamSocket *client)
+    {
+        if (std::erase(node->client_queue, client) == 0)
+        {
+            error = H_EINVAL;
+            return -1;
+        }
+        return 0;
+    }
+
+    UnixStreamSocket *UnixStreamNodeHandle::accept()
+    {
+        if (node->client_queue.size() == 0)
+        {
+            error = H_EAGAIN;
+            return nullptr;
+        }
+
+        UnixStreamSocket *client = node->client_queue.front();
+        node->client_queue.pop_front();
+        return client;
+    }
+
+    UnixStreamNode::UnixStreamNode()
+        : is_listening(false)
+    {
+    }
+
+    UnixStreamNodeHandle *UnixStreamNode::create_handle(int flags)
+    {
+        return alloc<UnixStreamNodeHandle>(1, flags, this);
     }
 } // namespace Hamster
 
