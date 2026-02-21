@@ -3,6 +3,7 @@
 #pragma once
 
 #include <network/base_socket.hpp>
+#include <network/base_network.hpp>
 #include <filesystem/base_file.hpp>
 #include <memory/stl_sequential.hpp>
 #include <abi/structs.hpp>
@@ -200,6 +201,12 @@ namespace Hamster
 
     private:
         Deque<Message> messages;
+    };
+
+    class UnixNetwork : public BaseNetwork
+    {
+    public:
+        BaseSocket *socket(int type, int protocol);
     };
 } // namespace Hamster
 

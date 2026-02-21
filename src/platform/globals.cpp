@@ -5,6 +5,7 @@
 #include <filesystem/vfs.hpp>
 #include <kscheduler/kscheduler.hpp>
 #include <network/network_manager.hpp>
+#include <network/unix.hpp>
 #include <logger/logger.hpp>
 #include <syscall/syscall_manager.hpp>
 
@@ -105,5 +106,10 @@ namespace Hamster
      * System call manager
      */
     SyscallManager syscall_manager;
+
+    /**
+     * Unix domain sockets
+     */
+    struct init_unix { init_unix(){network_manager.register_network(H_AF_UNIX, alloc<UnixNetwork>());} } init_unix;
 } // namespace Hamster
 

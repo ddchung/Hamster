@@ -1,4 +1,5 @@
 #include <network/unix.hpp>
+#include <memory/allocator.hpp>
 #include <errno/errno.h>
 #include <cstring>
 #include <cassert>
@@ -47,6 +48,24 @@ namespace Hamster
     {
         error = H_ENOTSUP;
         return -1;
+    }
+
+    BaseSocket *UnixNetwork::socket(int type, int protocol)
+    {
+        if (protocol != 0)
+        {
+            error = H_EPROTONOSUPPORT;
+            return nullptr;
+        }
+
+        switch (type)
+        {
+        case H_SOCK_STREAM:
+            return alloc<UnixStreamSocket>();
+        default:
+            error = H_EPROTOTYPE;
+            return nullptr;
+        }
     }
 } // namespace Hamster
 
