@@ -74,9 +74,13 @@ namespace Hamster
             sys_siginfo siginfo = {};
             int res = task.waitid(idtype, id, &siginfo, options);
 
-            // note: this forwards EAGAIN, which continues blocking
             if (res < 0)
+            {
+                if (error == H_EAGAIN && (options & H_WNOHANG))
+                    return -H_EAGAIN;
+                // note: this forwards EAGAIN, which continues blocking
                 return -1;
+            }
 
             if ((siginfo_loc && task.copy_to_memory(siginfo_loc, siginfo) < 0)
              || (rusage_loc && task.memset(rusage_loc, 0, sizeof(sys_rusage)) < 0))
