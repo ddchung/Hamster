@@ -88,9 +88,14 @@ namespace Hamster
             handle->set_listening(false);
         }
 
+        if (peer)
+        {
+            peer->peer = nullptr;
+            peer = nullptr;
+        }
+
         dealloc(node);
         node = nullptr;
-        peer = nullptr;
     }
 
     ssize_t UnixStreamSocket::sendto(const IOVec *buf, size_t count, int flags, const sys_sockaddr *addr, sys_socklen_t addrlen)
@@ -98,6 +103,12 @@ namespace Hamster
         if (state != State::CONNECTED)
         {
             error = H_ENOTCONN;
+            return -1;
+        }
+
+        if (!peer)
+        {
+            error = H_EPIPE;
             return -1;
         }
 
@@ -113,8 +124,6 @@ namespace Hamster
             error = H_ENOTSUP;
             return -1;
         }
-
-        assert(peer != nullptr);
 
         size_t size = ioveclen(buf, count);
         if (size > INT32_MAX)
@@ -164,7 +173,7 @@ namespace Hamster
             return -1;
         }
 
-        if ((flags & H_MSG_WAITALL) && recv_buf.size() < size)
+        if (((flags & H_MSG_WAITALL) && recv_buf.size() < size) || recv_buf.empty())
         {
             // Block until we have enough bytes
             error = H_EAGAIN;
@@ -192,6 +201,9 @@ namespace Hamster
             // pop only if not peeking
             recv_buf.erase(recv_buf.begin(), recv_buf.begin() + to_read);
         }
+
+        if (addr)
+            *addrlen = unix_make_sockaddr((sys_sockaddr_un *)addr, *addrlen, peername);
 
         return to_read;
     }
