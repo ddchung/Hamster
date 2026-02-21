@@ -108,14 +108,22 @@ namespace Hamster
             return -1;
         }
 
-        // If PID 1 (init) exits, bring down whole system
-        if (tid == 1)
-            flags |= KSCHED_REMOVE_ALL;
-        else
-            flags |= KSCHED_REMOVE_NOW;
+        interrupt_block();
 
+        flags |= KSCHED_REMOVE_NOW;
+        
         assert(tasks.find(tid)->second == this);
         tasks.erase(tid);
+
+        // If PID 1 (init) exits, bring down whole system
+        if (tid == 1)
+        {
+            flags |= KSCHED_REMOVE_ALL;
+            while (tasks.size() > 0)
+            {
+                tasks.begin()->second->exit(make_wait_terminated(H_SIGKILL));
+            }
+        }
 
         if (clear_child_tid != 0)
         {
