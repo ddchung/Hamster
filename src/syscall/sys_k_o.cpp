@@ -3,6 +3,7 @@
 #include <syscall/syscall.hpp>
 #include <process/task.hpp>
 #include <process/task_vfs_fd.hpp>
+#include <process/task_socket.hpp>
 #include <abi/values.hpp>
 #include <abi/structs.hpp>
 
@@ -194,6 +195,19 @@ namespace Hamster
         if (task.mprotect(addr, size, perms) < 0)
             return cvt_error();
         return 0;
+    }
+
+    int32_t sys_listen(Task &task, int32_t sockfd, int32_t backlog)
+    {
+        BaseTaskFD *fd = task.get_fd(sockfd);
+        if (!fd)
+            return cvt_error();
+        if (fd->type() != TaskFDType::Socket)
+            return -H_ENOTSOCK;
+        
+        BaseSocket *sock = ((TaskSocket *)fd)->get_socket();
+
+        return cvt_error(sock->listen(backlog));
     }
 } // namespace Hamster
 

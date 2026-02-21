@@ -334,5 +334,43 @@ namespace Hamster
             return cvt_error();
         return cvt_error(socket_fd->get_socket()->bind((sys_sockaddr *)buf, addrlen));
     }
+
+    int32_t sys_accept(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen_loc)
+    {
+        return sys_accept4(task, sockfd, addr_loc, addrlen_loc, 0);
+    }
+
+    int32_t sys_accept4(Task &task, int32_t sockfd, uint32_t addr_loc, uint32_t addrlen_loc, int32_t flags)
+    {
+        return cvt_error(task.block([](Task &task, uint32_t sockfd, uint32_t addr_loc, uint32_t addrlen_loc, uint32_t flags, uint32_t, uint32_t){
+            BaseTaskFD *fd = task.get_fd(sockfd);
+            if (!fd)
+                return -1;
+            if (fd->type() != TaskFDType::Socket)
+            {
+                error = H_ENOTSOCK;
+                return -1;
+            }
+            
+            BaseSocket *sock = ((TaskSocket *)fd)->get_socket();
+
+            sys_sockaddr_storage sockaddr;
+            sys_socklen_t addrlen = sizeof(sockaddr);
+            BaseSocket *accepted = sock->accept((sys_sockaddr *)&sockaddr, &addrlen);
+
+            if (!accepted)
+            {
+                if (error == H_EAGAIN && (fd->get_flags() & OPEN_NONBLOCK))
+                    return -H_EAGAIN;
+                return -1;
+            }
+            
+            int new_fd = task.set_fd(alloc<TaskSocket>(1, (flags & H_SOCK_NONBLOCK ? OPEN_NONBLOCK : 0), accepted));
+            if (new_fd < 0)
+                return -1;
+            task.set_fd_flags(new_fd, (flags & H_SOCK_CLOEXEC ? OPEN_CLOEXEC : 0));
+            return new_fd;
+        }));
+    }
 } // namespace Hamster
 
