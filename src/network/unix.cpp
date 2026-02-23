@@ -27,6 +27,12 @@ namespace Hamster
             return -1;
         }
 
+        if (addr->family != H_AF_UNIX)
+        {
+            error = H_EAFNOSUPPORT;
+            return -1;
+        }
+
         path.assign(addr->path, size - sizeof(sys_sa_family_t));
         path.resize(strlen(path.c_str())); // Stop at null terminator
         return 0;
