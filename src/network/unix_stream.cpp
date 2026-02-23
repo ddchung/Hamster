@@ -21,7 +21,7 @@ namespace Hamster
             }
             if (((BaseUnixSocketHandle *)handle)->unix_type() != UnixType::STREAM)
             {
-                error = H_ENOTSUP;
+                error = H_EPROTOTYPE;
                 return nullptr;
             }
             return (UnixStreamNodeHandle *)handle;
