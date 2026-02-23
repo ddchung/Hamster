@@ -97,12 +97,14 @@ namespace Hamster
                 sys_sockaddr_storage sa;
                 sys_socklen_t sl = 0;
                 int32_t res;
+                sys_sockaddr *p_sa = (addrlen_loc) ? (sys_sockaddr *)&sa : nullptr;
+                sys_socklen_t *p_sl = (addrlen_loc) ? &sl : nullptr;
                 if (addrlen_loc != 0 && task.copy_from_memory(sl, addrlen_loc) < 0)
                 {
                     res = cvt_error();
                     goto done;
                 }
-                res = ((TaskSocket *)fd)->get_socket()->recvfrom(iov.first, iov.second, flags & ~(H_MSG_DONTWAIT | H_MSG_NOSIGNAL), (sys_sockaddr *)&sa, &sl);
+                res = ((TaskSocket *)fd)->get_socket()->recvfrom(iov.first, iov.second, flags & ~(H_MSG_DONTWAIT | H_MSG_NOSIGNAL), p_sa, p_sl);
                 if (res < 0)
                 {
                     // continue blocking if needed
@@ -882,13 +884,13 @@ namespace Hamster
         if (!sock)
             return cvt_error();
         
-        int flags = 0
-                    | (type & H_SOCK_NONBLOCK ? OPEN_NONBLOCK : 0)
-                    | (type & H_SOCK_CLOEXEC ? H_FD_CLOEXEC : 0);
-        
-        TaskSocket *fd = alloc<TaskSocket>(1, flags, sock);
+        TaskSocket *fd = alloc<TaskSocket>(1, (type & H_SOCK_NONBLOCK ? OPEN_NONBLOCK : 0), sock);
 
-        return cvt_error(task.set_fd(fd));
+        int sock_fd = task.set_fd(fd);
+        if (sock_fd < 0)
+            return cvt_error();
+        task.set_fd_flags(sock_fd, (type & H_SOCK_CLOEXEC ? H_FD_CLOEXEC : 0));
+        return sock_fd;
     }
 
     int32_t sys_sendto(Task &task, int32_t sockfd, uint32_t buf_loc, uint32_t len, int32_t flags, uint32_t dest_addr_loc, uint32_t addrlen)
@@ -901,6 +903,8 @@ namespace Hamster
         
         if ((bool)dest_addr_loc != (bool)addrlen)
             return -H_EINVAL;
+        if (addrlen > sizeof(sys_sockaddr_storage))
+            return -H_EINVAL;
         
         auto vecs = make_iovec_buf(task, buf_loc, len);
         if (!vecs.first)
@@ -908,9 +912,9 @@ namespace Hamster
         
         if (dest_addr_loc)
         {
-            sys_sockaddr addr;
+            sys_sockaddr_storage addr;
             if (task.copy_from_memory(addr, dest_addr_loc) < 0
-             || do_send(task, fd, flags, vecs, &addr, addrlen) < 0)
+             || do_send(task, fd, flags, vecs, (sys_sockaddr *)&addr, addrlen) < 0)
             {
                 dealloc(vecs.first);
                 return cvt_error();
