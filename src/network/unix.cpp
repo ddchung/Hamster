@@ -68,6 +68,8 @@ namespace Hamster
         {
         case H_SOCK_STREAM:
             return alloc<UnixStreamSocket>();
+        case H_SOCK_DGRAM:
+            return alloc<UnixDgramSocket>();
         default:
             error = H_EPROTOTYPE;
             return nullptr;

@@ -142,11 +142,6 @@ namespace Hamster
     
     class UnixDgramSocket : public BaseSocket
     {
-        enum class State
-        {
-            NONE,
-            LISTENING,
-        };
     public:
         UnixDgramSocket();
         ~UnixDgramSocket() override;
@@ -159,10 +154,9 @@ namespace Hamster
         int poll(int ops) override;
 
     private:
-        State state;
         BaseSpecialFile *node;
         BaseSpecialFile *default_peer;
-        String name;
+        String name, peer_filter;
     };
 
     class UnixDgramNodeHandle : public BaseUnixSocketHandle
@@ -178,11 +172,27 @@ namespace Hamster
          * @brief Queue up a message
          * @param iov The IO Vector to send
          * @param iovlen The number of iovec structs
+         * @param sender The sender of the data
          * @return The number of bytes actually queued, or -1 on error and set `error`
          */
-        ssize_t push_data(const IOVec *iov, size_t iovlen);
-        // Same thing, but pop data into iovecs
-        ssize_t pop_data(const IOVec *iov, size_t iovlen);
+        ssize_t push_data(const IOVec *iov, size_t iovlen, const String &sender);
+        
+
+        /**
+         * @brief Dequeue a message
+         * @param iov The buffer to read into
+         * @param iovlen The amount of buffers in `iov`
+         * @param sender A string to be filled with the sending address
+         * @param filter Filter out messages from other sources than this address. Disabled if empty
+         * @return The length of the datagram (that would have been read), or -1 on error and set `error`
+         */
+        ssize_t pop_data(const IOVec *iov, size_t iovlen, String &sender, const String &filter);
+
+        /**
+         * @brief Check if there is any pending message
+         * @return true if there is, false if there isn't
+         */
+        bool has_data();
     
     private:
         class UnixDgramNode *node;
@@ -196,11 +206,15 @@ namespace Hamster
             String sender;
         };
     public:
+        UnixDgramNode();
         ~UnixDgramNode() = default;
         UnixDgramNodeHandle *create_handle(int flags) override;    
 
     private:
+        friend class UnixDgramNodeHandle;
         Deque<Message> messages;
+        size_t queued_size;
+        bool is_listening;
     };
 
     class UnixNetwork : public BaseNetwork
