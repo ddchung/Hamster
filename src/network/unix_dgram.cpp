@@ -281,9 +281,6 @@ namespace Hamster
         assert(iov);
 
         size_t nbytes = ioveclen(iov, iovlen);
-        // TODO: zero-size datagram
-        if (nbytes == 0)
-            return 0;
         
         if (node->queued_size + nbytes > HAMSTER_UN_MAX_QUEUED)
         {
