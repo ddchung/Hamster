@@ -143,7 +143,7 @@ void cthread_init(void) {
     // save value of max threads, in case it's overridden and changed
     cthread_max_threads = CTHREAD_MAX_THREADS;
 
-    cthread_slots = cthread_malloc(cthread_max_threads * sizeof(struct cthread_slot));
+    cthread_slots = (struct cthread_slot *)cthread_malloc(cthread_max_threads * sizeof(struct cthread_slot));
     if (!cthread_slots) {
         // can't do much, but at least crash early
         assert(!"Failed to allocate cthread_slots");
