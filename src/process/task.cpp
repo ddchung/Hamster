@@ -120,9 +120,7 @@ namespace Hamster
         {
             flags |= KSCHED_REMOVE_ALL;
             while (tasks.size() > 0)
-            {
                 tasks.begin()->second->exit(make_wait_terminated(H_SIGKILL));
-            }
         }
 
         if (clear_child_tid != 0)

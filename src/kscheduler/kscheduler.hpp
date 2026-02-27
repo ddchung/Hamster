@@ -40,15 +40,6 @@ namespace Hamster
 
         // Only used if KSCHED_AUTO_INTERVAL is set
         uint64_t interval = 0;
-
-        /**
-         * #### README ####
-         * Auto-removal heuristics:
-         * 
-         * A task will be automatically removed if:
-         * - It has been ticked, and the `KSCHED_REMOVE_NEXT_TICK` was set both before and after the tick
-         * - `KSCHED_REMOVE_NOW` is set
-         */
     };
 
     class KScheduler

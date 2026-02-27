@@ -63,29 +63,11 @@ namespace Hamster
             uint32_t dirty : 1;
         };
 
-        class MemoryMonitor : public BaseKTask
-        {
-        public:
-            MemoryMonitor(BlockDeviceCache *cache);
-            MemoryMonitor(const MemoryMonitor &other) = delete;
-            MemoryMonitor& operator=(const MemoryMonitor &other) = delete;
-            MemoryMonitor(MemoryMonitor &&other) = delete;
-            MemoryMonitor& operator=(MemoryMonitor &&other) = delete;
-            ~MemoryMonitor() = default;
-
-            void run() override;
-        
-        private:
-            BlockDeviceCache *cache;
-        };
-
     public:
         // constructor forwards all arguments to the Backend constructor
         template <typename... Args>
         BlockDeviceCache(Args&&... args);
         ~BlockDeviceCache();
-        BlockDeviceCache(BlockDeviceCache &&other);
-        BlockDeviceCache& operator=(BlockDeviceCache &&other);
         BlockDeviceCache(const BlockDeviceCache &other) = delete;
         BlockDeviceCache& operator=(const BlockDeviceCache &other) = delete;
 
@@ -107,76 +89,15 @@ namespace Hamster
     };
 
     template <class Backend>
-    BlockDeviceCache<Backend>::MemoryMonitor::MemoryMonitor(BlockDeviceCache *cache)
-        : cache(cache)
-    {
-        flags = KSCHED_AUTO_INTERVAL;
-        // deterministic ID that won't collide
-        id = (uint32_t)(uintptr_t)cache;
-        interval = 50; // ms
-    }
-
-    template <class Backend>
-    void BlockDeviceCache<Backend>::MemoryMonitor::run()
-    {
-        // Check memory usage and trigger eviction if needed
-        cache->unload_if_needed();
-    }
-
-    template <class Backend>
     template <typename... Args>
     BlockDeviceCache<Backend>::BlockDeviceCache(Args&&... args)
         : Backend(std::forward<Args>(args)...)
     {
-        // Make a memory monitor
-        MemoryMonitor *mem_monitor = alloc<MemoryMonitor>(1, this);
-        kscheduler.add_task(mem_monitor);
     }
 
     template <class Backend>
     BlockDeviceCache<Backend>::~BlockDeviceCache()
     {
-        // Clean up the memory monitor
-
-        // Note: we use `this` as the task ID, see `MemoryMonitor::MemoryMonitor`
-        kscheduler.remove_task((uint32_t)(uintptr_t)this);
-    }
-
-    template <class Backend>
-    BlockDeviceCache<Backend>::BlockDeviceCache(BlockDeviceCache &&other)
-        : BlockDeviceCache()
-    {
-        // Swap
-        std::swap(cache_map, other.cache_map);
-        std::swap(eviction_queue, other.eviction_queue);
-
-        // Swap memory monitors
-        uint32_t this_id = (uint32_t)(uintptr_t)this;
-        uint32_t other_id = (uint32_t)(uintptr_t)&other;
-        uint32_t tmp_id = this_id + 1;
-        kscheduler.move_task(this_id, tmp_id);
-        kscheduler.move_task(other_id, this_id);
-        kscheduler.move_task(tmp_id, other_id);
-    }
-
-    template <class Backend>
-    BlockDeviceCache<Backend> &BlockDeviceCache<Backend>::operator=(BlockDeviceCache &&other)
-    {
-        if (this != &other)
-        {
-            // Swap
-            std::swap(cache_map, other.cache_map);
-            std::swap(eviction_queue, other.eviction_queue);
-
-            // Swap memory monitors
-            uint32_t this_id = (uint32_t)(uintptr_t)this;
-            uint32_t other_id = (uint32_t)(uintptr_t)&other;
-            uint32_t tmp_id = this_id + 1;
-            kscheduler.move_task(this_id, tmp_id);
-            kscheduler.move_task(other_id, this_id);
-            kscheduler.move_task(tmp_id, other_id);
-        }
-        return *this;
     }
 
     template <class Backend>
