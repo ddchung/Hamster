@@ -84,7 +84,9 @@ static void cthread_run_thread_initial(struct cthread *thread) {
     assert(thread->func);
     assert(thread->id >= 0 && (size_t)thread->id < cthread_max_threads);
     assert(cthread_slots[thread->id].in_use);
-    assert(!cthread_current_thread);
+    struct cthread *prev_thread = cthread_current_thread;
+    jmp_buf prev_context;
+    memcpy(prev_context, cthread_main_context, sizeof(jmp_buf));
 
     int res = setjmp(cthread_main_context);
     if (res == 0) {
@@ -92,8 +94,8 @@ static void cthread_run_thread_initial(struct cthread *thread) {
         cthread_run_new_stack(cthread_thread_trampoline, (char *)thread->stack_bottom + CTHREAD_STACK_SIZE);
     } else {
         // returned from thread
-        memset(cthread_main_context, 0, sizeof(jmp_buf));
-        cthread_current_thread = NULL;
+        memcpy(cthread_main_context, prev_context, sizeof(jmp_buf));
+        cthread_current_thread = prev_thread;
         switch (res) {
         case CTHREAD_SETJMP_STATUS_OK:
             // thread yielded
@@ -195,6 +197,9 @@ int cthread_create(cthread_t *id, void (*func)(void *), void *arg) {
 void cthread_yield(void) {
     if (!cthread_current_thread) {
         // yield from main thread, run random thread
+        if (cthread_num_threads == 0) {
+            return;
+        }
         size_t to_run = rand() % cthread_num_threads;
         for (size_t i = 0; i < cthread_max_threads; ++i) {
             if (cthread_slots[i].in_use && to_run-- == 0) {

@@ -7,15 +7,39 @@
 #include <errno/errno.h>
 #include <cassert>
 
+#include <libcthread/cthread.h>
+
+extern "C"
+{
+    // Linked into libcthread
+    size_t CTHREAD_MAX_THREADS = 128;
+
+    void *cthread_malloc(size_t size)
+    {
+        return Hamster::_malloc(size);
+    }
+
+    void cthread_free(void *ptr)
+    {
+        int res = Hamster::_free(ptr);
+        (void)res;
+        assert(res == 0);
+    }
+}
+
 namespace Hamster
 {
+    void BaseKTask::yield()
+    {
+        cthread_yield();
+    }
+
+
     KScheduler::~KScheduler()
     {
         // Clean up
         for (auto &[id, task] : tasks)
-        {
             dealloc(task);
-        }
         tasks.clear();
     }
 
@@ -34,28 +58,41 @@ namespace Hamster
             return -1;
         }
 
+        if (tasks.size() >= CTHREAD_MAX_THREADS)
+        {
+            error = H_EAGAIN;
+            return -1;
+        }
+
         tasks[task->id] = task;
-        return 0;
-    }
 
-    int KScheduler::move_task(uint32_t old_id, uint32_t new_id)
-    {
-        auto it = tasks.find(old_id);
-        if (it == tasks.end())
-        {
-            error = H_ESRCH;
-            return -1;
-        }
+        cthread_create(nullptr, [](void *p_task) {
+            BaseKTask *task = (BaseKTask *)p_task;
+            
+            while (true)
+            {
+                cthread_yield();
+                uint64_t now = _get_sys_time();
+                if ((task->flags & KSCHED_REMOVE_NOW) == 0 && task->next_tick <= now)
+                {
+                    task->run();
+                    ++task->tick_count;
+                    task->last_tick = now;
+                    if (task->flags & KSCHED_AUTO_INTERVAL)
+                        task->next_tick = now + task->interval;
+                }
+                if (task->flags & KSCHED_REMOVE_NOW)
+                {
+                    // Remove from map and clean up
+                    auto it = kscheduler.tasks.find(task->id);
+                    if (it != kscheduler.tasks.end())
+                        kscheduler.tasks.erase(it);
+                    dealloc(task);
+                    cthread_exit();
+                }
+            }
+        }, task);
 
-        if (new_id == 0 || tasks.find(new_id) != tasks.end())
-        {
-            error = H_EEXIST;
-            return -1;
-        }
-
-        it->second->id = new_id;
-        tasks[new_id] = it->second;
-        tasks.erase(it);
         return 0;
     }
 
@@ -67,61 +104,19 @@ namespace Hamster
             error = H_ESRCH;
             return -1;
         }
-
-        dealloc(it->second);
-        tasks.erase(it);
+        it->second->flags |= KSCHED_REMOVE_NOW;
         return 0;
+    }
+
+    void KScheduler::remove_all()
+    {
+        for (auto [id, task] : tasks)
+            task->flags |= KSCHED_REMOVE_NOW;
     }
 
     int KScheduler::tick()
     {
-        // Get system time
-        uint64_t now = _get_sys_time();
-
-        // Tick loop
-        for (auto &[id, task] : tasks)
-        {
-            if (task->flags & KSCHED_REMOVE_NOW)
-                continue;
-            if (task->next_tick <= now)
-            {
-                // Tick the task
-                bool remove_next_tick_before = (task->flags & KSCHED_REMOVE_NEXT_TICK) != 0;
-                task->run();
-                task->tick_count++;
-                task->last_tick = now;
-                if (task->flags & KSCHED_AUTO_INTERVAL)
-                    task->next_tick = now + task->interval;
-                bool remove_next_tick_after = (task->flags & KSCHED_REMOVE_NEXT_TICK) != 0;
-                if (remove_next_tick_before && remove_next_tick_after)
-                    task->flags |= KSCHED_REMOVE_NOW; // Mark for removal
-            }
-        }
-
-        // Remove loop
-        for (auto it = tasks.begin(); it != tasks.end();)
-        {
-            if (it->second->flags & KSCHED_REMOVE_ALL)
-            {
-                // Remove all tasks
-                for (auto &task : tasks)
-                {
-                    dealloc(task.second);
-                }
-                tasks.clear();
-                return 0; // All tasks removed
-            }
-            else if (it->second->flags & KSCHED_REMOVE_NOW)
-            {
-                dealloc(it->second);
-                it = tasks.erase(it);
-            }
-            else 
-            {
-                ++it;
-            }
-        }
-
+        cthread_yield();
         return 0;
     }
 } // namespace Hamster

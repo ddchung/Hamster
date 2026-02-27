@@ -101,7 +101,7 @@ namespace Hamster
     
     int Task::exit(uint16_t code)
     {
-        if (flags & (KSCHED_REMOVE_NOW | KSCHED_REMOVE_ALL))
+        if (flags & (KSCHED_REMOVE_NOW))
         {
             // already exited
             error = H_EINVAL;
@@ -118,7 +118,7 @@ namespace Hamster
         // If PID 1 (init) exits, bring down whole system
         if (tid == 1)
         {
-            flags |= KSCHED_REMOVE_ALL;
+            kscheduler.remove_all();
             while (tasks.size() > 0)
                 tasks.begin()->second->exit(make_wait_terminated(H_SIGKILL));
         }

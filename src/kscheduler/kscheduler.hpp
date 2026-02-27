@@ -9,10 +9,8 @@
 
 namespace Hamster
 {
-    inline constexpr int KSCHED_REMOVE_NEXT_TICK = 1 << 0; // Remove this task after the next tick, like a one-shot
-    inline constexpr int KSCHED_AUTO_INTERVAL = 1 << 1; // Automatically set the next tick to the current time + interval
-    inline constexpr int KSCHED_REMOVE_NOW = 1 << 2; // Remove as soon as the scheduler sees it
-    inline constexpr int KSCHED_REMOVE_ALL = 1 << 3; // Remove all tasks, used for shutdown
+    inline constexpr int KSCHED_AUTO_INTERVAL = 1 << 0; // Automatically set the next tick to the current time + interval
+    inline constexpr int KSCHED_REMOVE_NOW = 1 << 1; // Remove as soon as the scheduler sees it
 
     class BaseKTask
     {
@@ -21,8 +19,15 @@ namespace Hamster
 
         /**
          * @brief Run the task
+         * @note This may be implemented as either non-returning with  yield(), or called repeatedly by the scheduler
          */
         virtual void run() = 0;
+
+        /**
+         * @brief Yield control to other tasks
+         * @warning May not return if removed, so make sure nothing leaks
+         */
+        static void yield();
 
         // KSCHED_*
         int flags = 0;
@@ -63,19 +68,17 @@ namespace Hamster
         int add_task(BaseKTask *task);
 
         /**
-         * @brief Change an existing task's ID
-         * @param old_id The current ID of the task
-         * @param new_id The new ID to assign to the task
-         * @return 0 on success, -1 on failure and set `error`
-         */
-        int move_task(uint32_t old_id, uint32_t new_id);
-
-        /**
-         * @brief Manually remove a task from the kernel scheduler
+         * @brief Mark a task to be removed later
          * @param id The ID of the task to remove
          * @return 0 on success, -1 on failure and set `error`
+         * @note This defers the removal until later. It is guaranteed the task will not be run after this.
          */
         int remove_task(uint32_t id);
+
+        /**
+         * @brief Mark all tasks for removal
+         */
+        void remove_all();
 
         /**
          * @brief Tick all tasks that are ready

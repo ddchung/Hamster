@@ -14,6 +14,8 @@
 #include <cstring>
 #include <cstdlib>
 
+#include <libcthread/cthread.h>
+
 
 void test_platform();
 void test_memory();
@@ -152,6 +154,8 @@ int main()
 
     Hamster::logger("kernel", "MAIN", Hamster::Logger::LEVEL_INFO) << HAMSTER_SYSNAME << " " << HAMSTER_RELEASE << " (" << HAMSTER_MACHINE << ") v" << HAMSTER_VERSION
         << "\nstarting up...";
+
+    cthread_init();
 
 #ifndef NDEBUG
     log_operation("Testing platform...");
