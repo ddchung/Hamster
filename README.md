@@ -1,4 +1,4 @@
-# Hamster: Linux-compatible toy OS
+# Hamster: Linux-compatible OS
 This is a toy operating system project called Hamster, designed to be compatible with Linux. This is my personal project for learning about operating systems and low-level programming. It is **NOT** intended for production use. You are free to do whatever with this code, but please remember it is just a learning project, and probably has huge security holes and some bugs.
 
 ## Features
